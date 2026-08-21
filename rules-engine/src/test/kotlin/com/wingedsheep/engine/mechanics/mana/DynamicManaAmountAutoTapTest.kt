@@ -20,6 +20,8 @@ import com.wingedsheep.sdk.scripting.references.Player
 import com.wingedsheep.sdk.scripting.values.DynamicAmount
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.collections.shouldNotContain
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 
@@ -78,7 +80,25 @@ class DynamicManaAmountAutoTapTest : FunSpec({
         toughness = 3
     }
 
-    val allTestCards = TestCards.all + listOf(archdruid, warrior, bear)
+    // Gaea's Cradle, whose count can legitimately be zero — the other end of the same amount.
+    val cradle = card("Test Legendary Cradle") {
+        manaCost = ""
+        colorIdentity = "G"
+        typeLine = "Legendary Land"
+        oracleText = "{T}: Add {G} for each creature you control."
+
+        activatedAbility {
+            cost = Costs.Tap
+            effect = Effects.AddMana(
+                Color.GREEN,
+                DynamicAmount.AggregateBattlefield(Player.You, GameObjectFilter.Creature)
+            )
+            manaAbility = true
+            timing = TimingRule.ManaAbility
+        }
+    }
+
+    val allTestCards = TestCards.all + listOf(archdruid, warrior, bear, cradle)
 
     fun createDriver(): GameTestDriver {
         val driver = GameTestDriver()
@@ -145,5 +165,39 @@ class DynamicManaAmountAutoTapTest : FunSpec({
         driver.state.getEntity(druidId)?.has<TappedComponent>() shouldBe true
         // Exactly {G}{G}{G} was produced and exactly {2}{G} spent — nothing left floating.
         (driver.state.getEntity(playerId)?.get<ManaPoolComponent>()?.green ?: 0) shouldBe 0
+    }
+
+    test("a land whose dynamic ability is dry right now is not offered as a mana source") {
+        val driver = createDriver()
+        driver.initMirrorMatch(deck = Deck.of("Forest" to 40), skipMulligans = true)
+        driver.passPriorityUntil(Step.PRECOMBAT_MAIN)
+        val playerId = driver.activePlayer!!
+        driver.putLandOnBattlefield(playerId, "Test Legendary Cradle")
+
+        val solver = ManaSolver(createRegistry())
+
+        // "Add {G} for each creature you control" with no creatures adds nothing. The land must not
+        // claim a green it can't make, and must not fall back to the colorless land default either.
+        solver.findAvailableManaSources(driver.state, playerId)
+            .map { it.name } shouldNotContain "Test Legendary Cradle"
+        solver.getAvailableManaCount(driver.state, playerId) shouldBe 0
+        solver.solve(driver.state, playerId, ManaCost.parse("{G}")).shouldBeNull()
+        solver.solve(driver.state, playerId, ManaCost.parse("{1}")).shouldBeNull()
+    }
+
+    test("the same land is a full source again as soon as the count is nonzero") {
+        val driver = createDriver()
+        driver.initMirrorMatch(deck = Deck.of("Forest" to 40), skipMulligans = true)
+        driver.passPriorityUntil(Step.PRECOMBAT_MAIN)
+        val playerId = driver.activePlayer!!
+        driver.putLandOnBattlefield(playerId, "Test Legendary Cradle")
+        repeat(2) { driver.putCreatureOnBattlefield(playerId, "Test Elf Warrior") }
+
+        val source = ManaSolver(createRegistry())
+            .findAvailableManaSources(driver.state, playerId)
+            .single { it.name == "Test Legendary Cradle" }
+
+        source.producesColors shouldContain Color.GREEN
+        source.manaAmount shouldBe 2
     }
 })

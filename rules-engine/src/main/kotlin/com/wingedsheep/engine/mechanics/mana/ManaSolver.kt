@@ -1092,6 +1092,9 @@ class ManaSolver(
             // across the abilities producing each — see ManaSource.colorPainCost.
             val perColorPainCost = mutableMapOf<Color, Int>()
             var cheapestColorlessPain = Int.MAX_VALUE
+            // Set when a mana ability was skipped purely because its dynamic amount is zero right
+            // now. It gates the land fallback below: such a land is not a colorless source.
+            var hadDryManaAbility = false
             // Track which colors are produceable WITHOUT sacrificing the source. A color is
             // sacrifice-free if any accepted ability producing it has no SacrificeSelf cost.
             // Colors in `combinedColors` but not here can only be made by sacrificing — the
@@ -1214,6 +1217,21 @@ class ManaSolver(
                     continue // Can't use this ability due to summoning sickness
                 }
 
+                val manaEffect = manaProducingEffect(ability.effect, state, entityId, playerId)
+
+                // A dynamic amount that evaluates to zero right now — Gaea's Cradle with no
+                // creatures, Marwyn the Nurturer at 0 power, Quintorius Kand with nothing exiled —
+                // adds no mana at all, even though the ability stays activatable. Skip the ability
+                // whole rather than just zeroing its amount: it must not contribute its colors,
+                // claim a tap's worth of mana, or drag its pain/sacrifice shape into the combined
+                // source. A permanent whose every mana ability is dry is not a mana source at all:
+                // a non-land drops out below on its own, and the land fallback is gated on the flag
+                // set here so it can't quietly re-offer the land as a colorless one.
+                if (addsNoManaRightNow(ability.effect, manaEffect, state, entityId, playerId)) {
+                    hadDryManaAbility = true
+                    continue
+                }
+
                 // Pain modeled as a self-damage side effect in the ability's effect chain
                 // (Battlefield Forge: "{T}: Add {R} or {W}. This land deals 1 damage to you.")
                 // counts the same as a PayLife cost atom.
@@ -1232,7 +1250,6 @@ class ManaSolver(
                 // separately via colorActivationManaCost / colorlessActivationManaCost,
                 // tapping additional sources to cover them.
                 val effectColors = mutableSetOf<Color>()
-                val manaEffect = manaProducingEffect(ability.effect, state, entityId, playerId)
                 // A single tap that adds several mana of different kinds (Gruul Turf: {R}{G}). The
                 // primary leaf below feeds producesColors/maxManaAmount as usual; the *additional*
                 // fixed-color/colorless leaves have no home in the choice-based producesColors set,
@@ -1470,6 +1487,14 @@ class ManaSolver(
             // (e.g., fetch lands like Windswept Heath)
             if (!card.typeLine.isLand) return@mapNotNull null
             if (allAbilities.isNotEmpty() && manaAbilities.isEmpty()) return@mapNotNull null
+            // A land whose mana ability is dry right now (Gaea's Cradle with no creatures) must not
+            // fall through to the colorless default — that would invent a {C} the land cannot
+            // produce, which is the same phantom mana this fix exists to remove. Lands whose
+            // abilities the loop rejected for *other* reasons (an unsatisfied activation
+            // restriction, a cost shape auto-tap doesn't model, a summoning-sick creature-land)
+            // still reach the fallback exactly as before; whether they should is a separate
+            // question from this one, and not one to settle silently here.
+            if (hadDryManaAbility) return@mapNotNull null
 
             ManaSource(
                 entityId = entityId,
@@ -1637,6 +1662,57 @@ class ManaSolver(
             // time from the source's CastChoicesComponent, so we don't pre-filter it.
             else -> null
         }
+    }
+
+    /**
+     * The mana [effect] would add right now, or null when it is not an amount-bearing mana effect
+     * (a non-mana leaf of a composite, or a shape with no amount to read such as "add one mana of
+     * each color among …"). Null means "don't judge this one", never "zero".
+     */
+    private fun manaAmountOf(
+        effect: Effect,
+        state: GameState,
+        sourceId: EntityId,
+        playerId: EntityId,
+    ): Int? = when (effect) {
+        is AddManaEffect -> evaluateManaAmount(effect.amount, state, sourceId, playerId)
+        is AddColorlessManaEffect -> evaluateManaAmount(effect.amount, state, sourceId, playerId)
+        is AddManaOfChoiceEffect -> evaluateManaAmount(effect.amount, state, sourceId, playerId)
+        is AddAnyColorManaSpendOnChosenTypeEffect ->
+            evaluateManaAmount(effect.amount, state, sourceId, playerId)
+        is AddDynamicManaEffect -> evaluateManaAmount(effect.amountSource, state, sourceId, playerId)
+        else -> null
+    }
+
+    /**
+     * True when activating this mana ability would add no mana whatsoever at this moment.
+     *
+     * Only a dynamic amount can be dry — every printed fixed amount is at least one — so this is
+     * cheap for the common case: [evaluateManaAmount] returns a [DynamicAmount.Fixed] without
+     * touching game state.
+     *
+     * [manaEffect] is the primary leaf [manaProducingEffect] picked out of [effect]. When that leaf
+     * is dry the whole ability still isn't, necessarily: one tap can add several mana of different
+     * kinds through a [CompositeEffect] (Gruul Turf's "{T}: Add {R}{G}"), so a sibling leaf that
+     * still adds something keeps the ability alive. An effect with no readable amount answers
+     * false — unknown shapes are assumed to produce, which is the conservative direction here.
+     */
+    private fun addsNoManaRightNow(
+        effect: Effect,
+        manaEffect: Effect,
+        state: GameState,
+        sourceId: EntityId,
+        playerId: EntityId,
+    ): Boolean {
+        val primaryAmount = manaAmountOf(manaEffect, state, sourceId, playerId) ?: return false
+        if (primaryAmount > 0) return false
+        if (effect is CompositeEffect) {
+            for (leaf in effect.effects) {
+                if (leaf === manaEffect) continue
+                if ((manaAmountOf(leaf, state, sourceId, playerId) ?: 0) > 0) return false
+            }
+        }
+        return true
     }
 
     private fun evaluateManaAmount(
