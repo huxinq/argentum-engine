@@ -82,7 +82,11 @@ data class ManaSource(
     val painAmount: Int = 0,
     /** Whether this creature can attack (no summoning sickness or has haste) */
     val canAttack: Boolean = false,
-    /** Amount of mana this source produces per tap (e.g., 3 for Elvish Aberration) */
+    /**
+     * Amount of mana this source produces per tap (e.g., 3 for Elvish Aberration). A *dynamic*
+     * amount — Elvish Archdruid's "Add {G} for each Elf you control", Gaea's Cradle, Marwyn — is
+     * evaluated against the current board, so this is what the tap would actually yield right now.
+     */
     val manaAmount: Int = 1,
     /** Extra mana produced per tap from auras like Elvish Guidance */
     val bonusManaPerTap: Int = 0,
@@ -1044,6 +1048,9 @@ class ManaSolver(
             // Collect all tap-based mana abilities to build a combined ManaSource
             val combinedColors = mutableSetOf<Color>()
             var producesColorless = false
+            // Gross mana per tap, taken from the ability that produces the most. Dynamic amounts
+            // are evaluated against the current board (see evaluateManaAmount); the floor of 1
+            // covers the intrinsic basic-land ability seeded below, which carries no amount.
             var maxManaAmount = 1
             // Extra mana produced by the SAME tap when one mana ability adds more than one mana of
             // different kinds via a CompositeEffect — Gruul Turf's "{T}: Add {R}{G}" and Mossfire
@@ -1248,11 +1255,11 @@ class ManaSolver(
                                     seenPrimary = true // the primary leaf; handled by the `when` below
                                 } else {
                                     extraBonusColor = extraBonusColor ?: leaf.color
-                                    extraBonusAmount += (leaf.amount as? DynamicAmount.Fixed)?.amount ?: 1
+                                    extraBonusAmount += evaluateManaAmount(leaf.amount, state, entityId, playerId)
                                 }
                             }
                             is AddColorlessManaEffect ->
-                                extraColorlessBonus += (leaf.amount as? DynamicAmount.Fixed)?.amount ?: 1
+                                extraColorlessBonus += evaluateManaAmount(leaf.amount, state, entityId, playerId)
                             else -> {}
                         }
                     }
@@ -1261,13 +1268,13 @@ class ManaSolver(
                     is AddManaEffect -> {
                         combinedColors.add(effect.color)
                         effectColors.add(effect.color)
-                        val manaAmount = (effect.amount as? DynamicAmount.Fixed)?.amount ?: 1
+                        val manaAmount = evaluateManaAmount(effect.amount, state, entityId, playerId)
                         maxManaAmount = maxOf(maxManaAmount, manaAmount)
                         effect.restriction
                     }
                     is AddColorlessManaEffect -> {
                         producesColorless = true
-                        val manaAmount = (effect.amount as? DynamicAmount.Fixed)?.amount ?: 1
+                        val manaAmount = evaluateManaAmount(effect.amount, state, entityId, playerId)
                         maxManaAmount = maxOf(maxManaAmount, manaAmount)
                         effect.restriction
                     }
@@ -1307,7 +1314,7 @@ class ManaSolver(
                     is AddDynamicManaEffect -> {
                         combinedColors.addAll(effect.allowedColors)
                         effectColors.addAll(effect.allowedColors)
-                        val manaAmount = (effect.amountSource as? DynamicAmount.Fixed)?.amount ?: 1
+                        val manaAmount = evaluateManaAmount(effect.amountSource, state, entityId, playerId)
                         maxManaAmount = maxOf(maxManaAmount, manaAmount)
                         effect.restriction
                     }
