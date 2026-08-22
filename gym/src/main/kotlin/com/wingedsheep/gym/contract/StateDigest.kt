@@ -1,6 +1,11 @@
 package com.wingedsheep.gym.contract
 
 import java.security.MessageDigest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Deterministic hash of a [TrainingObservation]'s stable fields, suitable for
@@ -74,14 +79,63 @@ object StateDigest {
         // Stack — order is meaningful (bottom → top).
         obs.stack.forEachIndexed { i, s ->
             sb.append("S[").append(i).append("]=").append(s.entityId.value)
-                .append(':').append(s.kind.name).append('|')
+                .append(":ctl=").append(s.controllerId?.value)
+                .append(":name=").append(s.name)
+                .append(":kind=").append(s.kind.name)
+                .append(":oracle=").append(s.oracleText)
+                .append(":targets=")
+            s.targets.forEach { sb.append(it.value).append(',') }
+            sb.append('|')
         }
 
-        // Pending decision — identity + kind only; per-option IDs are not
-        // part of game identity.
+        // Pending-decision IDs are ephemeral routing nonces and intentionally excluded. Everything
+        // visible about the choice is semantic information and must distinguish the digest.
         obs.pendingDecision?.let { d ->
-            sb.append("D=").append(d.decisionId).append(':').append(d.kind.name)
-                .append(':').append(d.requiresStructuredResponse).append('|')
+            sb.append("D=").append(d.kind.name)
+                .append(":player=").append(d.playerId.value)
+                .append(":prompt=").append(d.prompt)
+                .append(":source=").append(d.sourceEntityId?.value)
+                .append(":sourceName=").append(d.sourceName)
+                .append(":trigger=").append(d.triggeringEntityId?.value)
+                .append(":effect=").append(d.effectHint)
+                .append(":structured=").append(d.requiresStructuredResponse)
+                .append(":min=").append(d.shape.minSelections)
+                .append(":max=").append(d.shape.maxSelections)
+                .append(":nmin=").append(d.shape.numericMin)
+                .append(":nmax=").append(d.shape.numericMax)
+                .append(":colors=").append(d.shape.availableColors.map { it.name }.sorted().joinToString(","))
+                .append(":total=").append(d.shape.totalToDistribute)
+                .append(":budget=").append(d.shape.budget)
+                .append(":choices=")
+            d.choiceSpec?.let { spec ->
+                val encoded = Json.encodeToJsonElement(DecisionChoiceSpec.serializer(), spec)
+                appendCanonicalJson(sb, encoded)
+            }
+            sb.append('|')
+        }
+    }
+
+    /** Sort object/map keys while preserving array order, which is semantic for choices. */
+    private fun appendCanonicalJson(sb: StringBuilder, value: JsonElement) {
+        when (value) {
+            is JsonObject -> {
+                sb.append('{')
+                value.entries.sortedBy { it.key }.forEachIndexed { index, (key, element) ->
+                    if (index > 0) sb.append(',')
+                    sb.append(JsonPrimitive(key)).append(':')
+                    appendCanonicalJson(sb, element)
+                }
+                sb.append('}')
+            }
+            is JsonArray -> {
+                sb.append('[')
+                value.forEachIndexed { index, element ->
+                    if (index > 0) sb.append(',')
+                    appendCanonicalJson(sb, element)
+                }
+                sb.append(']')
+            }
+            else -> sb.append(value)
         }
     }
 

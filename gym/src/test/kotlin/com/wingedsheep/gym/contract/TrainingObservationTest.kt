@@ -1,13 +1,21 @@
 package com.wingedsheep.gym.contract
 
 import com.wingedsheep.engine.core.GameConfig
+import com.wingedsheep.engine.core.ChooseNumberDecision
+import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.PassPriority
 import com.wingedsheep.engine.core.PlayerConfig
+import com.wingedsheep.engine.core.ReorderLibraryDecision
+import com.wingedsheep.engine.core.SearchCardInfo
+import com.wingedsheep.engine.core.SearchLibraryDecision
+import com.wingedsheep.engine.core.YesNoDecision
 import com.wingedsheep.gym.GameEnvironment
 import com.wingedsheep.engine.registry.CardRegistry
+import com.wingedsheep.engine.state.ZoneKey
 import com.wingedsheep.mtg.sets.definitions.por.PortalSet
 import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.model.Deck
+import com.wingedsheep.sdk.model.EntityId
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -150,5 +158,102 @@ class TrainingObservationTest : FunSpec({
         env.step(pass.action)
         val c = ObservationBuilder().build(env.state, me, env.legalActions()).observation
         c.stateDigest shouldNotBe a.stateDigest
+    }
+
+    test("permuting hidden opponent cards leaves the unauthorized observation byte-identical") {
+        val env = newEnv()
+        val me = env.playerIds[0]
+        val opponent = env.playerIds[1]
+        val handKey = ZoneKey(opponent, Zone.HAND)
+        val libraryKey = ZoneKey(opponent, Zone.LIBRARY)
+        val permuted = env.state.copy(
+            zones = env.state.zones + mapOf(
+                handKey to env.state.getZone(handKey).reversed(),
+                libraryKey to env.state.getZone(libraryKey).reversed(),
+            )
+        )
+
+        val originalView = ObservationBuilder().build(env.state, me, env.legalActions()).observation as TrainingObservation
+        val permutedView = ObservationBuilder().build(permuted, me, env.legalActions()).observation as TrainingObservation
+        json.encodeToString(TrainingObservation.serializer(), originalView) shouldBe
+            json.encodeToString(TrainingObservation.serializer(), permutedView)
+    }
+
+    test("private search and reorder candidates are visible only to their chooser") {
+        val env = newEnv()
+        val observer = env.playerIds[0]
+        val chooser = env.playerIds[1]
+        val candidates = env.state.getLibrary(chooser).take(2)
+        val info = candidates.associateWith { id ->
+            val card = env.state.getEntity(id)!!
+                .get<com.wingedsheep.engine.state.components.identity.CardComponent>()!!
+            SearchCardInfo(card.name, card.manaCost.toString(), card.typeLine.toString())
+        }
+        val context = DecisionContext(sourceId = EntityId("public-source"), sourceName = "Search")
+        val decisions = listOf(
+            SearchLibraryDecision(
+                "search-id", chooser, "Search", context, candidates, 0, 1, info, "a card"
+            ),
+            ReorderLibraryDecision(
+                "reorder-id", chooser, "Reorder", context, candidates, info
+            ),
+        )
+
+        for (decision in decisions) {
+            val paused = env.state.copy(pendingDecision = decision)
+            val unauthorized = ObservationBuilder().build(paused, observer, emptyList()).observation
+            val unauthorizedPending = unauthorized.pendingDecision.shouldNotBeNull()
+            unauthorizedPending.canRespond.shouldBeFalse()
+            unauthorizedPending.choiceSpec shouldBe null
+            unauthorized.legalActions shouldBe emptyList()
+
+            val authorized = ObservationBuilder().build(paused, chooser, emptyList()).observation
+            val authorizedPending = authorized.pendingDecision.shouldNotBeNull()
+            authorizedPending.canRespond.shouldBeTrue()
+            authorizedPending.choiceSpec.shouldNotBeNull()
+        }
+    }
+
+    test("semantic digest ignores routing nonces but includes decision constraints") {
+        val env = newEnv()
+        val me = env.playerIds[0]
+        val context = DecisionContext(sourceId = EntityId("source"), sourceName = "Prompt")
+        val yesA = env.state.copy(pendingDecision = YesNoDecision("nonce-a", me, "Choose", context))
+        val yesB = env.state.copy(pendingDecision = YesNoDecision("nonce-b", me, "Choose", context))
+        val numberA = env.state.copy(pendingDecision = ChooseNumberDecision("n-a", me, "Choose", context, 0, 2))
+        val numberB = env.state.copy(pendingDecision = ChooseNumberDecision("n-b", me, "Choose", context, 0, 3))
+
+        ObservationBuilder().build(yesA, me, emptyList()).observation.stateDigest shouldBe
+            ObservationBuilder().build(yesB, me, emptyList()).observation.stateDigest
+        ObservationBuilder().build(numberA, me, emptyList()).observation.stateDigest shouldNotBe
+            ObservationBuilder().build(numberB, me, emptyList()).observation.stateDigest
+    }
+
+    test("semantic digest includes every visible stack field and canonicalizes map keys") {
+        val env = newEnv()
+        val me = env.playerIds[0]
+        val base = ObservationBuilder().build(env.state, me, env.legalActions()).observation as TrainingObservation
+        val stackA = StackItemView(
+            EntityId("stack"), me, "Spell", StackItemKind.SPELL, "Deal damage", listOf(EntityId("a"))
+        )
+        val stackB = stackA.copy(targets = listOf(EntityId("b")))
+        StateDigest.compute(base.copy(stack = listOf(stackA))) shouldNotBe
+            StateDigest.compute(base.copy(stack = listOf(stackB)))
+
+        val a = EntityId("a")
+        val b = EntityId("b")
+        val pendingA = PendingDecisionView(
+            "routing-a",
+            PendingDecisionKind.DISTRIBUTE,
+            me,
+            "Divide",
+            choiceSpec = DistributionChoiceSpec(2, listOf(a, b), 0, linkedMapOf(a to 1, b to 2), false),
+        )
+        val pendingB = pendingA.copy(
+            decisionId = "routing-b",
+            choiceSpec = DistributionChoiceSpec(2, listOf(a, b), 0, linkedMapOf(b to 2, a to 1), false),
+        )
+        StateDigest.compute(base.copy(pendingDecision = pendingA)) shouldBe
+            StateDigest.compute(base.copy(pendingDecision = pendingB))
     }
 })

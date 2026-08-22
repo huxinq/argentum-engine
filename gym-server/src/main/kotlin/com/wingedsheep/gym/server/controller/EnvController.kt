@@ -9,6 +9,7 @@ import com.wingedsheep.gym.service.MultiEnvService
 import com.wingedsheep.gym.service.SnapshotHandle
 import com.wingedsheep.gym.service.StepRequest
 import com.wingedsheep.gym.server.dto.CreateEnvResponse
+import com.wingedsheep.gym.server.dto.ResetEnvResponse
 import com.wingedsheep.gym.server.dto.DisposeBody
 import com.wingedsheep.gym.server.dto.RestoreBody
 import com.wingedsheep.gym.server.dto.StepBatchItem
@@ -169,7 +170,7 @@ class EnvController(
     @PostMapping
     fun create(@RequestBody config: EnvConfig): CreateEnvResponse {
         val created = multiEnvService.create(config)
-        return CreateEnvResponse(created.envId, created.observation.observation)
+        return CreateEnvResponse(created.envId, created.observation.observation, created.effectiveSeed)
     }
 
     @Operation(
@@ -194,7 +195,7 @@ class EnvController(
     @PostMapping("/deckbuild")
     fun createDeckbuild(@RequestBody config: DeckbuildConfig): CreateEnvResponse {
         val created = multiEnvService.createDeckbuild(config)
-        return CreateEnvResponse(created.envId, created.observation.observation)
+        return CreateEnvResponse(created.envId, created.observation.observation, created.effectiveSeed)
     }
 
     @Operation(summary = "List live env IDs")
@@ -211,6 +212,23 @@ class EnvController(
         @RequestBody config: EnvConfig
     ): Observation =
         multiEnvService.reset(EnvId(id), config).observation
+
+    @Operation(
+        summary = "Reset an existing env and return replay metadata",
+        description = "Additive reset form for experiment orchestration. Keep `effectiveSeed` out of policy inputs because it can reveal shuffled hidden zones."
+    )
+    @PostMapping("/{id}/reset-with-metadata")
+    fun resetWithMetadata(
+        @PathVariable id: String,
+        @RequestBody config: EnvConfig,
+    ): ResetEnvResponse {
+        val reset = multiEnvService.resetWithMetadata(EnvId(id), config)
+        return ResetEnvResponse(
+            envId = reset.envId,
+            observation = reset.observation.observation,
+            effectiveSeed = requireNotNull(reset.effectiveSeed),
+        )
+    }
 
     @Operation(
         summary = "Dispose a batch of envs",

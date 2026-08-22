@@ -33,6 +33,7 @@ Default port **8081** so it coexists with the game server on 8080.
 | `DELETE /envs` | `dispose` | `{ "envIds": [...] }` |
 | `GET /envs/{id}` | `observe` | `?revealAll=true` optional |
 | `POST /envs/{id}/reset` | `reset` | `EnvConfig` JSON |
+| `POST /envs/{id}/reset-with-metadata` | `resetWithMetadata` | `EnvConfig` JSON; returns `effectiveSeed` |
 | `POST /envs/{id}/step` | `step` | `{ "actionId": 3 }`, plus optional `params` — `attackers` / `blockers` / `targets` / `xValue` (see below) |
 | `POST /envs/step-batch` | `stepBatch` (parallel) | `[ { envId, actionId, params? }, ...]` |
 | `POST /envs/{id}/decision` | `submitDecision` | `DecisionResponse` JSON |

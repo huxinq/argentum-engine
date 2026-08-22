@@ -52,9 +52,11 @@ curl -s -X POST localhost:8081/envs -H 'Content-Type: application/json' -d '{
         "Mountain": 14, "Raging Goblin": 4, "Some New Set Card": 4, "Another New Card": 4
     } } }
   ],
+  "seed": 8675309,
   "skipMulligans": true,
   "startingPlayerIndex": 0,
-  "revealAll": true
+  "perspectiveMode": "ACTING_PLAYER",
+  "revealAll": false
 }'
 ```
 
@@ -63,13 +65,16 @@ Key config fields:
 - **`deck`** — `{"type":"Explicit","cards":{"Name":count}}` (recommended for testing), or
   `{"type":"RandomSealed","setCode":"BLB","boosterCount":8}` (needs the set's basic-land variants
   registered).
-- **`revealAll: true`** — set this for self-play. Normally observations hide the opponent's hand and
-  libraries; since one agent is playing *both* seats, you want to see everything. (Never use it for
-  real RL self-play — it leaks information.)
+- **`perspectiveMode: "ACTING_PLAYER"`** — the default and the safe self-play mode. Each transition
+  returns the pending decision/priority player's view without showing the other seat's hand.
+- **`revealAll: false`** — keep this false for any policy. `true` is an oracle/debug view and leaks
+  both hands and libraries.
 - **`skipMulligans: true`** — skip the mulligan back-and-forth.
 - `startingPlayerIndex` — pin it for reproducibility (null = random).
+- `seed` — pin all engine randomness. If omitted, save the returned `effectiveSeed`.
 
-The response is `{ "envId": "...", "observation": { ... } }`. Keep the `envId`.
+The response is `{ "envId": "...", "effectiveSeed": 8675309, "observation": { ... } }`. Keep the
+seed with the transcript, but never feed it into the policy.
 
 ---
 
@@ -144,7 +149,8 @@ complex decisions go to `POST /envs/{id}/decision` (section 5).
 
 The fields that matter most for spotting bugs:
 
-- `agentToAct` — whose decision this is. (With `revealAll` you make moves for both.)
+- `agentToAct` — whose decision this is. In acting-player mode it also selects the observation's
+  private-information perspective.
 - `legalActions[]` — each has `actionId`, `kind` (the engine's action type verbatim: `CastSpell`,
   `PlayLand`, `ActivateAbility`, `DeclareAttackers`, `DeclareBlockers`, `PassPriority`, `DECISION`,
   …), `description`, `affordable`, `manaCost`, target counts, and the combat candidates
@@ -224,7 +230,11 @@ empty. Post a typed `DecisionResponse` to `POST /envs/{id}/decision`. The JSON d
 
 Every response also needs `decisionId` (copy it from `pendingDecision.decisionId`). The
 `pendingDecision.shape` field carries the constraints (`minSelections`, `maxSelections`,
-`numericMin/Max`, `availableColors`, `totalToDistribute`, `budget`).
+`numericMin/Max`, `availableColors`, `totalToDistribute`, `budget`) for older clients.
+`pendingDecision.choiceSpec` is the authoritative typed contract: it contains every candidate,
+card preview, selection limit, ordering rule, budget, default, and validation constraint needed to
+construct the response. A fixed-perspective observer sees `canRespond: false`, no legal actions,
+and no `choiceSpec` while the other seat chooses.
 
 ```bash
 # Choose targets for a pending ChooseTargets decision (requirement 0 -> one creature)
@@ -247,8 +257,10 @@ Source of truth for these shapes:
   abort if exceeded — a runaway count is itself a finding (probably a trigger loop).
 - **Detect stalls** via `stateDigest`: if a full round-trip of passes by both players doesn't change
   it and the game isn't over, you're looping.
-- **Reproducibility:** pin `startingPlayerIndex` and keep the exact decklist. The engine's own
-  randomness (draws) isn't seedable here, so capture the full action transcript to replay a bug.
+- **Reproducibility:** pin `seed` and `startingPlayerIndex`, keep the exact decklist, and capture the
+  full action/decision transcript. If create/reset was unseeded, replay with the returned
+  `effectiveSeed`. Decision IDs are routing nonces; replay rebinds the recorded choice payload to
+  the newly raised decision ID and compares semantic `stateDigest` values.
 - **Snapshot/fork** before a risky line: `POST /envs/{id}/snapshot` → `{handle}`, then
   `POST /envs/{id}/restore {"handle": …}` to retry a different decision from the same point. Useful
   for testing both branches of a modal/choice without replaying the whole game.

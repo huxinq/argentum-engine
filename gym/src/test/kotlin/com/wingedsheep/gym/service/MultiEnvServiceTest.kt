@@ -51,14 +51,20 @@ class MultiEnvServiceTest : FunSpec({
 
     fun simpleDeck() = DeckSpec.Explicit(mapOf("Mountain" to 17, "Raging Goblin" to 3))
 
-    fun twoPlayerConfig(perspective: Int = 0) = EnvConfig(
+    fun twoPlayerConfig(
+        perspective: Int = 0,
+        perspectiveMode: ObservationPerspective = ObservationPerspective.ACTING_PLAYER,
+        seed: Long? = null,
+    ) = EnvConfig(
         players = listOf(
             PlayerSpec(name = "Alice", deck = simpleDeck()),
             PlayerSpec(name = "Bob", deck = simpleDeck())
         ),
         skipMulligans = true,
         startingPlayerIndex = 0,
-        perspectivePlayerIndex = perspective
+        perspectivePlayerIndex = perspective,
+        perspectiveMode = perspectiveMode,
+        seed = seed,
     )
 
     // =========================================================================
@@ -101,6 +107,24 @@ class MultiEnvServiceTest : FunSpec({
         after.observation.legalActions.shouldNotBeEmpty()
         // EnvId is preserved across reset.
         svc.listEnvs() shouldContainAll setOf(envId)
+    }
+
+    test("create and metadata reset return effective seeds that reproduce observations") {
+        val svc = MultiEnvService(registry())
+        val unseeded = svc.create(twoPlayerConfig())
+        unseeded.effectiveSeed.shouldNotBeNull()
+
+        val replay = svc.create(twoPlayerConfig(seed = unseeded.effectiveSeed))
+        replay.effectiveSeed shouldBe unseeded.effectiveSeed
+        replay.observation.observation.stateDigest shouldBe unseeded.observation.observation.stateDigest
+
+        val reset = svc.resetWithMetadata(unseeded.envId, twoPlayerConfig())
+        reset.effectiveSeed.shouldNotBeNull()
+        val resetReplay = svc.resetWithMetadata(
+            unseeded.envId,
+            twoPlayerConfig(seed = reset.effectiveSeed),
+        )
+        resetReplay.observation.observation.stateDigest shouldBe reset.observation.observation.stateDigest
     }
 
     test("dispose removes envs and makes them unknown") {
@@ -343,6 +367,32 @@ class MultiEnvServiceTest : FunSpec({
         }
         openedHand.hidden.shouldBeFalse()
         openedHand.cards.size shouldBe openedHand.size
+    }
+
+    test("acting-player perspective follows priority while fixed perspective cannot answer for another player") {
+        val svc = MultiEnvService(registry())
+        val acting = svc.create(twoPlayerConfig(perspective = 1))
+        val opening = acting.observation.observation.asGame
+        opening.perspectivePlayerId shouldBe opening.agentToAct
+
+        val pass = opening.legalActions.first { it.kind.contains("Pass", ignoreCase = true) }
+        val afterPass = svc.step(StepRequest(acting.envId, pass.actionId)).observation.asGame
+        afterPass.perspectivePlayerId shouldBe afterPass.agentToAct
+        afterPass.perspectivePlayerId shouldNotBe opening.perspectivePlayerId
+
+        val fixed = svc.create(
+            twoPlayerConfig(
+                perspective = 0,
+                perspectiveMode = ObservationPerspective.FIXED,
+                seed = 42L,
+            )
+        )
+        val fixedOpening = fixed.observation.observation.asGame
+        val fixedPass = fixedOpening.legalActions.first { it.kind.contains("Pass", ignoreCase = true) }
+        val fixedAfterPass = svc.step(StepRequest(fixed.envId, fixedPass.actionId)).observation.asGame
+        fixedAfterPass.perspectivePlayerId shouldBe fixedOpening.perspectivePlayerId
+        fixedAfterPass.agentToAct shouldNotBe fixedAfterPass.perspectivePlayerId
+        fixedAfterPass.legalActions shouldBe emptyList()
     }
 
     // =========================================================================

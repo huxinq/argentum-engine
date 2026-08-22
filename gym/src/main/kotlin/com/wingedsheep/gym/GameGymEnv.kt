@@ -11,6 +11,7 @@ import com.wingedsheep.gym.contract.ObservationResult
 import com.wingedsheep.gym.contract.ResolvedAction
 import com.wingedsheep.gym.service.SnapshotCodec
 import com.wingedsheep.gym.service.SnapshotHandle
+import com.wingedsheep.gym.service.ObservationPerspective
 
 /**
  * [GymEnv] adapter over a [GameEnvironment] — a game of Magic.
@@ -23,13 +24,16 @@ import com.wingedsheep.gym.service.SnapshotHandle
  */
 class GameGymEnv(
     val environment: GameEnvironment,
-    private val perspectivePlayerIndex: Int,
-    private val defaultRevealAll: Boolean,
-    private val observationBuilder: ObservationBuilder = ObservationBuilder()
+    private var perspectivePlayerIndex: Int,
+    private var defaultRevealAll: Boolean,
+    private val observationBuilder: ObservationBuilder = ObservationBuilder(),
+    private var perspectiveMode: ObservationPerspective = ObservationPerspective.ACTING_PLAYER,
 ) : GymEnv {
 
     @Volatile
     private var registry: ActionRegistry = ActionRegistry.EMPTY
+
+    private var lastPerspectivePlayerId: com.wingedsheep.sdk.model.EntityId? = null
 
     override val isTerminal: Boolean get() = environment.state.gameOver
 
@@ -42,13 +46,27 @@ class GameGymEnv(
     }
 
     override fun fork(): GymEnv =
-        GameGymEnv(environment.fork(), perspectivePlayerIndex, defaultRevealAll, observationBuilder)
-            .also { it.build(defaultRevealAll) }
+        GameGymEnv(
+            environment.fork(), perspectivePlayerIndex, defaultRevealAll, observationBuilder,
+            perspectiveMode,
+        ).also {
+            it.lastPerspectivePlayerId = lastPerspectivePlayerId
+            it.build(defaultRevealAll)
+        }
 
     // --- game-only operations (used by MultiEnvService via cast) -------------
 
     /** Re-initialise the underlying game in place. */
-    fun reset(gameConfig: GameConfig): ObservationResult {
+    fun reset(
+        gameConfig: GameConfig,
+        perspectiveMode: ObservationPerspective = this.perspectiveMode,
+        perspectivePlayerIndex: Int = this.perspectivePlayerIndex,
+        revealAll: Boolean = this.defaultRevealAll,
+    ): ObservationResult {
+        this.perspectiveMode = perspectiveMode
+        this.perspectivePlayerIndex = perspectivePlayerIndex
+        this.defaultRevealAll = revealAll
+        this.lastPerspectivePlayerId = null
         environment.reset(gameConfig)
         return build(defaultRevealAll)
     }
@@ -76,8 +94,15 @@ class GameGymEnv(
     // --- internals -----------------------------------------------------------
 
     private fun build(revealAll: Boolean): ObservationResult {
-        val perspective = environment.playerIds.getOrNull(perspectivePlayerIndex)
+        val fixedPerspective = environment.playerIds.getOrNull(perspectivePlayerIndex)
             ?: throw IllegalStateException("Env has no player at index $perspectivePlayerIndex")
+        val perspective = when (perspectiveMode) {
+            ObservationPerspective.FIXED -> fixedPerspective
+            ObservationPerspective.ACTING_PLAYER -> environment.agentToAct
+                ?: lastPerspectivePlayerId
+                ?: fixedPerspective
+        }
+        lastPerspectivePlayerId = perspective
         val result = observationBuilder.build(
             environment.state, perspective, environment.legalActions(), revealAll
         )

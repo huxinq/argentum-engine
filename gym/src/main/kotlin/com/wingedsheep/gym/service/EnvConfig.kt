@@ -34,8 +34,9 @@ data class EnvConfig(
     val startingPlayerIndex: Int? = null,
 
     /**
-     * Which player's information-set the default [com.wingedsheep.gym.contract.TrainingObservation]
-     * represents. Callers can still override per-request when observing.
+     * Player used by [ObservationPerspective.FIXED], and as the fallback when no player currently
+     * acts (for example before initialisation). Acting-player mode retains its most recent actor at
+     * terminal states before falling back here.
      */
     val perspectivePlayerIndex: Int = 0,
 
@@ -43,7 +44,13 @@ data class EnvConfig(
      * If `true`, opponent hand and libraries are revealed — debug only,
      * must never be enabled in production self-play.
      */
-    val revealAll: Boolean = false
+    val revealAll: Boolean = false,
+
+    /** Deterministic game seed. Null asks the engine to choose fresh entropy. */
+    val seed: Long? = null,
+
+    /** How the observation perspective is selected after each transition. */
+    val perspectiveMode: ObservationPerspective = ObservationPerspective.ACTING_PLAYER,
 ) {
     init {
         require(players.size >= 2) { "Need at least 2 players" }
@@ -51,6 +58,15 @@ data class EnvConfig(
             "perspectivePlayerIndex=$perspectivePlayerIndex out of range for ${players.size} players"
         }
     }
+}
+
+@Serializable
+enum class ObservationPerspective {
+    /** Observe the player with the pending decision or priority. Suitable for masked self-play. */
+    ACTING_PLAYER,
+
+    /** Always observe [EnvConfig.perspectivePlayerIndex]. Suitable for one-seat evaluation. */
+    FIXED,
 }
 
 /**

@@ -57,10 +57,15 @@ class MultiEnvService(
         val gameConfig = config.toGameConfig()
         val env = GameEnvironment.create(cardRegistry)
         env.reset(gameConfig)
-        val gymEnv = GameGymEnv(env, config.perspectivePlayerIndex, config.revealAll)
+        val gymEnv = GameGymEnv(
+            environment = env,
+            perspectivePlayerIndex = config.perspectivePlayerIndex,
+            defaultRevealAll = config.revealAll,
+            perspectiveMode = config.perspectiveMode,
+        )
         val envId = EnvId.generate()
         envs[envId] = gymEnv
-        return CreatedEnv(envId, gymEnv.observe())
+        return CreatedEnv(envId, gymEnv.observe(), env.state.initialSeed)
     }
 
     /**
@@ -76,12 +81,24 @@ class MultiEnvService(
         )
         val envId = EnvId.generate()
         envs[envId] = env
-        return CreatedEnv(envId, env.observe())
+        return CreatedEnv(envId, env.observe(), effectiveSeed = null)
     }
 
     /** Reset an existing game env while keeping the same [EnvId]. */
     fun reset(envId: EnvId, config: EnvConfig): ObservationResult =
-        requireGameEnv(envId).reset(config.toGameConfig())
+        resetWithMetadata(envId, config).observation
+
+    /** Reset while returning privileged replay metadata separately from the policy observation. */
+    fun resetWithMetadata(envId: EnvId, config: EnvConfig): ResetEnv {
+        val env = requireGameEnv(envId)
+        val observation = env.reset(
+            config.toGameConfig(),
+            config.perspectiveMode,
+            config.perspectivePlayerIndex,
+            config.revealAll,
+        )
+        return ResetEnv(envId, observation, env.environment.state.initialSeed)
+    }
 
     /** Drop envs from the registry. Idempotent. */
     fun dispose(envIds: Collection<EnvId>) {
@@ -157,7 +174,8 @@ class MultiEnvService(
         startingHandSize = startingHandSize,
         skipMulligans = skipMulligans,
         useHandSmoother = useHandSmoother,
-        startingPlayerIndex = startingPlayerIndex
+        startingPlayerIndex = startingPlayerIndex,
+        seed = seed,
     )
 
     private fun requireEnv(envId: EnvId): GymEnv =
@@ -171,5 +189,13 @@ class MultiEnvService(
 /** Result of [MultiEnvService.create] — the new env's ID plus its opening observation. */
 data class CreatedEnv(
     val envId: EnvId,
-    val observation: ObservationResult
+    val observation: ObservationResult,
+    val effectiveSeed: Long?,
+)
+
+/** Result of a metadata-returning game reset. */
+data class ResetEnv(
+    val envId: EnvId,
+    val observation: ObservationResult,
+    val effectiveSeed: Long?,
 )

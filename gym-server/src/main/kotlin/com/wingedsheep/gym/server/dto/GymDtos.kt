@@ -15,7 +15,18 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class CreateEnvResponse(
     val envId: EnvId,
-    val observation: Observation
+    val observation: Observation,
+    /** Privileged replay metadata. Never pass this value into a policy observation. */
+    val effectiveSeed: Long? = null,
+)
+
+/** Metadata-returning reset response; the legacy reset endpoint still returns the observation. */
+@Serializable
+data class ResetEnvResponse(
+    val envId: EnvId,
+    val observation: Observation,
+    /** Privileged replay metadata. Never pass this value into a policy observation. */
+    val effectiveSeed: Long,
 )
 
 /**

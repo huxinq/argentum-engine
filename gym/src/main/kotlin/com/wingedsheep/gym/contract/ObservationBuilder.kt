@@ -45,6 +45,11 @@ import com.wingedsheep.engine.state.components.identity.LifeTotalComponent
 import com.wingedsheep.engine.state.components.identity.PlayerComponent
 import com.wingedsheep.engine.state.components.player.ManaPoolComponent
 import com.wingedsheep.engine.state.components.player.PlayerLostComponent
+import com.wingedsheep.engine.state.components.stack.ActivatedAbilityOnStackComponent
+import com.wingedsheep.engine.state.components.stack.ChosenTarget
+import com.wingedsheep.engine.state.components.stack.SpellOnStackComponent
+import com.wingedsheep.engine.state.components.stack.TargetsComponent
+import com.wingedsheep.engine.state.components.stack.TriggeredAbilityOnStackComponent
 import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.model.EntityId
 
@@ -83,8 +88,11 @@ class ObservationBuilder(
 
         val stack = state.stack.map { entityId -> buildStackItem(state, entityId) }
 
+        val agentToAct = state.pendingDecision?.playerId ?: state.priorityPlayerId
+        val canRespond = revealAll || agentToAct == perspectivePlayerId
+
         val pendingDecisionAndRegistry = state.pendingDecision
-            ?.let { buildPendingDecision(it) }
+            ?.let { buildPendingDecision(it, canRespond) }
         val pendingDecisionView = pendingDecisionAndRegistry?.first
         val decisionRegistry = pendingDecisionAndRegistry?.second ?: ActionRegistry.EMPTY
 
@@ -92,7 +100,10 @@ class ObservationBuilder(
         // engine's `legalActions` is empty — we use the decision options instead.
         val legalActionViews: List<LegalActionView>
         val actionRegistry: ActionRegistry
-        if (state.pendingDecision != null) {
+        if (!canRespond) {
+            legalActionViews = emptyList()
+            actionRegistry = ActionRegistry.EMPTY
+        } else if (state.pendingDecision != null) {
             val responses = decisionRegistry.decisionResponses.map { it.second }
             legalActionViews = buildDecisionOptionViews(state.pendingDecision!!, responses)
             actionRegistry = decisionRegistry
@@ -104,7 +115,7 @@ class ObservationBuilder(
         val obs = TrainingObservation(
             schemaHash = schemaHash,
             perspectivePlayerId = perspectivePlayerId,
-            agentToAct = state.pendingDecision?.playerId ?: state.priorityPlayerId,
+            agentToAct = agentToAct,
             turnNumber = state.turnNumber,
             phase = state.phase,
             step = state.step,
@@ -280,20 +291,30 @@ class ObservationBuilder(
     private fun buildStackItem(state: GameState, entityId: EntityId): StackItemView {
         val container = state.getEntity(entityId)
         val card = container?.get<CardComponent>()
-        // Stack kind inference — fall back to OTHER. A more precise classification
-        // can be added once the stack carries explicit metadata.
+        val spell = container?.get<SpellOnStackComponent>()
+        val triggered = container?.get<TriggeredAbilityOnStackComponent>()
+        val activated = container?.get<ActivatedAbilityOnStackComponent>()
         val kind = when {
-            card?.spellEffect != null -> StackItemKind.SPELL
-            card != null -> StackItemKind.SPELL
+            spell != null -> StackItemKind.SPELL
+            triggered != null -> StackItemKind.TRIGGERED_ABILITY
+            activated != null -> StackItemKind.ACTIVATED_ABILITY
             else -> StackItemKind.OTHER
+        }
+        val targets = container?.get<TargetsComponent>()?.targets.orEmpty().map { target ->
+            when (target) {
+                is ChosenTarget.Player -> target.playerId
+                is ChosenTarget.Permanent -> target.entityId
+                is ChosenTarget.Card -> target.cardId
+                is ChosenTarget.Spell -> target.spellEntityId
+            }
         }
         return StackItemView(
             entityId = entityId,
-            controllerId = state.projectedState.getController(entityId),
-            name = card?.name ?: "",
+            controllerId = spell?.casterId ?: triggered?.controllerId ?: activated?.controllerId,
+            name = card?.name ?: triggered?.sourceName ?: activated?.sourceName ?: "",
             kind = kind,
-            oracleText = card?.oracleText ?: "",
-            targets = emptyList()
+            oracleText = card?.oracleText ?: triggered?.description ?: "",
+            targets = targets,
         )
     }
 
@@ -307,7 +328,7 @@ class ObservationBuilder(
             kind = la.actionType,
             description = la.description,
             affordable = la.affordable,
-            sourceEntityId = null,
+            sourceEntityId = la.action.sourceEntityIdOrNull(),
             targetEntityIds = la.validTargets ?: emptyList(),
             manaCost = la.manaCostString,
             hasXCost = la.hasXCost,
@@ -345,12 +366,12 @@ class ObservationBuilder(
      * submits a `DecisionResponse` via a dedicated endpoint (Phase 3).
      */
     private fun buildPendingDecision(
-        decision: PendingDecision
+        decision: PendingDecision,
+        canRespond: Boolean,
     ): Pair<PendingDecisionView, ActionRegistry> {
-        val ctx = decision.context
         val baseShape = DecisionShape()
 
-        return when (decision) {
+        val built = when (decision) {
             is YesNoDecision -> {
                 val responses = listOf(
                     YesNoResponse(decision.id, true),
@@ -366,7 +387,7 @@ class ObservationBuilder(
                     BatchYesNoResponse(decision.id, choice = true, applyToAll = true),
                     BatchYesNoResponse(decision.id, choice = false, applyToAll = true)
                 )
-                val view = baseView(decision, PendingDecisionKind.YES_NO, baseShape, structured = false)
+                val view = baseView(decision, PendingDecisionKind.BATCH_YES_NO, baseShape, structured = false)
                 view to ActionRegistry.ofDecisionResponses(responses)
             }
             is ChooseNumberDecision -> {
@@ -481,6 +502,11 @@ class ObservationBuilder(
                 baseView(decision, PendingDecisionKind.SELECT_MANA_SOURCES, baseShape, structured = true) to
                     ActionRegistry.EMPTY
         }
+        return if (canRespond) {
+            built
+        } else {
+            built.first.copy(canRespond = false, choiceSpec = null) to ActionRegistry.EMPTY
+        }
     }
 
     private fun baseView(
@@ -499,9 +525,120 @@ class ObservationBuilder(
             sourceName = ctx.sourceName,
             triggeringEntityId = ctx.triggeringEntityId,
             effectHint = ctx.effectHint,
+            phase = ctx.phase,
+            subjectEntityId = ctx.subjectEntityId,
+            canRespond = true,
             requiresStructuredResponse = structured,
-            shape = shape
+            shape = shape,
+            choiceSpec = buildChoiceSpec(decision),
         )
+    }
+
+    private fun buildChoiceSpec(decision: PendingDecision): DecisionChoiceSpec = when (decision) {
+        is ChooseTargetsDecision -> TargetsChoiceSpec(
+            requirements = decision.targetRequirements,
+            legalTargets = decision.legalTargets,
+            canCancel = decision.canCancel,
+        )
+        is SelectCardsDecision -> CardsChoiceSpec(
+            options = decision.options,
+            minSelections = decision.minSelections,
+            maxSelections = decision.maxSelections,
+            ordered = decision.ordered,
+            cardInfo = decision.cardInfo,
+            useTargetingUI = decision.useTargetingUI,
+            selectedLabel = decision.selectedLabel,
+            remainderLabel = decision.remainderLabel,
+            nonSelectableOptions = decision.nonSelectableOptions,
+            onePerCardType = decision.onePerCardType,
+            onePerColor = decision.onePerColor,
+            availableColors = decision.availableColors,
+            onePerCardName = decision.onePerCardName,
+            onePerBasicLandType = decision.onePerBasicLandType,
+            onePerPower = decision.onePerPower,
+            maxTotalManaValue = decision.maxTotalManaValue,
+            minTotalManaValue = decision.minTotalManaValue,
+            maxTotalPower = decision.maxTotalPower,
+            conditionalMinimums = decision.conditionalMinimums,
+        )
+        is YesNoDecision -> YesNoChoiceSpec(decision.yesText, decision.noText, decision.hint)
+        is BatchYesNoDecision -> BatchYesNoChoiceSpec(
+            decision.count, decision.yesText, decision.noText
+        )
+        is ChooseModeDecision -> ModesChoiceSpec(
+            decision.modes, decision.minModes, decision.maxModes
+        )
+        is ChooseColorDecision -> ColorsChoiceSpec(decision.availableColors.sortedBy { it.name })
+        is ChooseNumberDecision -> NumberChoiceSpec(decision.minValue, decision.maxValue)
+        is DistributeDecision -> DistributionChoiceSpec(
+            decision.totalAmount,
+            decision.targets,
+            decision.minPerTarget,
+            decision.maxPerTarget,
+            decision.allowPartial,
+        )
+        is OrderObjectsDecision -> OrderChoiceSpec(decision.objects, decision.cardInfo)
+        is SplitPilesDecision -> PilesChoiceSpec(
+            decision.cards, decision.numberOfPiles, decision.pileLabels, decision.cardInfo
+        )
+        is ChooseOptionDecision -> OptionsChoiceSpec(
+            decision.options,
+            decision.defaultSearch,
+            decision.optionCardIds,
+            decision.optionMetadata,
+            decision.canCancel,
+        )
+        is ChooseReplacementDecision -> ReplacementChoiceSpec(
+            decision.fromOptions,
+            decision.toOptions,
+            decision.fromMetadata,
+            decision.toMetadata,
+            decision.allowedToByFrom,
+            decision.defaultFromIndex,
+        )
+        is SearchLibraryDecision -> LibrarySearchChoiceSpec(
+            decision.options,
+            decision.minSelections,
+            decision.maxSelections,
+            decision.cards,
+            decision.filterDescription,
+        )
+        is ReorderLibraryDecision -> LibraryReorderChoiceSpec(decision.cards, decision.cardInfo)
+        is AssignDamageDecision -> DamageAssignmentChoiceSpec(
+            decision.attackerId,
+            decision.availablePower,
+            decision.orderedTargets,
+            decision.defenderId,
+            decision.minimumAssignments,
+            decision.defaultAssignments,
+            decision.hasTrample,
+            decision.hasDeathtouch,
+        )
+        is CombatResolutionDecision -> CombatResolutionChoiceSpec(
+            decision.firstStrike,
+            decision.attackers,
+            decision.blockers,
+            decision.defenders,
+            decision.edges,
+            decision.coChooserId,
+        )
+        is SelectManaSourcesDecision -> ManaSourcesChoiceSpec(
+            decision.availableSources.map { source ->
+                ManaSourceChoice(
+                    source.entityId,
+                    source.name,
+                    source.producesColors.sortedBy { it.name },
+                    source.producesColorless,
+                    source.requiresSacrifice,
+                    source.requiresTappingAnotherPermanent,
+                )
+            },
+            decision.requiredCost,
+            decision.autoPaySuggestion,
+            decision.canDecline,
+            decision.waterbendPermanents,
+        )
+        is BudgetModalDecision -> BudgetModesChoiceSpec(decision.budget, decision.modes)
     }
 
     private fun buildDecisionOptionViews(

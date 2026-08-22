@@ -7,6 +7,7 @@ import com.wingedsheep.gym.service.EnvId
 import com.wingedsheep.gym.service.PlayerSpec
 import com.wingedsheep.gym.server.dto.CreateEnvResponse
 import com.wingedsheep.gym.server.dto.DisposeBody
+import com.wingedsheep.gym.server.dto.ResetEnvResponse
 import com.wingedsheep.gym.server.dto.SchemaHashResponse
 import com.wingedsheep.gym.server.dto.StepBody
 import io.kotest.core.spec.style.FunSpec
@@ -138,6 +139,7 @@ class EnvControllerTest : FunSpec() {
             val created = json.decodeFromString<CreateEnvResponse>(createResponse.body())
 
             created.envId.value.shouldNotBe("")
+            created.effectiveSeed shouldNotBe null
             (created.observation as TrainingObservation).players.size shouldBe 2
             created.observation.terminated.shouldBeFalse()
             created.observation.legalActions.shouldNotBeEmpty()
@@ -172,6 +174,36 @@ class EnvControllerTest : FunSpec() {
 
             // Observing a disposed env returns 404.
             get("/envs/${created.envId.value}").statusCode() shouldBe 404
+        }
+
+        test("effective seed and reset metadata reproduce an unseeded environment") {
+            val first = json.decodeFromString<CreateEnvResponse>(
+                postJson("/envs", json.encodeToString(twoPlayerConfig())).body()
+            )
+            val seed = first.effectiveSeed ?: error("game env did not return an effective seed")
+            val replayConfig = twoPlayerConfig().copy(seed = seed)
+            val replay = json.decodeFromString<CreateEnvResponse>(
+                postJson("/envs", json.encodeToString(replayConfig)).body()
+            )
+            replay.effectiveSeed shouldBe seed
+            replay.observation.stateDigest shouldBe first.observation.stateDigest
+
+            val reset = json.decodeFromString<ResetEnvResponse>(
+                postJson(
+                    "/envs/${first.envId.value}/reset-with-metadata",
+                    json.encodeToString(twoPlayerConfig()),
+                ).body()
+            )
+            val resetReplay = json.decodeFromString<ResetEnvResponse>(
+                postJson(
+                    "/envs/${first.envId.value}/reset-with-metadata",
+                    json.encodeToString(twoPlayerConfig().copy(seed = reset.effectiveSeed)),
+                ).body()
+            )
+            resetReplay.effectiveSeed shouldBe reset.effectiveSeed
+            resetReplay.observation.stateDigest shouldBe reset.observation.stateDigest
+
+            deleteJson("/envs", json.encodeToString(DisposeBody(listOf(first.envId, replay.envId))))
         }
 
         test("POST /envs with an unknown set code surfaces 400") {

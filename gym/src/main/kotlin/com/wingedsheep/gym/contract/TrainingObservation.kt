@@ -1,5 +1,17 @@
 package com.wingedsheep.gym.contract
 
+import com.wingedsheep.engine.core.BudgetModeOption
+import com.wingedsheep.engine.core.ConditionalSelectionMinimum
+import com.wingedsheep.engine.core.DamageEdge
+import com.wingedsheep.engine.core.DecisionPhase
+import com.wingedsheep.engine.core.ModeOption
+import com.wingedsheep.engine.core.OptionMetadata
+import com.wingedsheep.engine.core.ResolutionAttacker
+import com.wingedsheep.engine.core.ResolutionBlocker
+import com.wingedsheep.engine.core.ResolutionDefender
+import com.wingedsheep.engine.core.SearchCardInfo
+import com.wingedsheep.engine.core.TargetRequirementInfo
+import com.wingedsheep.engine.core.WaterbendPermanentChoice
 import com.wingedsheep.sdk.core.Color
 import com.wingedsheep.sdk.core.Phase
 import com.wingedsheep.sdk.core.Step
@@ -295,10 +307,20 @@ data class PendingDecisionView(
     val sourceName: String? = null,
     val triggeringEntityId: EntityId? = null,
     val effectHint: String? = null,
+    val phase: DecisionPhase = DecisionPhase.RESOLUTION,
+    val subjectEntityId: EntityId? = null,
+    /** True only when this observation's perspective may submit the response. */
+    val canRespond: Boolean = true,
     /** True when no LegalActionView options were generated; structured response required. */
     val requiresStructuredResponse: Boolean = false,
     /** Extra hints about the decision shape (min/max selections, numeric range, etc.). */
-    val shape: DecisionShape = DecisionShape()
+    val shape: DecisionShape = DecisionShape(),
+    /**
+     * Complete response-building contract for the chooser. Null for a non-chooser masked view.
+     * This payload is never populated merely because a hidden zone exists; it is populated only
+     * when the engine has explicitly granted the decision player permission to inspect it.
+     */
+    val choiceSpec: DecisionChoiceSpec? = null,
 )
 
 @Serializable
@@ -306,6 +328,7 @@ enum class PendingDecisionKind {
     CHOOSE_TARGETS,
     SELECT_CARDS,
     YES_NO,
+    BATCH_YES_NO,
     CHOOSE_MODE,
     CHOOSE_COLOR,
     CHOOSE_NUMBER,
@@ -332,3 +355,187 @@ data class DecisionShape(
     val totalToDistribute: Int? = null,
     val budget: Int? = null
 )
+
+/** Typed, Gym-owned description of every payload a legal [DecisionResponse] may contain. */
+@Serializable
+sealed interface DecisionChoiceSpec
+
+@Serializable
+@SerialName("Targets")
+data class TargetsChoiceSpec(
+    val requirements: List<TargetRequirementInfo>,
+    val legalTargets: Map<Int, List<EntityId>>,
+    val canCancel: Boolean,
+) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("Cards")
+data class CardsChoiceSpec(
+    val options: List<EntityId>,
+    val minSelections: Int,
+    val maxSelections: Int,
+    val ordered: Boolean,
+    val cardInfo: Map<EntityId, SearchCardInfo>? = null,
+    val useTargetingUI: Boolean = false,
+    val selectedLabel: String? = null,
+    val remainderLabel: String? = null,
+    val nonSelectableOptions: List<EntityId> = emptyList(),
+    val onePerCardType: Boolean = false,
+    val onePerColor: Boolean = false,
+    val availableColors: List<String>? = null,
+    val onePerCardName: Boolean = false,
+    val onePerBasicLandType: Boolean = false,
+    val onePerPower: Boolean = false,
+    val maxTotalManaValue: Int? = null,
+    val minTotalManaValue: Int? = null,
+    val maxTotalPower: Int? = null,
+    val conditionalMinimums: List<ConditionalSelectionMinimum> = emptyList(),
+) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("YesNo")
+data class YesNoChoiceSpec(
+    val yesText: String,
+    val noText: String,
+    val hint: String? = null,
+) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("BatchYesNo")
+data class BatchYesNoChoiceSpec(
+    val count: Int,
+    val yesText: String,
+    val noText: String,
+) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("Modes")
+data class ModesChoiceSpec(
+    val modes: List<ModeOption>,
+    val minModes: Int,
+    val maxModes: Int,
+) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("Colors")
+data class ColorsChoiceSpec(val colors: List<Color>) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("Number")
+data class NumberChoiceSpec(val minValue: Int, val maxValue: Int) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("Distribution")
+data class DistributionChoiceSpec(
+    val totalAmount: Int,
+    val targets: List<EntityId>,
+    val minPerTarget: Int,
+    val maxPerTarget: Map<EntityId, Int>,
+    val allowPartial: Boolean,
+) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("Order")
+data class OrderChoiceSpec(
+    val objects: List<EntityId>,
+    val cardInfo: Map<EntityId, SearchCardInfo>? = null,
+) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("Piles")
+data class PilesChoiceSpec(
+    val cards: List<EntityId>,
+    val numberOfPiles: Int,
+    val pileLabels: List<String>,
+    val cardInfo: Map<EntityId, SearchCardInfo>? = null,
+) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("Options")
+data class OptionsChoiceSpec(
+    val options: List<String>,
+    val defaultSearch: String? = null,
+    val optionCardIds: Map<Int, List<EntityId>>? = null,
+    val optionMetadata: List<OptionMetadata> = emptyList(),
+    val canCancel: Boolean = false,
+) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("Replacement")
+data class ReplacementChoiceSpec(
+    val fromOptions: List<String>,
+    val toOptions: List<String>,
+    val fromMetadata: List<OptionMetadata>,
+    val toMetadata: List<OptionMetadata>,
+    val allowedToByFrom: List<List<Int>>,
+    val defaultFromIndex: Int? = null,
+) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("LibrarySearch")
+data class LibrarySearchChoiceSpec(
+    val options: List<EntityId>,
+    val minSelections: Int,
+    val maxSelections: Int,
+    val cards: Map<EntityId, SearchCardInfo>,
+    val filterDescription: String,
+) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("LibraryReorder")
+data class LibraryReorderChoiceSpec(
+    val cards: List<EntityId>,
+    val cardInfo: Map<EntityId, SearchCardInfo>,
+) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("DamageAssignment")
+data class DamageAssignmentChoiceSpec(
+    val attackerId: EntityId,
+    val availablePower: Int,
+    val orderedTargets: List<EntityId>,
+    val defenderId: EntityId?,
+    val minimumAssignments: Map<EntityId, Int>,
+    val defaultAssignments: Map<EntityId, Int>,
+    val hasTrample: Boolean,
+    val hasDeathtouch: Boolean,
+) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("CombatResolution")
+data class CombatResolutionChoiceSpec(
+    val firstStrike: Boolean,
+    val attackers: List<ResolutionAttacker>,
+    val blockers: List<ResolutionBlocker>,
+    val defenders: List<ResolutionDefender>,
+    val edges: List<DamageEdge>,
+    val coChooserId: EntityId? = null,
+) : DecisionChoiceSpec
+
+@Serializable
+@SerialName("ManaSources")
+data class ManaSourcesChoiceSpec(
+    val availableSources: List<ManaSourceChoice>,
+    val requiredCost: String,
+    val autoPaySuggestion: List<EntityId>,
+    val canDecline: Boolean,
+    val waterbendPermanents: List<WaterbendPermanentChoice>,
+) : DecisionChoiceSpec
+
+/** Canonically ordered Gym projection of an engine mana-source candidate. */
+@Serializable
+data class ManaSourceChoice(
+    val entityId: EntityId,
+    val name: String,
+    val producesColors: List<Color>,
+    val producesColorless: Boolean,
+    val requiresSacrifice: Boolean,
+    val requiresTappingAnotherPermanent: Boolean,
+)
+
+@Serializable
+@SerialName("BudgetModes")
+data class BudgetModesChoiceSpec(
+    val budget: Int,
+    val modes: List<BudgetModeOption>,
+) : DecisionChoiceSpec

@@ -32,6 +32,8 @@ doesn't have to:
   everything an agent needs to see, with information-hiding (opponent hand
   and libraries masked by default), a schema hash for fail-fast contract
   checks, and a state digest usable as an MCTS transposition key.
+- **Typed choice specifications** — every pending-decision subtype exposes the candidates and
+  constraints needed to construct a lossless `DecisionResponse`, but only to its chooser.
 
 ## The two entry points
 
@@ -102,7 +104,8 @@ Complex decisions (`ChooseTargetsDecision`, `DistributeDecision`,
 `SelectManaSourcesDecision`, multi-select `SelectCardsDecision`,
 multi-mode `ChooseModeDecision`, `BudgetModalDecision`) flag
 `requiresStructuredResponse = true` and need a purpose-built
-`DecisionResponse` submitted via `MultiEnvService.submitDecision`.
+`DecisionResponse` submitted via `MultiEnvService.submitDecision`. The chooser reads the complete
+typed contract from `pendingDecision.choiceSpec`; `DecisionShape` remains as a compatibility hint.
 
 ### Information hiding by default
 
@@ -112,12 +115,25 @@ A `revealAll = true` flag is available for debug tooling and must not be
 enabled in real self-play (the agent would be training on leaked
 information).
 
+Managed game environments default to `perspectiveMode = ACTING_PLAYER`, so the observation follows
+the pending decision's player or the current priority player without revealing the other seat's
+private information. `FIXED` mode keeps one seat's view and emits no actions or private choice data
+when another player must act. Terminal observations retain the most recent acting perspective.
+
+### Seeds are replay metadata, not policy inputs
+
+`EnvConfig.seed` makes reset deterministic. When it is omitted, create and
+`reset-with-metadata` return the chosen `effectiveSeed`; store it with the action transcript. The
+seed is deliberately absent from `TrainingObservation` because it can reveal shuffled hidden zones.
+
 ### State digest for transposition tables
 
 Every `TrainingObservation` carries a `stateDigest` — a SHA-256 hash of
 the observable state. Identical observations produce identical digests;
 stepping once changes the digest. Useful as an MCTS transposition key or
 as a cheap cache key for distributed rollouts.
+The digest includes all visible stack and choice constraints but excludes per-run action IDs and
+decision routing nonces, so it identifies the player's semantic information state.
 
 ### Immutable state, O(1) fork, O(1) snapshot
 
