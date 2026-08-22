@@ -33,8 +33,11 @@ import com.wingedsheep.gym.GameEnvironment
 import com.wingedsheep.gym.trainer.spi.ActionFeaturizer
 import com.wingedsheep.gym.trainer.spi.Evaluator
 import com.wingedsheep.gym.trainer.spi.StateFeaturizer
+import com.wingedsheep.gym.trainer.defaults.BoundedStructuredDecisionExpander
+import com.wingedsheep.gym.trainer.spi.StructuredDecisionExpander
 import com.wingedsheep.gym.trainer.spi.StructuredDecisionResolver
 import com.wingedsheep.gym.trainer.spi.TrainerContext
+import com.wingedsheep.gym.trainer.spi.asExpander
 import com.wingedsheep.engine.legalactions.LegalAction
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.sdk.model.EntityId
@@ -56,13 +59,9 @@ import java.util.Random as JavaRandom
  * 2. **Expand** — at a leaf (not yet terminal), enumerate outgoing edges
  *    from the engine:
  *      - At a priority state → every [LegalAction] becomes an edge.
- *      - At a simple pending decision (YesNo, ChooseNumber, single-mode
- *        ChooseMode, ChooseColor, ChooseOption, single-select SelectCards)
- *        → every folded [DecisionResponse] becomes an edge.
- *      - At a complex pending decision (ChooseTargets, Distribute, Order,
- *        SplitPiles, Search, Reorder, AssignDamage, SelectManaSources,
- *        multi-select SelectCards, multi-mode ChooseMode, BudgetModal)
- *        → the [StructuredDecisionResolver] returns a *single* forced edge.
+ *      - At any pending decision → the [StructuredDecisionExpander] returns
+ *        a bounded, deterministic set of validator-approved responses and
+ *        every response becomes an edge.
  *    Then call the [Evaluator] to get priors and value.
  * 3. **Simulate (value)** — at terminal, use the game outcome; at an
  *    expanded leaf, use the evaluator's value (from the acting player's
@@ -80,8 +79,9 @@ import java.util.Random as JavaRandom
  * @param featurizer state → feature representation fed to [evaluator]
  * @param actionFeaturizer action → `(head, slot)` policy index
  * @param evaluator priors + value provider; typically a remote NN
- * @param structuredResolver called on complex engine decisions the
- *        folded-action-space can't express
+ * @param structuredResolver deprecated compatibility hook for integrations that still force one
+ *        response; when non-null it overrides [structuredExpander]
+ * @param structuredExpander expands every typed decision into search edges
  * @param cPuct exploration constant; `1.0` is a sensible default
  * @param dirichletAlpha optional Dirichlet noise alpha applied to root
  *        priors only; `null` disables noise
@@ -93,7 +93,8 @@ class AlphaZeroSearch<T>(
     private val featurizer: StateFeaturizer<T>,
     private val actionFeaturizer: ActionFeaturizer,
     private val evaluator: Evaluator<T>,
-    private val structuredResolver: StructuredDecisionResolver = RandomStructuredResolver(),
+    private val structuredResolver: StructuredDecisionResolver? = null,
+    private val structuredExpander: StructuredDecisionExpander = BoundedStructuredDecisionExpander(),
     private val cPuct: Double = 1.0,
     private val dirichletAlpha: Double? = null,
     private val dirichletWeight: Double = 0.25,
@@ -101,6 +102,8 @@ class AlphaZeroSearch<T>(
 ) {
     private val workingEnv: GameEnvironment = env.fork()
     private val javaRng: JavaRandom = JavaRandom(rng.nextLong())
+    private val effectiveStructuredExpander: StructuredDecisionExpander =
+        structuredResolver?.asExpander() ?: structuredExpander
 
     /**
      * Run [simulations] rollouts from the current env state, returning the
@@ -231,66 +234,17 @@ class AlphaZeroSearch<T>(
             }
         }
 
-        val foldedResponses = foldSimpleDecision(pending)
-        if (foldedResponses != null) {
-            return foldedResponses.map { response ->
-                val submit = SubmitDecision(pending.playerId, response)
-                MctsEdge(
-                    action = submit,
-                    legalAction = null,
-                    slot = actionFeaturizer.slot(submit, ctx)
-                )
-            }
-        }
-
-        // Complex decision — resolver produces a forced single edge.
-        val response = structuredResolver.resolve(node.state, pending)
-        val submit = SubmitDecision(pending.playerId, response)
-        return listOf(
+        val expansion = effectiveStructuredExpander.expand(node.state, pending)
+        node.structuredExpansionExhaustive = expansion.isExhaustive
+        node.structuredEstimatedResponseCount = expansion.estimatedResponseCount
+        return expansion.responses.map { response ->
+            val submit = SubmitDecision(pending.playerId, response)
             MctsEdge(
                 action = submit,
                 legalAction = null,
                 slot = actionFeaturizer.slot(submit, ctx)
             )
-        )
-    }
-
-    /**
-     * Returns the list of concrete [DecisionResponse]s when the pending
-     * decision folds cleanly into a discrete action space; returns `null`
-     * when the decision requires a structured response (handed to the
-     * [StructuredDecisionResolver]).
-     */
-    private fun foldSimpleDecision(d: PendingDecision): List<DecisionResponse>? = when (d) {
-        is YesNoDecision -> listOf(YesNoResponse(d.id, true), YesNoResponse(d.id, false))
-        // The batched may-question folds to two whole-run actions; per-instance peel-off isn't an
-        // MCTS action (the search treats the run as one decision, matching the AI heuristic).
-        is BatchYesNoDecision -> listOf(
-            BatchYesNoResponse(d.id, choice = true, applyToAll = true),
-            BatchYesNoResponse(d.id, choice = false, applyToAll = true),
-        )
-        is ChooseNumberDecision -> (d.minValue..d.maxValue).map { NumberChosenResponse(d.id, it) }
-        is ChooseColorDecision -> d.availableColors.map { ColorChosenResponse(d.id, it) }
-        is ChooseOptionDecision -> d.options.indices.map { OptionChosenResponse(d.id, it) }
-        is ChooseModeDecision ->
-            if (d.minModes == 1 && d.maxModes == 1)
-                d.modes.filter { it.available }.map { ModesChosenResponse(d.id, listOf(it.index)) }
-            else null
-        is SelectCardsDecision ->
-            if (d.minSelections == 1 && d.maxSelections == 1 && !d.ordered)
-                d.options.map { CardsSelectedResponse(d.id, listOf(it)) }
-            else null
-        is ChooseTargetsDecision,
-        is ChooseReplacementDecision,
-        is DistributeDecision,
-        is OrderObjectsDecision,
-        is SplitPilesDecision,
-        is SearchLibraryDecision,
-        is ReorderLibraryDecision,
-        is AssignDamageDecision,
-        is CombatResolutionDecision,
-        is SelectManaSourcesDecision,
-        is BudgetModalDecision -> null
+        }
     }
 
     private fun createChild(parent: MctsNode, edge: MctsEdge, rootPlayer: EntityId): MctsNode {
@@ -397,6 +351,12 @@ class MctsSearchResult(
 
     /** MCTS-estimated value at the root, from [rootPlayer]'s perspective. */
     val rootValue: Float get() = root.meanValue.toFloat()
+
+    /** Null at ordinary priority states; otherwise reports whether every response was searched. */
+    val structuredExpansionExhaustive: Boolean? get() = root.structuredExpansionExhaustive
+
+    /** Exact or estimated root response count, when the expander could provide one. */
+    val structuredEstimatedResponseCount: Long? get() = root.structuredEstimatedResponseCount
 }
 
 /**
@@ -405,6 +365,7 @@ class MctsSearchResult(
  * loop to run end-to-end; replace with a heuristic or learned resolver for
  * real training runs.
  */
+@Deprecated("Use BoundedStructuredDecisionExpander so search retains multiple decision branches")
 class RandomStructuredResolver(private val rng: Random = Random.Default) : StructuredDecisionResolver {
     override fun resolve(state: GameState, decision: PendingDecision): DecisionResponse {
         // Minimal coverage — handles the common structured decisions. Unknown

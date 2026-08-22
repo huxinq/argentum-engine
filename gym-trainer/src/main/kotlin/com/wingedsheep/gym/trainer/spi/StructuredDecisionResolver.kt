@@ -21,6 +21,10 @@ import com.wingedsheep.engine.state.GameState
  *    [ActionFeaturizer] and an `Evaluator` that knows how to emit priors for
  *    them.
  */
+@Deprecated(
+    message = "A single forced response hides player choices from search; use StructuredDecisionExpander",
+    replaceWith = ReplaceWith("StructuredDecisionExpander"),
+)
 fun interface StructuredDecisionResolver {
     fun resolve(state: GameState, decision: PendingDecision): DecisionResponse
 }

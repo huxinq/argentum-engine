@@ -22,7 +22,7 @@ choices a training project should own.
 
 - An **AlphaZero-style MCTS** that uses `GameEnvironment.fork()` for
   free tree expansion.
-- A tiny **SPI** — four small interfaces — that separates what the trainer
+- A tiny **SPI** — five small interfaces — that separates what the trainer
   decides (tree search, temperature schedule, back-patching outcome
   labels) from what a project decides (feature representation, action
   encoding, NN inference, on-disk format).
@@ -35,7 +35,7 @@ HTTP transport in front of the env itself, see
 is Python-only and wants to drive the engine over HTTP, `:gym-server`
 is what you want and you can skip this module.
 
-## The four SPI traits
+## The five SPI traits
 
 ```kotlin
 // 1. Engine state → feature vector your NN consumes
@@ -59,8 +59,15 @@ interface SelfPlaySink<T> : AutoCloseable {
     fun beginGame(gameId: String, players: List<EntityId>)
     fun recordStep(features: T, ctx: TrainerContext, actingPlayer: EntityId,
                    headUsed: String, legalSlots: List<SlotEncoding>,
-                   visits: IntArray, mctsValue: Float)
+                   visits: IntArray, mctsValue: Float,
+                   structuredExpansionExhaustive: Boolean?,
+                   structuredEstimatedResponseCount: Long?)
     fun endGame(winner: EntityId?)
+}
+
+// 5. Typed pending decision → bounded concrete search responses
+fun interface StructuredDecisionExpander {
+    fun expand(state: GameState, decision: PendingDecision): StructuredExpansion
 }
 ```
 
@@ -101,13 +108,15 @@ HTTP surface and skip this module.
 ### Decision-aware edges
 
 MCTS edges are ordinary `GameAction`s. At a priority state, edges are
-`LegalAction`s. At a simple pending decision (yes/no, choose-number, and
-friends), edges are `SubmitDecision(response)` — exactly the set of
-folded responses `:gym`'s `ActionRegistry` produces. At a complex
-pending decision (targets, distribute, order, search, etc.) the
-`StructuredDecisionResolver` returns a single forced edge. The built-in
-resolver samples uniformly; a production project can supply a heuristic
-or learned one.
+`LegalAction`s. At every pending decision, edges are `SubmitDecision(response)`.
+`BoundedStructuredDecisionExpander` enumerates all validator-approved responses when there are at
+most 64; larger spaces retain deterministic boundary/default choices and cap at 64 branches after
+at most 2,048 generation attempts. Targets, distributions, orderings, pile splits, damage, mana,
+searches, and budget modes therefore remain policy choices instead of being forced through one
+random response. Expansion never consumes the game RNG, and its exhaustive/count diagnostics are
+written into self-play rows.
+
+The old single-response `StructuredDecisionResolver` remains as a deprecated compatibility adapter.
 
 ### Outcome-labelled self-play rows
 
@@ -134,7 +143,8 @@ bloat everyone's classpath.
 | `StructuralStateFeaturizer` | Simple `Map<String, Float>` from life, zone sizes, projected P/T totals, mana. Replace for real training. |
 | `DynamicSlotActionFeaturizer` | Single-head, hash-keyed slot assignment. Replace for serious training to avoid collisions. |
 | `JsonlSelfPlaySink` | One JSON line per step, outcome label included. Easy Python ingest. |
-| `RandomStructuredResolver` | Uniform-random response for structured decisions (targets, etc.). |
+| `BoundedStructuredDecisionExpander` | Deterministic, validator-backed branching for every pending-decision subtype. |
+| `RandomStructuredResolver` | Deprecated single-edge compatibility adapter. |
 
 Defaults exist so a training loop runs in 30 lines. Every one is intended
 to be replaced when a project gets serious.
@@ -214,5 +224,7 @@ just test-gym-trainer              # this module only
 
 The test set covers:
 - PUCT visit accounting (`AlphaZeroSearchTest`)
+- deterministic, duplicate-free expansion of every sealed pending-decision subtype
+- exhaustive behavior below 64 responses and explicit capping above 64
 - Root noise doesn't break the search
 - End-to-end self-play producing outcome-labelled JSONL (`SelfPlayLoopTest`)

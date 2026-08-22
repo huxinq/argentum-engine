@@ -8,6 +8,7 @@ import com.wingedsheep.gym.trainer.spi.ActionFeaturizer
 import com.wingedsheep.gym.trainer.spi.Evaluator
 import com.wingedsheep.gym.trainer.spi.SelfPlaySink
 import com.wingedsheep.gym.trainer.spi.StateFeaturizer
+import com.wingedsheep.gym.trainer.spi.StructuredDecisionExpander
 import com.wingedsheep.gym.trainer.spi.StructuredDecisionResolver
 import com.wingedsheep.gym.trainer.spi.TrainerContext
 import com.wingedsheep.sdk.model.EntityId
@@ -37,8 +38,9 @@ class SelfPlayLoop<T>(
     private val actionFeaturizer: ActionFeaturizer,
     private val evaluator: Evaluator<T>,
     private val sink: SelfPlaySink<T>,
-    private val structuredResolver: StructuredDecisionResolver =
-        com.wingedsheep.gym.trainer.search.RandomStructuredResolver(),
+    private val structuredResolver: StructuredDecisionResolver? = null,
+    private val structuredExpander: StructuredDecisionExpander =
+        com.wingedsheep.gym.trainer.defaults.BoundedStructuredDecisionExpander(),
     private val simulationsPerMove: Int = 100,
     private val cPuct: Double = 1.0,
     private val dirichletAlpha: Double? = 0.3,
@@ -65,6 +67,7 @@ class SelfPlayLoop<T>(
                 actionFeaturizer = actionFeaturizer,
                 evaluator = evaluator,
                 structuredResolver = structuredResolver,
+                structuredExpander = structuredExpander,
                 cPuct = cPuct,
                 dirichletAlpha = dirichletAlpha,
                 dirichletWeight = dirichletWeight,
@@ -88,7 +91,9 @@ class SelfPlayLoop<T>(
                 headUsed = headUsed,
                 legalSlots = legalSlots,
                 visits = visits,
-                mctsValue = result.rootValue
+                mctsValue = result.rootValue,
+                structuredExpansionExhaustive = result.structuredExpansionExhaustive,
+                structuredEstimatedResponseCount = result.structuredEstimatedResponseCount,
             )
 
             val chosen = if (stepCount < temperatureMoves && temperature > 0.0) {

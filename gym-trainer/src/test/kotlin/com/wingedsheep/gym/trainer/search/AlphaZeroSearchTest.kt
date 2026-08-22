@@ -1,6 +1,7 @@
 package com.wingedsheep.gym.trainer.search
 
 import com.wingedsheep.engine.core.GameConfig
+import com.wingedsheep.engine.core.PassPriority
 import com.wingedsheep.engine.core.PlayerConfig
 import com.wingedsheep.gym.GameEnvironment
 import com.wingedsheep.gym.trainer.defaults.DynamicSlotActionFeaturizer
@@ -14,6 +15,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.ints.shouldBeGreaterThan
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 
 /**
@@ -88,5 +90,31 @@ class AlphaZeroSearchTest : FunSpec({
             dirichletWeight = 0.25
         ).run(simulations = 4)
         result.visits.sum() shouldBe 4
+    }
+
+    test("a multi-response engine decision becomes multiple edges with distinct child states") {
+        val env = setupRoot()
+        var transitions = 0
+        while (env.pendingDecision == null && transitions < 300) {
+            val pass = env.legalActions().first { it.action is PassPriority }
+            env.step(pass.action)
+            transitions += 1
+        }
+        env.pendingDecision.shouldNotBeNull()
+        val parent = env.state
+
+        val result = AlphaZeroSearch<StructuralFeatures>(
+            env = env,
+            featurizer = StructuralStateFeaturizer(),
+            actionFeaturizer = DynamicSlotActionFeaturizer(headSize = 128),
+            evaluator = HeuristicEvaluator(),
+            dirichletAlpha = null,
+        ).run(simulations = 16)
+
+        result.root.edges.size shouldBeGreaterThan 1
+        result.structuredExpansionExhaustive.shouldBeTrue()
+        result.root.edges.mapNotNull { it.child?.state }.toSet().size shouldBeGreaterThan 1
+        env.state shouldBe parent
+        env.state.rng shouldBe parent.rng
     }
 })

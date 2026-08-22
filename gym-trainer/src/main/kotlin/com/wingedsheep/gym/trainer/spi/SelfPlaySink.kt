@@ -32,6 +32,9 @@ interface SelfPlaySink<T> : AutoCloseable {
      *                      `actingPlayer`'s perspective; the terminal outcome
      *                      overrides this in the training target if the sink
      *                      uses an outcome-label rather than a blended label
+     * @param structuredExpansionExhaustive null at priority states; otherwise whether the
+     *                      expander returned every legal typed response
+     * @param structuredEstimatedResponseCount exact or estimated response count when available
      */
     fun recordStep(
         features: T,
@@ -40,7 +43,9 @@ interface SelfPlaySink<T> : AutoCloseable {
         headUsed: String,
         legalSlots: List<SlotEncoding>,
         visits: IntArray,
-        mctsValue: Float
+        mctsValue: Float,
+        structuredExpansionExhaustive: Boolean? = null,
+        structuredEstimatedResponseCount: Long? = null,
     )
 
     /** Called exactly once per game after the final state; `winner == null` = draw. */

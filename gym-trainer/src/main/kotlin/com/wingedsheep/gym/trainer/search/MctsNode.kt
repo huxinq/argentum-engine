@@ -33,6 +33,12 @@ class MctsNode(
     /** Parallel list of outgoing edges. Materialised on first expansion. */
     var edges: List<MctsEdge> = emptyList()
 
+    /** Whether a structured pending decision was fully enumerated at this node. */
+    var structuredExpansionExhaustive: Boolean? = null
+
+    /** Exact or estimated structured response count, when cheaply available. */
+    var structuredEstimatedResponseCount: Long? = null
+
     /** Total visits through this node. */
     var visits: Int = 0
 

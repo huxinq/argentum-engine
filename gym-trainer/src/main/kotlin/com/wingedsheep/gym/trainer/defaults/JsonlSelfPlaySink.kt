@@ -29,6 +29,8 @@ import java.nio.file.StandardOpenOption
  *   "legal_slots": [{"head": "actions", "slot": 3}],
  *   "visits": [12, 8, 0],
  *   "mcts_value": 0.12,
+ *   "structured_expansion_exhaustive": true,
+ *   "structured_estimated_response_count": 3,
  *   "outcome": 1.0,
  *   "features": <user-serialized features JSON>
  * }
@@ -61,7 +63,9 @@ class JsonlSelfPlaySink<T>(
         headUsed: String,
         legalSlots: List<SlotEncoding>,
         visits: IntArray,
-        mctsValue: Float
+        mctsValue: Float,
+        structuredExpansionExhaustive: Boolean?,
+        structuredEstimatedResponseCount: Long?,
     ) {
         buffered += BufferedRow(
             gameId = currentGameId,
@@ -70,6 +74,8 @@ class JsonlSelfPlaySink<T>(
             slots = legalSlots.map { SlotDto(it.head, it.slot) },
             visits = visits.toList(),
             mctsValue = mctsValue,
+            structuredExpansionExhaustive = structuredExpansionExhaustive,
+            structuredEstimatedResponseCount = structuredEstimatedResponseCount,
             features = features
         )
     }
@@ -90,6 +96,8 @@ class JsonlSelfPlaySink<T>(
                 legalSlots = row.slots,
                 visits = row.visits,
                 mctsValue = row.mctsValue,
+                structuredExpansionExhaustive = row.structuredExpansionExhaustive,
+                structuredEstimatedResponseCount = row.structuredEstimatedResponseCount,
                 outcome = outcome,
                 features = json.encodeToJsonElement(featureSerializer, row.features).toString()
             )
@@ -121,6 +129,8 @@ class JsonlSelfPlaySink<T>(
         val slots: List<SlotDto>,
         val visits: List<Int>,
         val mctsValue: Float,
+        val structuredExpansionExhaustive: Boolean?,
+        val structuredEstimatedResponseCount: Long?,
         val features: T
     )
 
@@ -132,6 +142,8 @@ class JsonlSelfPlaySink<T>(
         val legalSlots: List<SlotDto>,
         val visits: List<Int>,
         val mctsValue: Float,
+        val structuredExpansionExhaustive: Boolean? = null,
+        val structuredEstimatedResponseCount: Long? = null,
         val outcome: Float,
         val features: String
     )
