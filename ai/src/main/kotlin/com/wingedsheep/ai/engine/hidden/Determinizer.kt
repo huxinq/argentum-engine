@@ -1,6 +1,8 @@
 package com.wingedsheep.ai.engine.hidden
 
 import com.wingedsheep.engine.core.CardEntityFactory
+import com.wingedsheep.engine.core.ContinuationFrame
+import com.wingedsheep.engine.core.PendingDecision
 import com.wingedsheep.engine.registry.CardRegistry
 import com.wingedsheep.engine.state.ComponentContainer
 import com.wingedsheep.engine.state.GameState
@@ -23,6 +25,13 @@ import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.model.CardDefinition
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.model.GameRng
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Result of the strict known-deck sampler used by information-safe search.
@@ -62,7 +71,7 @@ sealed interface KnownDeckSampleFailure {
     data class HiddenCardCarriesRuntimeState(val playerId: EntityId, val cardId: EntityId) :
         KnownDeckSampleFailure
 
-    data class InFlightContinuation(val frameCount: Int) : KnownDeckSampleFailure
+    data class HiddenCardReferencedByContinuation(val cardId: EntityId) : KnownDeckSampleFailure
 }
 
 /**
@@ -92,9 +101,12 @@ class Determinizer(
         beliefRng: GameRng,
     ): KnownDeckSampleResult {
         val failures = mutableListOf<KnownDeckSampleFailure>()
-        if (state.continuationStack.isNotEmpty()) {
-            failures += KnownDeckSampleFailure.InFlightContinuation(state.continuationStack.size)
+        val pendingReferences = if (state.pendingDecision?.playerId == viewerId) {
+            serializedEntityReferences(state.pendingDecision, state)
+        } else {
+            emptySet()
         }
+        val continuationReferences = serializedEntityReferences(state.continuationStack, state)
 
         val hiddenByPlayer = linkedMapOf<EntityId, List<EntityId>>()
         for (playerId in state.turnOrder) {
@@ -102,8 +114,12 @@ class Determinizer(
                 failures += KnownDeckSampleFailure.MissingDecklist(playerId)
                 continue
             }
-            val hidden = inaccessibleCards(state, playerId, viewerId)
+            val hidden = inaccessibleCards(state, playerId, viewerId).filterNot { it in pendingReferences }
             hiddenByPlayer[playerId] = hidden
+
+            hidden.filterTo(mutableSetOf()) { it in continuationReferences }.forEach { id ->
+                failures += KnownDeckSampleFailure.HiddenCardReferencedByContinuation(id)
+            }
 
             val stackReferences = stackReferences(state)
             hidden.filterTo(mutableSetOf()) { it in stackReferences }.forEach { id ->
@@ -293,6 +309,36 @@ class Determinizer(
             }
         }
 
+    private fun serializedEntityReferences(value: Any?, state: GameState): Set<EntityId> {
+        val element = when (value) {
+            null -> return emptySet()
+            is PendingDecision -> referenceJson.encodeToJsonElement(PendingDecision.serializer(), value)
+            is List<*> -> {
+                @Suppress("UNCHECKED_CAST")
+                referenceJson.encodeToJsonElement(
+                    ListSerializer(ContinuationFrame.serializer()),
+                    value as List<ContinuationFrame>,
+                )
+            }
+            else -> error("Unsupported reference scan value ${value::class.simpleName}")
+        }
+        val idsByValue = state.entities.keys.associateBy { it.value }
+        val found = mutableSetOf<EntityId>()
+        fun visit(node: JsonElement) {
+            when (node) {
+                JsonNull -> Unit
+                is JsonPrimitive -> if (node.isString) idsByValue[node.content]?.let(found::add)
+                is JsonArray -> node.forEach(::visit)
+                is JsonObject -> {
+                    node.keys.forEach { key -> idsByValue[key]?.let(found::add) }
+                    node.values.forEach(::visit)
+                }
+            }
+        }
+        visit(element)
+        return found
+    }
+
     /**
      * A normal hidden card has only definition-derived identity/ownership components. Anything
      * else may be referenced by an in-flight effect or carry state that a different definition
@@ -313,6 +359,14 @@ class Determinizer(
                 it is SelfZoneRedirectComponent ||
                 it is HexproofFromComponent ||
                 it is ToxicComponent
+        }
+    }
+
+    private companion object {
+        val referenceJson = Json {
+            encodeDefaults = true
+            explicitNulls = true
+            classDiscriminator = "type"
         }
     }
 

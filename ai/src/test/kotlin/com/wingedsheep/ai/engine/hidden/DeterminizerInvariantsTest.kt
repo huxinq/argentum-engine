@@ -281,6 +281,51 @@ class DeterminizerInvariantsTest : ScenarioTestBase() {
 
             result.reasons.shouldContain(KnownDeckSampleFailure.MissingDecklist(game.player2Id))
         }
+
+        test("strict sampling supports a chooser-visible pending decision and continuation") {
+            val game = scenario()
+                .withPlayers()
+                .withCardInLibrary(1, "Forest")
+                .withCardInLibrary(1, "Mountain")
+                .withCardInLibrary(1, "Hill Giant")
+                .withCardInLibrary(2, "Grizzly Bears")
+                .build()
+            val shown = game.state.getLibrary(game.player1Id).take(2)
+            val decisionId = "known-deck-visible-choice"
+            val pending = com.wingedsheep.engine.core.SelectCardsDecision(
+                id = decisionId,
+                playerId = game.player1Id,
+                prompt = "Choose a shown card",
+                context = com.wingedsheep.engine.core.DecisionContext(),
+                options = shown,
+                minSelections = 1,
+                maxSelections = 1,
+            )
+            val inFlight = game.state.copy(
+                pendingDecision = pending,
+                continuationStack = listOf(
+                    com.wingedsheep.engine.core.HandSizeDiscardContinuation(decisionId, game.player1Id)
+                ),
+            )
+            val shownBefore = shown.associateWith { inFlight.getEntity(it)!!.require<CardComponent>() }
+
+            val result = Determinizer(cardRegistry).sampleKnownDeckWorld(
+                inFlight,
+                game.player1Id,
+                mapOf(
+                    game.player1Id to mapOf("Forest" to 1, "Mountain" to 1, "Hill Giant" to 1),
+                    game.player2Id to mapOf("Grizzly Bears" to 1),
+                ),
+                GameRng.seeded(19L),
+            ) as KnownDeckSampleResult.Success
+
+            result.state.pendingDecision shouldBe pending
+            result.state.continuationStack shouldBe inFlight.continuationStack
+            shown.forEach { id ->
+                result.state.getEntity(id)!!.require<CardComponent>() shouldBe shownBefore.getValue(id)
+            }
+            result.state.rng shouldBe inFlight.rng
+        }
     }
 
     private fun hiddenNames(
