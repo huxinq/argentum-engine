@@ -2,10 +2,12 @@ package com.wingedsheep.ai.engine.hidden
 
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.engine.state.components.identity.RevealedToComponent
+import com.wingedsheep.engine.state.components.battlefield.TappedComponent
 import com.wingedsheep.engine.support.ScenarioTestBase
 import com.wingedsheep.engine.view.ClientStateTransformer
 import com.wingedsheep.sdk.model.GameRng
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 
@@ -162,6 +164,122 @@ class DeterminizerInvariantsTest : ScenarioTestBase() {
 
             sampledOrders.distinct().size shouldNotBe 1
             sampledOrders.first().shouldContainExactlyInAnyOrder(originalOrder)
+        }
+
+        test("strict known-deck sampling replaces every inaccessible identity without reading game rng") {
+            val game = scenario()
+                .withPlayers()
+                .withCardInHand(1, "Forest")
+                .withCardInLibrary(1, "Mountain")
+                .withCardInLibrary(1, "Hill Giant")
+                .withCardInHand(2, "Mountain")
+                .withCardInHand(2, "Hill Giant")
+                .withCardInLibrary(2, "Grizzly Bears")
+                .withCardInLibrary(2, "Craw Wurm")
+                .build()
+            val before = game.state
+            val decklists = mapOf(
+                game.player1Id to mapOf("Forest" to 1, "Mountain" to 1, "Hill Giant" to 1),
+                game.player2Id to mapOf(
+                    "Mountain" to 1,
+                    "Hill Giant" to 1,
+                    "Grizzly Bears" to 1,
+                    "Craw Wurm" to 1,
+                ),
+            )
+
+            val result = Determinizer(cardRegistry).sampleKnownDeckWorld(
+                before,
+                game.player1Id,
+                decklists,
+                GameRng.seeded(443L),
+            ) as KnownDeckSampleResult.Success
+
+            result.rewrittenCardCount shouldBe 6
+            before.rng shouldBe game.state.rng
+            result.state.rng shouldBe before.rng
+            game.state shouldBe before
+            result.state.entities.keys shouldBe before.entities.keys
+            result.state.zones.keys shouldBe before.zones.keys
+        }
+
+        test("strict sampling is invariant to authoritative hidden identities") {
+            val game = scenario()
+                .withPlayers()
+                .withCardInHand(1, "Forest")
+                .withCardInLibrary(1, "Mountain")
+                .withCardInLibrary(1, "Hill Giant")
+                .withCardInHand(2, "Mountain")
+                .withCardInHand(2, "Hill Giant")
+                .withCardInLibrary(2, "Grizzly Bears")
+                .withCardInLibrary(2, "Craw Wurm")
+                .build()
+            val hidden = game.state.getHand(game.player2Id) + game.state.getLibrary(game.player2Id)
+            val firstCard = game.state.getEntity(hidden.first())!!.require<CardComponent>()
+            val lastCard = game.state.getEntity(hidden.last())!!.require<CardComponent>()
+            val permuted = game.state
+                .updateEntity(hidden.first()) { it.with(lastCard) }
+                .updateEntity(hidden.last()) { it.with(firstCard) }
+            val decklists = mapOf(
+                game.player1Id to mapOf("Forest" to 1, "Mountain" to 1, "Hill Giant" to 1),
+                game.player2Id to mapOf(
+                    "Mountain" to 1,
+                    "Hill Giant" to 1,
+                    "Grizzly Bears" to 1,
+                    "Craw Wurm" to 1,
+                ),
+            )
+            val determinizer = Determinizer(cardRegistry)
+
+            val first = determinizer.sampleKnownDeckWorld(
+                game.state, game.player1Id, decklists, GameRng.seeded(781L)
+            ) as KnownDeckSampleResult.Success
+            val second = determinizer.sampleKnownDeckWorld(
+                permuted, game.player1Id, decklists, GameRng.seeded(781L)
+            ) as KnownDeckSampleResult.Success
+
+            first shouldBe second
+        }
+
+        test("strict sampling fails closed instead of retaining hidden runtime state") {
+            val game = scenario()
+                .withPlayers()
+                .withCardInHand(1, "Forest")
+                .withCardInLibrary(1, "Mountain")
+                .withCardInHand(2, "Hill Giant")
+                .withCardInLibrary(2, "Grizzly Bears")
+                .build()
+            val hiddenId = game.state.getHand(game.player2Id).single()
+            val unsafe = game.state.updateEntity(hiddenId) { it.with(TappedComponent) }
+            val decklists = mapOf(
+                game.player1Id to mapOf("Forest" to 1, "Mountain" to 1),
+                game.player2Id to mapOf("Hill Giant" to 1, "Grizzly Bears" to 1),
+            )
+
+            val result = Determinizer(cardRegistry).sampleKnownDeckWorld(
+                unsafe, game.player1Id, decklists, GameRng.seeded(4L)
+            ) as KnownDeckSampleResult.Unsupported
+
+            result.reasons.shouldContain(
+                KnownDeckSampleFailure.HiddenCardCarriesRuntimeState(game.player2Id, hiddenId)
+            )
+        }
+
+        test("strict sampling requires an exact decklist for every player") {
+            val game = scenario()
+                .withPlayers()
+                .withCardInLibrary(1, "Forest")
+                .withCardInLibrary(2, "Mountain")
+                .build()
+
+            val result = Determinizer(cardRegistry).sampleKnownDeckWorld(
+                game.state,
+                game.player1Id,
+                mapOf(game.player1Id to mapOf("Forest" to 1)),
+                GameRng.seeded(4L),
+            ) as KnownDeckSampleResult.Unsupported
+
+            result.reasons.shouldContain(KnownDeckSampleFailure.MissingDecklist(game.player2Id))
         }
     }
 
