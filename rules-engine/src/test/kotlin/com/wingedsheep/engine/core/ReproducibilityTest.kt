@@ -14,11 +14,9 @@ import io.kotest.matchers.shouldNotBe
  * End-to-end determinism guarantees for the seeded RNG (Phases 1–5).
  *
  * The contract these tests pin down — and that the cross-engine parity harness, replays, and MCTS
- * rollouts all depend on — is: **a game seeded with the same value produces a byte-identical
- * [GameState]**, down to library order and entity ids. We assert this with structural `==` on the
- * whole state. `GameState.projectedState` is a non-constructor lazy `val`, so it is excluded from
- * the data class `equals`; the comparison covers every persisted field, including `rng`,
- * `nextEntityId`, `zones`, and `entities`.
+ * rollouts all depend on — is: **initialisation with the same seed produces a structurally equal
+ * [GameState]**, down to library order and entity ids. Runtime decision ids remain ephemeral
+ * routing nonces; replay compares semantic information-state digests once play begins.
  */
 class ReproducibilityTest : FunSpec({
 
@@ -42,7 +40,7 @@ class ReproducibilityTest : FunSpec({
         }
     }
 
-    test("same seed produces a byte-identical game state") {
+    test("same seed produces a structurally identical initial game state") {
         val a = GameInitializer(registry()).initializeGame(config(seed = 12345L))
         val b = GameInitializer(registry()).initializeGame(config(seed = 12345L))
 
@@ -51,6 +49,8 @@ class ReproducibilityTest : FunSpec({
         a.state shouldBe b.state
         a.seed shouldBe 12345L
         b.seed shouldBe 12345L
+        a.state.initialSeed shouldBe 12345L
+        b.state.initialSeed shouldBe 12345L
     }
 
     test("different seeds produce different shuffles") {
@@ -74,6 +74,7 @@ class ReproducibilityTest : FunSpec({
         // Replaying with the recorded seed reconstructs the identical state.
         val replay = GameInitializer(registry()).initializeGame(config(seed = live.seed))
         replay.state shouldBe live.state
+        replay.state.initialSeed shouldBe live.seed
     }
 
     test("two unseeded games differ (entropy seeding is actually random)") {

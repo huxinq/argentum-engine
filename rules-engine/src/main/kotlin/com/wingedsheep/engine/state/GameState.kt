@@ -35,6 +35,12 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class GameState(
+    /**
+     * Seed used to initialise this game. This is authoritative orchestration metadata for replay,
+     * snapshots, and forks; player-facing state projections must never expose it.
+     */
+    val initialSeed: Long? = null,
+
     /** All entities in the game, keyed by their ID */
     val entities: Map<EntityId, ComponentContainer> = emptyMap(),
 
@@ -335,8 +341,10 @@ data class GameState(
     /**
      * Deterministic RNG state for every random game event (shuffles, coin flips, "at random"
      * choices). Threaded purely: a draw returns a value plus the advanced generator, which the
-     * caller writes back via [nextRandom]. Two games seeded identically and fed the same actions
-     * therefore reproduce byte-identically — see [GameRng]. Defaults to a fixed seed so existing
+     * caller writes back via [nextRandom]. Two games seeded identically and fed the same semantic
+     * actions therefore reproduce the same gameplay state — see [GameRng]. Ephemeral routing IDs
+     * on decisions and continuations are intentionally excluded from that semantic guarantee.
+     * Defaults to a fixed seed so existing
      * tests/persisted states are unaffected; [com.wingedsheep.engine.core.GameInitializer] reseeds
      * it from [com.wingedsheep.engine.core.GameConfig.seed] (or fresh entropy) at game start.
      */

@@ -159,7 +159,12 @@ class GameInitializer(
         // is recorded on the result so the game is reproducible later. This clock read is the one
         // sanctioned non-determinism boundary — once seeded, the engine is a pure function again.
         val resolvedSeed: Long = config.seed ?: System.nanoTime()
-        var state = GameState(format = config.format, attackMode = config.attackMode, rng = GameRng.seeded(resolvedSeed))
+        var state = GameState(
+            initialSeed = resolvedSeed,
+            format = config.format,
+            attackMode = config.attackMode,
+            rng = GameRng.seeded(resolvedSeed),
+        )
         val playerIds = mutableListOf<EntityId>()
 
         // Validate Commander-format prerequisites up front. Each player must designate a
