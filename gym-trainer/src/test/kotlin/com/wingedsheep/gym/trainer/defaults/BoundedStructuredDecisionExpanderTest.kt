@@ -18,6 +18,7 @@ import com.wingedsheep.engine.core.ModeOption
 import com.wingedsheep.engine.core.OrderObjectsDecision
 import com.wingedsheep.engine.core.PendingDecision
 import com.wingedsheep.engine.core.ReorderLibraryDecision
+import com.wingedsheep.engine.core.ResolutionAttacker
 import com.wingedsheep.engine.core.SearchCardInfo
 import com.wingedsheep.engine.core.SearchLibraryDecision
 import com.wingedsheep.engine.core.SelectCardsDecision
@@ -181,4 +182,62 @@ class BoundedStructuredDecisionExpanderTest : FunSpec({
         first.estimatedResponseCount shouldBe 101L
         first shouldBe second
     }
+
+    test("one combat ordering group is exhaustively enumerated") {
+        val decision = CombatResolutionDecision(
+            "one-order",
+            player,
+            "Order blockers",
+            context,
+            firstStrike = false,
+            attackers = listOf(resolutionAttacker(a, listOf(b, c))),
+            blockers = emptyList(),
+            defenders = emptyList(),
+            edges = emptyList(),
+        )
+
+        val expansion = BoundedStructuredDecisionExpander(maxResponses = 64).expand(GameState(), decision)
+
+        expansion.isExhaustive.shouldBeTrue()
+        expansion.responses.size shouldBe 2
+        expansion.responses.filterIsInstance<com.wingedsheep.engine.core.CombatResolutionResponse>()
+            .any { it.orderedBlockers[a] == listOf(c, b) }
+            .shouldBeTrue()
+    }
+
+    test("multiple independent combat ordering groups remain fail-closed") {
+        val decision = CombatResolutionDecision(
+            "two-orders",
+            player,
+            "Order blockers",
+            context,
+            firstStrike = false,
+            attackers = listOf(
+                resolutionAttacker(a, listOf(b, c)),
+                resolutionAttacker(EntityId("d"), listOf(EntityId("e"), EntityId("f"))),
+            ),
+            blockers = emptyList(),
+            defenders = emptyList(),
+            edges = emptyList(),
+        )
+
+        BoundedStructuredDecisionExpander(maxResponses = 64).expand(GameState(), decision)
+            .isExhaustive.shouldBeFalse()
+    }
 })
+
+private fun resolutionAttacker(id: EntityId, blockers: List<EntityId>) = ResolutionAttacker(
+    id = id,
+    name = id.value,
+    power = 0,
+    toughness = 1,
+    hasTrample = false,
+    hasDeathtouch = false,
+    hasFirstStrike = false,
+    hasDoubleStrike = false,
+    dealsDamageThisStep = true,
+    bandId = null,
+    attackedDefenderId = EntityId("defender"),
+    blockedByIds = blockers,
+    markedDamage = 0,
+)

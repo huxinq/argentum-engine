@@ -262,11 +262,14 @@ class BoundedStructuredDecisionExpander(
                 }
             }
         }
-        val hasIndependentOrderChoices = d.attackers.any { it.blockedByIds.size > 1 } ||
-            d.blockers.any { it.blockedAttackerIds.size > 1 }
+        val independentOrderChoiceGroups = d.attackers.count { it.blockedByIds.size > 1 } +
+            d.blockers.count { it.blockedAttackerIds.size > 1 }
         return CandidateSource(
             responses = responseSequence,
-            completeWhenExhausted = !hasIndependentOrderChoices,
+            // The generator enumerates every permutation when there is at most one ordering
+            // group. With two or more groups it varies one group at a time rather than taking
+            // their Cartesian product, so completeness must continue to fail closed.
+            completeWhenExhausted = independentOrderChoiceGroups <= 1,
         )
     }
 
