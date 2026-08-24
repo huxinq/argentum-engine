@@ -45,6 +45,10 @@ import com.wingedsheep.engine.state.components.identity.LifeTotalComponent
 import com.wingedsheep.engine.state.components.identity.PlayerComponent
 import com.wingedsheep.engine.state.components.player.ManaPoolComponent
 import com.wingedsheep.engine.state.components.player.PlayerLostComponent
+import com.wingedsheep.engine.state.components.player.PlayerSpeedComponent
+import com.wingedsheep.engine.state.components.combat.AttackingComponent
+import com.wingedsheep.engine.state.components.combat.BlockedComponent
+import com.wingedsheep.engine.state.components.combat.BlockingComponent
 import com.wingedsheep.engine.state.components.stack.ActivatedAbilityOnStackComponent
 import com.wingedsheep.engine.state.components.stack.ChosenTarget
 import com.wingedsheep.engine.state.components.stack.SpellOnStackComponent
@@ -87,6 +91,7 @@ class ObservationBuilder(
         val zones = buildZones(state, perspectivePlayerId, revealAll)
 
         val stack = state.stack.map { entityId -> buildStackItem(state, entityId) }
+        val combat = buildCombatView(state)
 
         val agentToAct = state.pendingDecision?.playerId ?: state.priorityPlayerId
         val canRespond = revealAll || agentToAct == perspectivePlayerId
@@ -124,6 +129,7 @@ class ObservationBuilder(
             players = players,
             zones = zones,
             stack = stack,
+            combat = combat,
             pendingDecision = pendingDecisionView,
             legalActions = legalActionViews,
             terminated = state.gameOver,
@@ -167,11 +173,32 @@ class ObservationBuilder(
                     colorless = it.colorless
                 )
             } ?: ManaPoolView(),
+            speed = container?.get<PlayerSpeedComponent>()?.speed ?: 0,
             isPerspective = playerId == perspectivePlayerId,
             isActive = playerId == state.activePlayerId,
             hasPriority = playerId == state.priorityPlayerId,
             hasLost = hasLost
         )
+    }
+
+    private fun buildCombatView(state: GameState): CombatView? {
+        val battlefield = state.turnOrder.flatMap(state::getBattlefield)
+        val attackers = battlefield.mapNotNull { entityId ->
+            val attacking = state.getEntity(entityId)?.get<AttackingComponent>() ?: return@mapNotNull null
+            AttackerView(
+                attackerId = entityId,
+                defenderId = attacking.defenderId,
+                blockerIds = state.getEntity(entityId)?.get<BlockedComponent>()?.blockerIds ?: emptyList()
+            )
+        }
+        val blockers = battlefield.mapNotNull { entityId ->
+            val blocking = state.getEntity(entityId)?.get<BlockingComponent>() ?: return@mapNotNull null
+            BlockerView(entityId, blocking.blockedAttackerIds)
+        }
+        if (attackers.isEmpty() && blockers.isEmpty()) return null
+        val attackingPlayerId = attackers.firstOrNull()?.attackerId
+            ?.let { state.projectedState.getController(it) }
+        return CombatView(attackingPlayerId, attackers, blockers)
     }
 
     // =========================================================================

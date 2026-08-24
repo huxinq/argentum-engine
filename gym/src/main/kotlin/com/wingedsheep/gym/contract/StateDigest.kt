@@ -51,6 +51,7 @@ object StateDigest {
                 .append(":g=").append(p.graveyardSize)
                 .append(":e=").append(p.exileSize)
                 .append(":lost=").append(p.hasLost)
+                .append(":speed=").append(p.speed)
                 .append(":mp=").append(p.manaPool.white).append(',').append(p.manaPool.blue).append(',')
                 .append(p.manaPool.black).append(',').append(p.manaPool.red).append(',')
                 .append(p.manaPool.green).append(',').append(p.manaPool.colorless)
@@ -86,6 +87,22 @@ object StateDigest {
                 .append(":targets=")
             s.targets.forEach { sb.append(it.value).append(',') }
             sb.append('|')
+        }
+
+        obs.combat?.let { combat ->
+            sb.append("C:attackingPlayer=").append(combat.attackingPlayerId?.value).append('|')
+            combat.attackers.sortedBy { it.attackerId.value }.forEach { attacker ->
+                sb.append("A[").append(attacker.attackerId.value).append("]")
+                    .append(":def=").append(attacker.defenderId.value)
+                    .append(":blockedBy=")
+                attacker.blockerIds.forEach { sb.append(it.value).append(',') }
+                sb.append('|')
+            }
+            combat.blockers.sortedBy { it.blockerId.value }.forEach { blocker ->
+                sb.append("B[").append(blocker.blockerId.value).append("]:blocks=")
+                blocker.blockedAttackerIds.forEach { sb.append(it.value).append(',') }
+                sb.append('|')
+            }
         }
 
         // Pending-decision IDs are ephemeral routing nonces and intentionally excluded. Everything

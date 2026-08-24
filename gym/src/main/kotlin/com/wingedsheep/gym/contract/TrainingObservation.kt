@@ -92,6 +92,9 @@ data class TrainingObservation(
     /** Stack contents, ordered bottom → top (top of stack = last element). */
     val stack: List<StackItemView>,
 
+    /** Public, in-progress combat relationships. Null outside combat. */
+    val combat: CombatView? = null,
+
     /** Non-null when the engine paused for a player decision. */
     override val pendingDecision: PendingDecisionView?,
 
@@ -127,7 +130,30 @@ data class PlayerView(
     val isPerspective: Boolean,
     val isActive: Boolean,
     val hasPriority: Boolean,
-    val hasLost: Boolean
+    val hasLost: Boolean,
+    /** Public Start Your Engines speed. Zero means the player has no speed yet. */
+    val speed: Int = 0
+)
+
+/** Public combat state; all ids are subsequently remapped at the policy boundary. */
+@Serializable
+data class CombatView(
+    val attackingPlayerId: EntityId?,
+    val attackers: List<AttackerView>,
+    val blockers: List<BlockerView>
+)
+
+@Serializable
+data class AttackerView(
+    val attackerId: EntityId,
+    val defenderId: EntityId,
+    val blockerIds: List<EntityId> = emptyList()
+)
+
+@Serializable
+data class BlockerView(
+    val blockerId: EntityId,
+    val blockedAttackerIds: List<EntityId>
 )
 
 @Serializable

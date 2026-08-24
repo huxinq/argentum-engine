@@ -256,4 +256,30 @@ class TrainingObservationTest : FunSpec({
         StateDigest.compute(base.copy(pendingDecision = pendingA)) shouldBe
             StateDigest.compute(base.copy(pendingDecision = pendingB))
     }
+
+    test("semantic digest includes public speed and combat relationships") {
+        val env = newEnv()
+        val me = env.playerIds[0]
+        val opponent = env.playerIds[1]
+        val base = ObservationBuilder().build(env.state, me, env.legalActions()).observation as TrainingObservation
+        val faster = base.copy(players = base.players.map { player ->
+            if (player.id == me) player.copy(speed = 2) else player
+        })
+        StateDigest.compute(base) shouldNotBe StateDigest.compute(faster)
+
+        val attacker = EntityId("visible-attacker")
+        val blocker = EntityId("visible-blocker")
+        val unblocked = base.copy(combat = CombatView(
+            attackingPlayerId = me,
+            attackers = listOf(AttackerView(attacker, opponent)),
+            blockers = emptyList(),
+        ))
+        val blocked = unblocked.copy(combat = CombatView(
+            attackingPlayerId = me,
+            attackers = listOf(AttackerView(attacker, opponent, listOf(blocker))),
+            blockers = listOf(BlockerView(blocker, listOf(attacker))),
+        ))
+        StateDigest.compute(base) shouldNotBe StateDigest.compute(unblocked)
+        StateDigest.compute(unblocked) shouldNotBe StateDigest.compute(blocked)
+    }
 })
