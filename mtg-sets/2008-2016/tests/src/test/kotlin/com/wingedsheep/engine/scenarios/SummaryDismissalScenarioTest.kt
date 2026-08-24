@@ -83,6 +83,10 @@ class SummaryDismissalScenarioTest : FunSpec({
             context,
         )
         cleared.state.stack shouldBe listOf(summary)
-        cleared.events.filterIsInstance<AbilityCounteredEvent>().size shouldBe 1
+        val countered = cleared.events.filterIsInstance<AbilityCounteredEvent>().single()
+        countered.abilityEntityId shouldBe ability
+        countered.sourceId shouldBe abilitySource
+        countered.sourceName shouldBe "Test Source"
+        countered.controllerId shouldBe opponent
     }
 })
