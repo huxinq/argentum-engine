@@ -143,8 +143,9 @@ export function fromQuickGameLobby(
   // Host is the first non-AI seat — the same convention the server's leave handler uses.
   const isHost = lobby.players.find((p) => !p.isAi)?.playerId === lobby.youPlayerId
   const isMomir = lobby.momirBasic ?? false
+  const lockedAi = lobby.lockedAi ?? null
   const youReady = you?.ready ?? false
-  const needsDeck = !isMomir && (!opts.deckValid || !you?.deckSelected)
+  const needsDeck = !isMomir && lockedAi === null && (!opts.deckValid || !you?.deckSelected)
   const axes = axesFromQuickGameLobby(lobby, you, opts.deckTab)
   // Only a host-*picked* deck can be missing a commander; the generated sources choose their own.
   // Mirrors the server's ready-up gate in `QuickGameLobbyHandler.handleSetReady`.
@@ -179,8 +180,10 @@ export function fromQuickGameLobby(
   return {
     kind: 'QUICK',
     lobbyId: lobby.lobbyId,
-    title: '1v1 Lobby',
-    subtitle: quickSubtitle(axes.cards.kind, lobby.vsAi),
+    title: lockedAi ? 'Search Teacher' : '1v1 Lobby',
+    subtitle: lockedAi
+      ? `Standard BO1 Mono-Red mirror · ${lockedAi.profileLabel} search profile`
+      : quickSubtitle(axes.cards.kind, lobby.vsAi),
     isHost,
     // A quick lobby has no state machine: it is staging right up until the game starts.
     isWaiting: true,
@@ -205,7 +208,7 @@ export function fromQuickGameLobby(
         },
     guidance,
     isPublic: lobby.isPublic,
-    canAddAi: isHost && opts.aiEnabled && !lobby.vsAi && lobby.players.length < 2,
+    canAddAi: lockedAi === null && isHost && opts.aiEnabled && !lobby.vsAi && lobby.players.length < 2,
     ranked: { available: lobby.rankedEligible ?? false, on: lobby.ranked ?? false },
     // The server's `QuickGameLobby.twoHeadedGiant` exists but no client has ever reached it (gap
     // #6): it isn't in `QuickGameLobbyStateMessage` at all, so there is nothing here to read.

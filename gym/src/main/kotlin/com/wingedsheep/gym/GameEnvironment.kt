@@ -15,6 +15,8 @@ import com.wingedsheep.engine.legalactions.EnumerationMode
 import com.wingedsheep.engine.legalactions.LegalAction
 import com.wingedsheep.engine.legalactions.LegalActionEnumerator
 import com.wingedsheep.engine.registry.CardRegistry
+import com.wingedsheep.engine.registry.PrintingRegistry
+import com.wingedsheep.engine.registry.TokenArtRegistry
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.sdk.model.EntityId
 
@@ -190,6 +192,26 @@ class GameEnvironment private constructor(
         stepCount++
 
         return buildStepResult(simResult.events)
+    }
+
+    /**
+     * Apply exactly one raw engine action without the simulator's quiet-state auto-resolution.
+     *
+     * Live replay consumers use this boundary because priority passes and forced responses arrive
+     * as their own authoritative actions. Ordinary search should continue to use [step], whose
+     * quiet-state horizon is part of the established evaluation policy.
+     */
+    fun stepRaw(action: GameAction): StepResult {
+        check(playerIds.isNotEmpty()) { "Call reset() before stepRaw()" }
+
+        val result = processor.process(state, action).result
+        state = result.state
+        events = events + result.events
+        lastStepEvents = result.events
+        lastRejection = result.error
+        stepCount++
+
+        return buildStepResult(result.events)
     }
 
     /**
@@ -370,9 +392,11 @@ class GameEnvironment private constructor(
          */
         fun create(
             cardRegistry: CardRegistry,
-            evaluator: BoardEvaluator = defaultEvaluator()
+            evaluator: BoardEvaluator = defaultEvaluator(),
+            printingRegistry: PrintingRegistry? = null,
+            tokenArtRegistry: TokenArtRegistry? = null,
         ): GameEnvironment {
-            val services = EngineServices(cardRegistry)
+            val services = EngineServices(cardRegistry, printingRegistry, tokenArtRegistry)
             val processor = ActionProcessor(services, computeUndo = false)
             val enumerator = LegalActionEnumerator.create(cardRegistry)
             val simulator = GameSimulator(cardRegistry, processor, enumerator)

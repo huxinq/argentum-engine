@@ -38,6 +38,9 @@ class AiInsightService(gameProperties: GameProperties) {
     /** Decisions per game session, oldest first. */
     private val byGame = ConcurrentHashMap<String, ArrayDeque<AiInsightEntry>>()
 
+    /** Perspective-safe Search Teacher records. These never retain an unmasked [GameState]. */
+    private val searchByGame = ConcurrentHashMap<String, ArrayDeque<SearchTeacherInsightEntry>>()
+
     /**
      * Seat → game session, so the client can ask for "my game" using the only id it has, its own
      * player id. Rebuilt from each recorded state's turn order, which keeps it correct across
@@ -94,6 +97,17 @@ class AiInsightService(gameProperties: GameProperties) {
         state.turnOrder.forEach { gameByPlayer[it] = gameSessionId }
     }
 
+    fun recordSearch(gameSessionId: String, state: GameState, insight: SearchTeacherInsight) {
+        if (!enabled) return
+        val entry = SearchTeacherInsightEntry(nextId.getAndIncrement(), Instant.now(), insight)
+        val entries = searchByGame.computeIfAbsent(gameSessionId) { ArrayDeque() }
+        synchronized(entries) {
+            entries.addLast(entry)
+            while (entries.size > MAX_DECISIONS_PER_GAME) entries.removeFirst()
+        }
+        state.turnOrder.forEach { gameByPlayer[it] = gameSessionId }
+    }
+
     // ── Browsing ──────────────────────────────────────────────────────────────
 
     /** The game session [playerId] is seated in, or null if no AI in it has recorded anything yet. */
@@ -108,8 +122,16 @@ class AiInsightService(gameProperties: GameProperties) {
     fun decision(gameSessionId: String, id: Long): AiInsightEntry? =
         decisions(gameSessionId).firstOrNull { it.id == id }
 
+    fun searchDecisions(gameSessionId: String, limit: Int = MAX_DECISIONS_PER_GAME): List<SearchTeacherInsightEntry> {
+        val entries = searchByGame[gameSessionId] ?: return emptyList()
+        return synchronized(entries) { entries.toList() }.asReversed().take(limit)
+    }
+
+    fun hasSearchDecisions(gameSessionId: String): Boolean = searchByGame[gameSessionId]?.isNotEmpty() == true
+
     fun clearGame(gameSessionId: String) {
         byGame.remove(gameSessionId)
+        searchByGame.remove(gameSessionId)
         gameByPlayer.entries.removeIf { it.value == gameSessionId }
         // Releasing first: a held AI whose history is being wiped must not be stranded.
         pendingByGame[gameSessionId]?.let { it.deferred.complete(it.proposed) }
@@ -257,3 +279,9 @@ class AiInsightEntry(
     @Volatile
     var humanOverride: AiHumanOverride? = null
 }
+
+class SearchTeacherInsightEntry(
+    val id: Long,
+    val recordedAt: Instant,
+    val insight: SearchTeacherInsight,
+)

@@ -5,6 +5,9 @@ import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.gameserver.ai.AiHumanOverride
 import com.wingedsheep.gameserver.ai.AiInsightEntry
 import com.wingedsheep.gameserver.ai.AiInsightService
+import com.wingedsheep.gameserver.ai.SearchTeacherCandidateInsight
+import com.wingedsheep.gameserver.ai.SearchTeacherInsight
+import com.wingedsheep.gameserver.ai.SearchTeacherInsightEntry
 import com.wingedsheep.gameserver.persistence.persistenceJson
 import com.wingedsheep.sdk.model.EntityId
 import kotlinx.serialization.Serializable
@@ -67,13 +70,19 @@ class AiInsightController(private val service: AiInsightService) {
             AiInsightListResponse(gameSessionId = null, decisions = emptyList(), stepMode = stepMode)
         )
 
-        val decisions = service.decisions(gameSessionId, limit.coerceIn(1, 200)).map { it.toDto() }
+        val boundedLimit = limit.coerceIn(1, 200)
+        val decisions = service.decisions(gameSessionId, boundedLimit).map { it.toDto() }
+        val searchDecisions = service.searchDecisions(gameSessionId, boundedLimit).map { it.toDto() }
+        val searchMode = searchDecisions.isNotEmpty()
         val held = service.pending(gameSessionId)
         return json(
             AiInsightListResponse(
                 gameSessionId = gameSessionId,
                 decisions = decisions,
-                stepMode = stepMode,
+                searchDecisions = searchDecisions,
+                mode = if (searchMode) "search-teacher" else "engine",
+                readOnly = searchMode,
+                stepMode = if (searchMode) false else stepMode,
                 pending = held?.let {
                     AiPendingApproval(
                         decisionId = it.decisionId,
@@ -179,6 +188,36 @@ class AiInsightController(private val service: AiInsightService) {
 
     private fun AiHumanOverride.toDto() = AiHumanOverrideDto(optionIndex, label)
 
+    private fun SearchTeacherInsightEntry.toDto() = SearchTeacherInsightDecision(
+        id = id,
+        recordedAt = recordedAt.toString(),
+        actionIndex = insight.actionIndex,
+        chosenLabel = insight.chosenLabel,
+        chosenSignature = insight.chosenSignature,
+        candidates = insight.candidates.map { it.toDto() },
+        rootValue = insight.rootValue,
+        thinkTimeMs = insight.thinkTimeMs,
+        simulations = insight.simulations,
+        particles = insight.particles,
+        nodes = insight.nodes,
+        maximumDepth = insight.maximumDepth,
+        exhaustiveNodes = insight.exhaustiveNodes,
+        nonExhaustiveNodes = insight.nonExhaustiveNodes,
+        wideningEvents = insight.wideningEvents,
+        beliefEntropy = insight.beliefEntropy,
+        effectiveSampleSize = insight.effectiveSampleSize,
+        resamplingCount = insight.resamplingCount,
+        reconditioningCount = insight.reconditioningCount,
+        failureCode = insight.failureCode,
+        diagnostic = insight.diagnostic,
+        authoritativeFingerprint = insight.authoritativeFingerprint,
+        shadowFingerprint = insight.shadowFingerprint,
+    )
+
+    private fun SearchTeacherCandidateInsight.toDto() = SearchTeacherCandidateDto(
+        label, signature, visits, meanValue, policyProbability, chosen,
+    )
+
     /**
      * kotlinx rather than Spring's Jackson converter: these payloads are built from engine types —
      * [EntityId] is a value class and [GameState] a large polymorphic tree — that only round-trip
@@ -196,9 +235,49 @@ data class AiInsightListResponse(
     val gameSessionId: String?,
     /** Newest first. */
     val decisions: List<AiInsightDecision>,
+    val searchDecisions: List<SearchTeacherInsightDecision> = emptyList(),
+    val mode: String = "engine",
+    val readOnly: Boolean = false,
     val stepMode: Boolean = false,
     /** Set while the AI is held waiting for a human to approve or replace its move. */
     val pending: AiPendingApproval? = null,
+)
+
+@Serializable
+data class SearchTeacherInsightDecision(
+    val id: Long,
+    val recordedAt: String,
+    val actionIndex: Int,
+    val chosenLabel: String?,
+    val chosenSignature: String?,
+    val candidates: List<SearchTeacherCandidateDto>,
+    val rootValue: Double?,
+    val thinkTimeMs: Double,
+    val simulations: Int,
+    val particles: Int,
+    val nodes: Int,
+    val maximumDepth: Int,
+    val exhaustiveNodes: Int,
+    val nonExhaustiveNodes: Int,
+    val wideningEvents: Int,
+    val beliefEntropy: Double,
+    val effectiveSampleSize: Double,
+    val resamplingCount: Int,
+    val reconditioningCount: Int,
+    val failureCode: String?,
+    val diagnostic: String?,
+    val authoritativeFingerprint: String?,
+    val shadowFingerprint: String?,
+)
+
+@Serializable
+data class SearchTeacherCandidateDto(
+    val label: String,
+    val signature: String,
+    val visits: Int,
+    val meanValue: Double,
+    val policyProbability: Double,
+    val chosen: Boolean,
 )
 
 @Serializable

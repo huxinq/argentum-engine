@@ -11,6 +11,7 @@ import {
   type AiActionOption,
   type AiInsightDecision,
   type AiInsightListResponse,
+  type SearchTeacherInsightDecision,
 } from '@/api/aiInsight'
 
 /**
@@ -28,6 +29,7 @@ import {
  */
 export function AiInsightPanel() {
   const playerId = useGameStore((state) => state.playerId)
+  const aiMode = useGameStore((state) => state.aiMode)
   const [available, setAvailable] = useState<boolean | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [data, setData] = useState<AiInsightListResponse | null>(null)
@@ -39,6 +41,8 @@ export function AiInsightPanel() {
   const [hoveredId, setHoveredId] = useState<number | null>(null)
 
   const decisions = data?.decisions ?? []
+  const searchDecisions = data?.searchDecisions ?? []
+  const isSearchTeacher = aiMode === 'search-teacher' || data?.mode === 'search-teacher'
   const pending = data?.pending ?? null
   const stepMode = data?.stepMode ?? false
   const pendingId = pending?.decisionId ?? null
@@ -108,8 +112,33 @@ export function AiInsightPanel() {
         style={{ ...styles.toggleButton, ...(pending ? styles.toggleButtonHeld : null) }}
         title={pending ? 'The AI is waiting for you' : 'Browse what the AI considered'}
       >
-        {pending ? '⏸ AI waiting' : `AI Insight (${decisions.length})`}
+        {pending
+          ? '⏸ AI waiting'
+          : `${isSearchTeacher ? 'Search Teacher' : 'AI Insight'} (${isSearchTeacher ? searchDecisions.length : decisions.length})`}
       </button>
+    )
+  }
+
+  if (isSearchTeacher) {
+    const selectedSearch = selectedId === null
+      ? searchDecisions[0] ?? null
+      : searchDecisions.find((decision) => decision.id === selectedId) ?? searchDecisions[0] ?? null
+    return (
+      <SearchTeacherInsightPanel
+        decisions={searchDecisions}
+        selected={selectedSearch}
+        selectedId={selectedId}
+        hoveredId={hoveredId}
+        busy={busy}
+        error={error}
+        onSelect={setSelectedId}
+        onHover={setHoveredId}
+        onClear={() => void run(async () => {
+          await clearAiInsight(playerId)
+          setSelectedId(null)
+        })}
+        onClose={() => setExpanded(false)}
+      />
     )
   }
 
@@ -231,6 +260,145 @@ export function AiInsightPanel() {
       )}
     </div>
   )
+}
+
+function SearchTeacherInsightPanel({
+  decisions,
+  selected,
+  selectedId,
+  hoveredId,
+  busy,
+  error,
+  onSelect,
+  onHover,
+  onClear,
+  onClose,
+}: {
+  decisions: readonly SearchTeacherInsightDecision[]
+  selected: SearchTeacherInsightDecision | null
+  selectedId: number | null
+  hoveredId: number | null
+  busy: boolean
+  error: string | null
+  onSelect: (id: number | null) => void
+  onHover: (id: number | null) => void
+  onClear: () => void
+  onClose: () => void
+}) {
+  return (
+    <div style={styles.panel} data-testid="search-teacher-insight">
+      <div style={styles.header}>
+        <span style={styles.headerTitle}>Search Teacher Insight · read-only</span>
+        <div style={styles.headerActions}>
+          <button
+            style={styles.actionButton}
+            disabled={busy || decisions.length === 0}
+            onClick={onClear}
+            title="Drop the recorded Search Teacher history for this game"
+          >
+            Clear
+          </button>
+          <button onClick={onClose} style={styles.closeButton} title="Close">&times;</button>
+        </div>
+      </div>
+      {error && <div style={styles.error}>{error}</div>}
+      {decisions.length === 0 ? (
+        <div style={styles.empty}>Waiting for the Search Teacher's first decision.</div>
+      ) : (
+        <>
+          <div style={styles.timeline}>
+            {decisions.map((decision) => {
+              const isSelected = decision.id === selected?.id
+              return (
+                <button
+                  key={decision.id}
+                  onClick={() => onSelect(selectedId !== null && isSelected ? null : decision.id)}
+                  onMouseEnter={() => onHover(decision.id)}
+                  onMouseLeave={() => onHover(null)}
+                  style={{
+                    ...styles.timelineRow,
+                    ...(isSelected ? styles.timelineRowSelected : null),
+                    ...(hoveredId === decision.id ? styles.timelineRowHovered : null),
+                  }}
+                >
+                  <span style={styles.timelineTurn}>A{decision.actionIndex}</span>
+                  <span style={styles.timelineChoice}>
+                    {decision.failureCode ? `Failure: ${decision.failureCode}` : decision.chosenLabel}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          {selected && <SearchTeacherDecisionDetail decision={selected} pinned={selectedId !== null} />}
+        </>
+      )}
+    </div>
+  )
+}
+
+function SearchTeacherDecisionDetail({
+  decision,
+  pinned,
+}: {
+  decision: SearchTeacherInsightDecision
+  pinned: boolean
+}) {
+  if (decision.failureCode) {
+    return (
+      <div style={styles.detail}>
+        <div style={styles.failureTitle}>{decision.failureCode}</div>
+        <div style={styles.failureDiagnostic}>{decision.diagnostic ?? 'Search failed closed.'}</div>
+        <div style={styles.detailMeta}>Action {decision.actionIndex}{pinned ? ' · pinned' : ''}</div>
+        {decision.authoritativeFingerprint && (
+          <div style={styles.fingerprint}>authoritative {decision.authoritativeFingerprint}</div>
+        )}
+        {decision.shadowFingerprint && (
+          <div style={styles.fingerprint}>shadow {decision.shadowFingerprint}</div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div style={styles.detail}>
+      <div style={styles.detailMeta}>
+        Action {decision.actionIndex} · {decision.particles} particles × {decision.simulations} simulations ·{' '}
+        {decision.thinkTimeMs.toFixed(1)}ms{pinned && <span style={styles.pinned}> · pinned</span>}
+      </div>
+      <div style={styles.searchStats}>
+        <span>root {formatMetric(decision.rootValue)}</span>
+        <span>nodes {decision.nodes}</span>
+        <span>depth {decision.maximumDepth}</span>
+        <span>widen {decision.wideningEvents}</span>
+        <span>entropy {formatMetric(decision.beliefEntropy)}</span>
+        <span>ESS {formatMetric(decision.effectiveSampleSize)}</span>
+        <span>resample {decision.resamplingCount}</span>
+        <span>recondition {decision.reconditioningCount}</span>
+      </div>
+      <div style={styles.options}>
+        {decision.candidates.map((candidate, index) => (
+          <div
+            key={candidate.signature}
+            style={{ ...styles.option, ...(candidate.chosen ? styles.optionChosen : null) }}
+          >
+            <div style={styles.optionTop}>
+              <span style={styles.optionRank}>{index + 1}</span>
+              <span style={styles.optionLabel} title={candidate.signature}>{candidate.label}</span>
+              {candidate.chosen && <span style={styles.aiPickTag}>chosen</span>}
+            </div>
+            <div style={styles.optionNote}>
+              {candidate.visits} visits · mean {candidate.meanValue.toFixed(3)} · policy{' '}
+              {(candidate.policyProbability * 100).toFixed(1)}%
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function formatMetric(value: number | null): string {
+  return value === null ? '—' : value.toFixed(3)
 }
 
 function DecisionDetail({
@@ -569,6 +737,34 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#777',
     lineHeight: 1.5,
     paddingBottom: 2,
+  },
+  searchStats: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+    gap: 4,
+    padding: '6px 0',
+    color: '#8a8a99',
+    fontSize: 10,
+    fontVariantNumeric: 'tabular-nums',
+  },
+  failureTitle: {
+    color: '#e89282',
+    fontSize: 12,
+    fontWeight: 700,
+    paddingBottom: 6,
+  },
+  failureDiagnostic: {
+    color: '#d6a49a',
+    fontSize: 11,
+    lineHeight: 1.5,
+    paddingBottom: 6,
+  },
+  fingerprint: {
+    color: '#666',
+    fontSize: 9,
+    fontFamily: 'monospace',
+    overflowWrap: 'anywhere',
+    paddingTop: 3,
   },
   pinned: {
     color: '#5bc0de',

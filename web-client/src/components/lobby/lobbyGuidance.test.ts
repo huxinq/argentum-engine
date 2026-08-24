@@ -104,6 +104,42 @@ describe('role-aware lobby guidance', () => {
     expect(view.guidance.detail).toContain('Bob')
   })
 
+  it('treats the Search Teacher mirror as preloaded and only asks the human to ready', () => {
+    const lobby = quick([
+      {
+        playerId: 'p1', playerName: 'Alice', isAi: false, ready: false,
+        deckSelected: true, deckLabel: 'Mono-Red (60)', deckCardCount: 60, setCode: null,
+      },
+      {
+        playerId: 'ai', playerName: 'Search Teacher', isAi: true, ready: true,
+        deckSelected: true, deckLabel: 'Mono-Red (60)', deckCardCount: 60, setCode: null,
+      },
+    ])
+    const locked = {
+      ...lobby,
+      vsAi: true,
+      format: 'STANDARD' as const,
+      lockedAi: {
+        mode: 'search-teacher' as const,
+        deckId: 'mono-red-standard-2026-07-30',
+        deckName: 'Mono-Red Standard',
+        cardCount: 60,
+        profileLabel: '8×64',
+        readOnlyInsight: true,
+      },
+    }
+
+    const view = fromQuickGameLobby(
+      locked,
+      { deckValid: false, deckTab: undefined, aiEnabled: true },
+    )
+
+    expect(view.title).toBe('Search Teacher')
+    expect(view.subtitle).toContain('8×64')
+    expect(view.primaryAction).toMatchObject({ kind: 'READY', disabled: false })
+    expect(view.canAddAi).toBe(false)
+  })
+
   it('gives a tournament guest a deck-submission instruction instead of a generic wait message', () => {
     const view = fromTournamentLobby(
       tournament({ isHost: false }),

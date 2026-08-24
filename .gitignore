@@ -205,6 +205,8 @@ CLAUDE.local.md
 
 # Node/vitest caches (a stray root node_modules/ got committed once — never again)
 node_modules/
+/web-client/playwright-report/
+/web-client/test-results/
 
 # Bytecode from the shared modules the scripts/ tools import
 scripts/__pycache__/

@@ -99,6 +99,10 @@ class QuickGameLobbyHandler(
         }
         lobbyRepository.withLock(lobby.lobbyId) { current ->
             if (current == null) return@withLock
+            if (aiGameManager.controllerMode == com.wingedsheep.gameserver.ai.AiControllerMode.SEARCH_TEACHER) {
+                sender.sendError(session, ErrorCode.INVALID_ACTION, "Search Teacher games must be created through Solo play")
+                return@withLock
+            }
             val host = current.players.firstOrNull { !it.isAi }
             if (host?.playerId != playerSession.playerId) {
                 sender.sendError(session, ErrorCode.INVALID_ACTION, "Only the host can add an AI player")
@@ -134,6 +138,10 @@ class QuickGameLobbyHandler(
         }
         lobbyRepository.withLock(lobby.lobbyId) { current ->
             if (current == null) return@withLock
+            if (current.lockedAiContract != null) {
+                sender.sendError(session, ErrorCode.INVALID_ACTION, "The Search Teacher opponent is locked for this game")
+                return@withLock
+            }
             val host = current.players.firstOrNull { !it.isAi }
             if (host?.playerId != playerSession.playerId) {
                 sender.sendError(session, ErrorCode.INVALID_ACTION, "Only the host can remove the AI player")
@@ -162,6 +170,10 @@ class QuickGameLobbyHandler(
         }
         lobbyRepository.withLock(lobby.lobbyId) { current ->
             if (current == null) return@withLock
+            if (current.lockedAiContract != null) {
+                sender.sendError(session, ErrorCode.INVALID_ACTION, "The Search Teacher deck is locked")
+                return@withLock
+            }
             if (!current.vsAi) {
                 sender.sendError(session, ErrorCode.INVALID_ACTION, "This lobby has no AI opponent")
                 return@withLock
@@ -212,6 +224,10 @@ class QuickGameLobbyHandler(
         }
         lobbyRepository.withLock(lobby.lobbyId) { current ->
             if (current == null) return@withLock
+            if (current.lockedAiContract != null) {
+                sender.sendError(session, ErrorCode.INVALID_ACTION, "The Search Teacher mirror is locked to Standard")
+                return@withLock
+            }
             val host = current.players.firstOrNull { !it.isAi }
             if (host?.playerId != playerSession.playerId) {
                 sender.sendError(session, ErrorCode.INVALID_ACTION, "Only the host can change the format")
@@ -263,6 +279,10 @@ class QuickGameLobbyHandler(
         }
         lobbyRepository.withLock(lobby.lobbyId) { current ->
             if (current == null) return@withLock
+            if (current.lockedAiContract != null) {
+                sender.sendError(session, ErrorCode.INVALID_ACTION, "The Search Teacher deck and set are locked")
+                return@withLock
+            }
             // Host-only: first non-AI player is the host (matches the leave/close convention).
             val host = current.players.firstOrNull { !it.isAi }
             if (host?.playerId != playerSession.playerId) {
@@ -286,6 +306,10 @@ class QuickGameLobbyHandler(
         }
         lobbyRepository.withLock(lobby.lobbyId) { current ->
             if (current == null) return@withLock
+            if (current.lockedAiContract != null) {
+                sender.sendError(session, ErrorCode.INVALID_ACTION, "Search Teacher games cannot be ranked")
+                return@withLock
+            }
             val host = current.players.firstOrNull { !it.isAi }
             if (host?.playerId != playerSession.playerId) {
                 sender.sendError(session, ErrorCode.INVALID_ACTION, "Only the host can change ranked")
@@ -308,6 +332,10 @@ class QuickGameLobbyHandler(
         }
         lobbyRepository.withLock(lobby.lobbyId) { current ->
             if (current == null) return@withLock
+            if (current.lockedAiContract != null) {
+                sender.sendError(session, ErrorCode.INVALID_ACTION, "The Search Teacher deck and set are locked")
+                return@withLock
+            }
             val player = current.findPlayer(playerSession.playerId) ?: return@withLock
             val requested = message.setCodes.filter { it.isNotBlank() }.distinct()
             if (player.setCodes == requested) return@withLock
@@ -325,8 +353,27 @@ class QuickGameLobbyHandler(
             sender.sendError(session, ErrorCode.INVALID_ACTION, "Already in a lobby")
             return
         }
+        if (aiGameManager.controllerMode == com.wingedsheep.gameserver.ai.AiControllerMode.SEARCH_TEACHER && !message.vsAi) {
+            sender.sendError(session, ErrorCode.INVALID_ACTION, "Search Teacher mode supports only Solo play")
+            return
+        }
         if (message.vsAi && !aiGameManager.isEnabled) {
             sender.sendError(session, ErrorCode.INVALID_ACTION, "AI opponent is not enabled on this server")
+            return
+        }
+        val lockedTeacher = if (message.vsAi &&
+            aiGameManager.controllerMode == com.wingedsheep.gameserver.ai.AiControllerMode.SEARCH_TEACHER
+        ) aiGameManager.lockedQuickGameContract else null
+        if (message.vsAi &&
+            aiGameManager.controllerMode == com.wingedsheep.gameserver.ai.AiControllerMode.SEARCH_TEACHER &&
+            lockedTeacher == null
+        ) {
+            sender.sendError(session, ErrorCode.INVALID_ACTION, "Search Teacher provider has no locked deck contract")
+            return
+        }
+        if (lockedTeacher != null && (message.momirBasic || message.twoHeadedGiant ||
+                (message.format != null && message.format != DeckFormat.STANDARD))) {
+            sender.sendError(session, ErrorCode.INVALID_ACTION, "Search Teacher v1 supports only its locked Standard 1v1 mirror")
             return
         }
         // A quick lobby's `vsAi` seats exactly one AI, and 2HG needs three to fill its four seats.
@@ -351,7 +398,8 @@ class QuickGameLobbyHandler(
             // AI lobbies are single-player — never publicly listed.
             isPublic = message.isPublic && !message.vsAi,
             // Momir Basic has no deck-construction restriction; the two flags are mutually exclusive.
-            format = if (message.momirBasic) null else message.format,
+            format = if (lockedTeacher != null) DeckFormat.STANDARD else if (message.momirBasic) null else message.format,
+            lockedAiContract = lockedTeacher,
             momirBasic = message.momirBasic,
             twoHeadedGiant = message.twoHeadedGiant,
         )
@@ -359,12 +407,16 @@ class QuickGameLobbyHandler(
         lobby.ranked = message.ranked && lobby.rankedEligible
         lobby.players += QuickGameLobbyPlayer(
             playerId = playerSession.playerId,
-            playerName = playerSession.playerName
+            playerName = playerSession.playerName,
+            deckList = lockedTeacher?.deckList,
         )
         if (message.vsAi) {
+            if (lockedTeacher != null) {
+                lobby.aiDeckSpec = AiDeckSpec.Fixed(lockedTeacher.deckList, lockedTeacher.deckName)
+            }
             lobby.players += QuickGameLobbyPlayer(
                 playerId = com.wingedsheep.sdk.model.EntityId("ai-pending-${lobby.lobbyId}"),
-                playerName = "AI Opponent",
+                playerName = if (lockedTeacher != null) "Search Teacher" else "AI Opponent",
                 isAi = true,
                 ready = true,
                 // AI deck is generated at game start by AiGameManager, so an empty map is fine.
@@ -458,6 +510,10 @@ class QuickGameLobbyHandler(
         val lobby = lobbyRepository.findContainingPlayer(playerSession.playerId) ?: run {
             sender.sendError(session, ErrorCode.GAME_NOT_FOUND, "Not in a lobby"); return
         }
+        if (lobby.lockedAiContract != null) {
+            sender.sendError(session, ErrorCode.INVALID_ACTION, "The Search Teacher mirror deck is locked")
+            return
+        }
         // Empty deck = "random pool" — skip validation. The commander field, if any, is meaningless
         // without an accompanying deck list and gets dropped at the lobby layer below.
         if (message.deckList.isNotEmpty()) {
@@ -530,6 +586,13 @@ class QuickGameLobbyHandler(
         lobbyRepository.withLock(lobby.lobbyId) { current ->
             if (current == null) return@withLock
             val player = current.findPlayer(playerSession.playerId) ?: return@withLock
+            current.lockedAiContract?.let { contract ->
+                val lockedAiDeck = current.aiDeckSpec as? AiDeckSpec.Fixed
+                if (player.deckList != contract.deckList || lockedAiDeck?.deckList != contract.deckList) {
+                    sender.sendError(session, ErrorCode.INVALID_ACTION, "Search Teacher deck contract changed; recreate the lobby")
+                    return@withLock
+                }
+            }
             // Momir Basic has no deckbuilding (fixed 60 basics), so there is nothing to pick before
             // readying. For every other lobby, ready-up requires a submitted deck (null = nothing
             // chosen yet).
@@ -581,7 +644,7 @@ class QuickGameLobbyHandler(
 
         val gameSession = GameSession(
             cardRegistry = cardRegistry,
-            useHandSmoother = gameProperties.handSmoother.enabled,
+            useHandSmoother = if (lobby.lockedAiContract != null) false else gameProperties.handSmoother.enabled,
             debugMode = gameProperties.debugMode,
             printingRegistry = printingRegistry,
             tokenArtRegistry = tokenArtRegistry,
@@ -647,7 +710,7 @@ class QuickGameLobbyHandler(
                 deckList = EasterEggDeckInjector.maybeInjectEasterEggs(
                     lobbyPlayer.playerName,
                     resolved.deckList,
-                    gameProperties.easterEggs.enabled,
+                    gameProperties.easterEggs.enabled && lobby.lockedAiContract == null,
                 ),
                 // A submitted deck names its own commander on the lobby seat; a generated one names
                 // it on the resolved deck. Either way the seat needs exactly one.
@@ -784,6 +847,7 @@ class QuickGameLobbyHandler(
             ranked = lobby.ranked,
             rankedEligible = lobby.rankedEligible,
             aiDeck = if (lobby.vsAi) AiDeckSpecView.of(lobby.aiDeckSpec) else null,
+            lockedAi = lobby.lockedAiView(),
         )
         sender.send(session, msg)
     }
@@ -835,6 +899,7 @@ class QuickGameLobbyHandler(
                 ranked = lobby.ranked,
                 rankedEligible = lobby.rankedEligible,
                 aiDeck = if (lobby.vsAi) AiDeckSpecView.of(lobby.aiDeckSpec) else null,
+                lockedAi = lobby.lockedAiView(),
             )
             sender.send(ws, msg)
         }
@@ -856,6 +921,17 @@ class QuickGameLobbyHandler(
         return next
     }
 
+    private fun QuickGameLobby.lockedAiView(): ServerMessage.LockedAiQuickGameView? =
+        lockedAiContract?.let { contract ->
+            ServerMessage.LockedAiQuickGameView(
+                mode = com.wingedsheep.gameserver.ai.AiControllerMode.SEARCH_TEACHER.wireName,
+                deckId = contract.deckId,
+                deckName = contract.deckName,
+                cardCount = contract.deckList.values.sum(),
+                profileLabel = contract.profileLabel,
+            )
+        }
+
     private fun broadcastClosed(lobby: QuickGameLobby, reason: String) {
         for (player in lobby.players) {
             if (player.isAi) continue
@@ -872,6 +948,8 @@ class QuickGameLobbyHandler(
         // Momir Basic has no deckbuilding: every seat plays the fixed 60 basics, so it always counts
         // as "deck selected" and shows a fixed label rather than the deck-picker states.
         val label = when {
+            lobby.lockedAiContract != null ->
+                "${lobby.lockedAiContract!!.deckName} (${lobby.lockedAiContract!!.deckList.values.sum()})"
             lobby.momirBasic -> "Momir Basic (${MomirBasicSetup.COPIES_PER_BASIC * MomirBasicSetup.BASIC_LAND_NAMES.size} lands)"
             // The AI seat holds no deck list of its own — it plays whatever the host's
             // `aiDeckSpec` resolves to at game start — so it labels from the spec instead.
@@ -885,8 +963,12 @@ class QuickGameLobbyHandler(
             playerName = playerName,
             isAi = isAi,
             ready = ready,
-            deckSelected = lobby.momirBasic || deckList != null,
-            deckCardCount = if (lobby.momirBasic) MomirBasicSetup.COPIES_PER_BASIC * MomirBasicSetup.BASIC_LAND_NAMES.size else total,
+            deckSelected = lobby.lockedAiContract != null || lobby.momirBasic || deckList != null,
+            deckCardCount = when {
+                lobby.lockedAiContract != null -> lobby.lockedAiContract!!.deckList.values.sum()
+                lobby.momirBasic -> MomirBasicSetup.COPIES_PER_BASIC * MomirBasicSetup.BASIC_LAND_NAMES.size
+                else -> total
+            },
             deckLabel = label,
             setCode = setCode,
             setCodes = setCodes,

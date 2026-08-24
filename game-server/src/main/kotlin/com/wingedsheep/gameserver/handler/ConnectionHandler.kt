@@ -130,7 +130,8 @@ class ConnectionHandler(
             playerId.value,
             identity.token,
             aiEnabled = aiGameManager.isEnabled,
-            availableSets = buildAvailableSetsList()
+            availableSets = buildAvailableSetsList(),
+            aiMode = aiGameManager.controllerMode.wireName,
         ))
         broadcastOnlinePlayersCount()
         broadcastFriendPresence(identity)
@@ -252,7 +253,8 @@ class ConnectionHandler(
             context = context,
             contextId = contextId,
             aiEnabled = aiGameManager.isEnabled,
-            availableSets = buildAvailableSetsList()
+            availableSets = buildAvailableSetsList(),
+            aiMode = aiGameManager.controllerMode.wireName,
         ))
         broadcastOnlinePlayersCount()
         broadcastFriendPresence(identity)

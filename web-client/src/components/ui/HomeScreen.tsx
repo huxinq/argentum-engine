@@ -111,6 +111,7 @@ export function HomeScreen({
   const navigate = useNavigate()
   const connect = useGameStore((state) => state.connect)
   const aiEnabled = useGameStore((state) => state.aiEnabled)
+  const aiMode = useGameStore((state) => state.aiMode)
   const joinQuickGameLobby = useGameStore((state) => state.joinQuickGameLobby)
   const applyRecipe = useApplyRecipe()
   const lobbyState = useGameStore((state) => state.lobbyState)
@@ -374,7 +375,7 @@ export function HomeScreen({
                 {/* Above the wizard, and absent until you have played something: a returning player
                     gets one click, a first-time player gets the three questions unchanged. */}
                 <SetupRail onLaunch={applyRecipe} />
-                <PlayWizard aiEnabled={aiEnabled} onLaunch={launch} />
+                <PlayWizard aiEnabled={aiEnabled} aiMode={aiMode} onLaunch={launch} />
 
                 {/* Not a step. Someone who has a code has had the three questions answered for them,
                     so the join row stays visible throughout rather than hiding behind step 1. */}

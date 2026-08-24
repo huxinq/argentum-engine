@@ -7,6 +7,7 @@ import com.wingedsheep.ai.llm.CardRuling
 import com.wingedsheep.ai.llm.CardSummary
 import com.wingedsheep.ai.llm.MulliganInfo
 import com.wingedsheep.engine.core.DeclareBlockers
+import com.wingedsheep.engine.core.Concede
 import com.wingedsheep.engine.core.GameAction
 import com.wingedsheep.engine.core.PendingDecision
 import com.wingedsheep.engine.core.SubmitDecision
@@ -108,6 +109,9 @@ class AiWebSocketSession(
             try {
                 val serverMessage = json.decodeFromString<ServerMessage>(text)
                 handleServerMessage(serverMessage)
+            } catch (e: AiControllerFatalException) {
+                logger.error("AI controller failed closed: {}", e.message, e)
+                onActionReady(aiPlayerId, Concede(aiPlayerId))
             } catch (e: Exception) {
                 logger.error("AI failed to process server message: ${e.message}", e)
             }

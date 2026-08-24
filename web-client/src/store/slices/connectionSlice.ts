@@ -24,6 +24,7 @@ export interface ConnectionSliceState {
   pendingTournamentId: string | null
   pendingSpectateGameId: string | null
   aiEnabled: boolean
+  aiMode: 'engine' | 'llm' | 'search-teacher'
   availableSets: readonly AvailableSet[]
   onlinePlayers: number | null
   /**
@@ -56,6 +57,7 @@ export const createConnectionSlice: SliceCreator<ConnectionSlice> = (set, get) =
   pendingTournamentId: null,
   pendingSpectateGameId: null,
   aiEnabled: false,
+  aiMode: 'engine',
   availableSets: [],
   onlinePlayers: null,
   sessionReplaced: false,

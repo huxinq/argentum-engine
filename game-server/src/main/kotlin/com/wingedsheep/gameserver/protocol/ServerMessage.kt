@@ -28,7 +28,8 @@ sealed interface ServerMessage {
         val playerId: String,
         val token: String,
         val aiEnabled: Boolean = false,
-        val availableSets: List<AvailableSet> = emptyList()
+        val availableSets: List<AvailableSet> = emptyList(),
+        val aiMode: String? = null,
     ) : ServerMessage
 
     /**
@@ -44,7 +45,8 @@ sealed interface ServerMessage {
         /** Session/lobby ID the player is currently in */
         val contextId: String? = null,
         val aiEnabled: Boolean = false,
-        val availableSets: List<AvailableSet> = emptyList()
+        val availableSets: List<AvailableSet> = emptyList(),
+        val aiMode: String? = null,
     ) : ServerMessage
 
     /**
@@ -1173,7 +1175,19 @@ sealed interface ServerMessage {
          * decklist behind a "deck" choice never rides the lobby broadcast. Null in a human lobby.
          */
         val aiDeck: com.wingedsheep.gameserver.lobby.AiDeckSpecView? = null,
+        /** Present when the server has locked this AI lobby to an exact local testing contract. */
+        val lockedAi: LockedAiQuickGameView? = null,
     ) : ServerMessage
+
+    @Serializable
+    data class LockedAiQuickGameView(
+        val mode: String,
+        val deckId: String,
+        val deckName: String,
+        val cardCount: Int,
+        val profileLabel: String,
+        val readOnlyInsight: Boolean = true,
+    )
 
     /**
      * Per-player view of a lobby member. The opponent only sees aggregate info ([deckSelected],

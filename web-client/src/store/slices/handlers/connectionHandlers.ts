@@ -29,6 +29,7 @@ export function createConnectionHandlers(set: SetState, get: GetState): Pick<Mes
         connectionStatus: 'connected',
         playerId: entityId(msg.playerId),
         aiEnabled: msg.aiEnabled ?? false,
+        aiMode: msg.aiMode ?? 'engine',
         availableSets: msg.availableSets ?? [],
         ...(stale && {
           sessionId: null,
@@ -64,6 +65,7 @@ export function createConnectionHandlers(set: SetState, get: GetState): Pick<Mes
         connectionStatus: 'connected',
         playerId: entityId(msg.playerId),
         aiEnabled: msg.aiEnabled ?? false,
+        aiMode: msg.aiMode ?? 'engine',
         availableSets: msg.availableSets ?? [],
       }
       if (msg.context === 'game' && msg.contextId) {

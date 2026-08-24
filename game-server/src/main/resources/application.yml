@@ -113,7 +113,7 @@ game:
     password: ${GAME_ADMIN_PASSWORD:}
   ai:
     enabled: ${GAME_AI_ENABLED:true}
-    # AI mode: "engine" (built-in, no API key needed) or "llm" (requires API key)
+    # AI mode: engine, llm, or local-only search-teacher (requires the integration launcher)
     mode: ${GAME_AI_MODE:engine}
     base-url: ${GAME_AI_BASE_URL:https://openrouter.ai/api/v1}
     api-key: ${GAME_AI_API_KEY:${OPENROUTER_API_KEY:}}
@@ -125,6 +125,12 @@ game:
     # Local testing mode: record the engine AI's candidate actions + scores and serve them from
     # /api/dev/ai-insight. Off in production — recording retains a GameState per decision.
     insight-enabled: ${GAME_AI_INSIGHT_ENABLED:false}
+    search-teacher:
+      particles: ${GAME_AI_SEARCH_TEACHER_PARTICLES:8}
+      simulations: ${GAME_AI_SEARCH_TEACHER_SIMULATIONS:64}
+      max-policy-decisions: ${GAME_AI_SEARCH_TEACHER_MAX_POLICY_DECISIONS:32}
+      exploration-constant: ${GAME_AI_SEARCH_TEACHER_EXPLORATION_CONSTANT:1.4}
+      base-seed: ${GAME_AI_SEARCH_TEACHER_BASE_SEED:20260825}
 
 # Swagger UI - only enabled when dev endpoints are enabled
 springdoc:

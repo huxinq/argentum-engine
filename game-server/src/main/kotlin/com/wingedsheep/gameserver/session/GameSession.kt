@@ -1491,6 +1491,17 @@ class GameSession(
     /** The ordered input stream applied to this game. */
     fun getRecordedActions(): List<GameAction> = recordedActions.toList()
 
+    /** Atomic live input for externally hosted AI controllers. */
+    fun getAiRuntimeSnapshot(): com.wingedsheep.gameserver.ai.AiRuntimeSnapshot? = synchronized(stateLock) {
+        val state = gameState ?: return null
+        val setup = replaySetup ?: return null
+        com.wingedsheep.gameserver.ai.AiRuntimeSnapshot(
+            state = state,
+            replaySetup = setup,
+            actions = recordedActions.toList(),
+        )
+    }
+
     /** The persistent-yield mutations applied to this game, in order, for replay reconstruction. */
     fun getReplayYields(): List<com.wingedsheep.gameserver.replay.ReplayYieldEntry> = recordedYields.toList()
 

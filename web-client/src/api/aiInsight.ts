@@ -61,6 +61,41 @@ export interface AiInsightDecision {
   readonly humanOverride?: AiHumanOverride | null
 }
 
+export interface SearchTeacherCandidate {
+  readonly label: string
+  readonly signature: string
+  readonly visits: number
+  readonly meanValue: number
+  readonly policyProbability: number
+  readonly chosen: boolean
+}
+
+export interface SearchTeacherInsightDecision {
+  readonly id: number
+  readonly recordedAt: string
+  readonly actionIndex: number
+  readonly chosenLabel: string | null
+  readonly chosenSignature: string | null
+  readonly candidates: readonly SearchTeacherCandidate[]
+  readonly rootValue: number | null
+  readonly thinkTimeMs: number
+  readonly simulations: number
+  readonly particles: number
+  readonly nodes: number
+  readonly maximumDepth: number
+  readonly exhaustiveNodes: number
+  readonly nonExhaustiveNodes: number
+  readonly wideningEvents: number
+  readonly beliefEntropy: number
+  readonly effectiveSampleSize: number
+  readonly resamplingCount: number
+  readonly reconditioningCount: number
+  readonly failureCode: string | null
+  readonly diagnostic: string | null
+  readonly authoritativeFingerprint: string | null
+  readonly shadowFingerprint: string | null
+}
+
 /** The AI is held at this decision, waiting for the human to approve or replace its move. */
 export interface AiPendingApproval {
   readonly decisionId: number
@@ -71,6 +106,9 @@ export interface AiInsightListResponse {
   readonly gameSessionId: string | null
   /** Newest first. */
   readonly decisions: readonly AiInsightDecision[]
+  readonly searchDecisions?: readonly SearchTeacherInsightDecision[]
+  readonly mode?: 'engine' | 'search-teacher'
+  readonly readOnly?: boolean
   readonly stepMode: boolean
   readonly pending?: AiPendingApproval | null
 }

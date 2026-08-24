@@ -73,6 +73,7 @@ data class AiProperties(
     val maxRetries: Int = 2,
     val timeoutMs: Long = 300000,
     val thinkingDelayMs: Long = 500,
+    val searchTeacher: SearchTeacherProperties = SearchTeacherProperties(),
     /**
      * When true, AI sealed decks are always built with the deterministic heuristic builder,
      * skipping the LLM regardless of per-request flags. Useful for fully local play vs AI.
@@ -89,6 +90,9 @@ data class AiProperties(
      */
     val insightEnabled: Boolean = false
 ) {
+    val resolvedMode: com.wingedsheep.gameserver.ai.AiControllerMode
+        get() = com.wingedsheep.gameserver.ai.AiControllerMode.parse(mode)
+
     /** Returns the model to use for deckbuilding — falls back to the gameplay model if not set. */
     val effectiveDeckbuildingModel: String get() = deckbuildingModel.ifBlank { model }
 
@@ -96,8 +100,20 @@ data class AiProperties(
     val effectiveApiKey: String get() = apiKey.ifBlank { openRouterApiKey }
 
     /** Whether we're using the built-in engine AI (no API key required). */
-    val isEngineMode: Boolean get() = mode.equals("engine", ignoreCase = true)
+    val isEngineMode: Boolean get() = resolvedMode == com.wingedsheep.gameserver.ai.AiControllerMode.ENGINE
 
     /** Whether we're using the LLM-based AI. */
-    val isLlmMode: Boolean get() = !isEngineMode
+    val isLlmMode: Boolean get() = resolvedMode == com.wingedsheep.gameserver.ai.AiControllerMode.LLM
+
+    /** Whether the externally hosted information-set Search Teacher owns gameplay choices. */
+    val isSearchTeacherMode: Boolean
+        get() = resolvedMode == com.wingedsheep.gameserver.ai.AiControllerMode.SEARCH_TEACHER
 }
+
+data class SearchTeacherProperties(
+    val particles: Int = 8,
+    val simulations: Int = 64,
+    val maxPolicyDecisions: Int = 32,
+    val explorationConstant: Double = 1.4,
+    val baseSeed: Long = 20260825L,
+)

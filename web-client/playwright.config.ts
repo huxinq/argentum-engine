@@ -6,6 +6,8 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './e2e',
+  // Keep browser specs out of Vitest's conventional *.spec.ts discovery.
+  testMatch: '**/*.e2e.ts',
 
   // Run tests in parallel - important for multi-player tests
   fullyParallel: false, // We need sequential for multi-player coordination
@@ -43,7 +45,9 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        channel: 'chrome', // Use system Chrome instead of bundled Chromium
+        // Some developer boxes only have Playwright's bundled Chromium. Keep system Chrome as the
+        // default while allowing self-contained verification recipes to opt into the bundle.
+        ...(process.env.PLAYWRIGHT_USE_BUNDLED ? {} : { channel: 'chrome' as const }),
       },
     },
   ],

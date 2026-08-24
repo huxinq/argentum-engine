@@ -68,9 +68,11 @@ type StepId = AnsweredStep | 'done'
 
 export function PlayWizard({
   aiEnabled,
+  aiMode,
   onLaunch,
 }: {
   aiEnabled: boolean
+  aiMode: 'engine' | 'llm' | 'search-teacher'
   /**
    * Create the lobby this selection describes. The wizard never touches the store itself, and no
    * longer knows how a selection becomes messages either — `recipeFromSelection` does.
@@ -113,7 +115,9 @@ export function PlayWizard({
   // has already resolved it and the grid would be a question with a single answer.
   const shapeIsAQuestion =
     draft.roster !== null && draft.cards !== null &&
-    shapeChoices(draft.roster, draft.cards).filter((c) => !c.disabledReason).length > 1
+    shapeChoices(draft.roster, draft.cards).filter((c) =>
+      !c.disabledReason && (aiMode !== 'search-teacher' || c.value === 'ONE_GAME')
+    ).length > 1
 
   const step: StepId =
     draft.roster === null ? 'roster'
@@ -133,7 +137,9 @@ export function PlayWizard({
     draft.roster !== null && draft.cards !== null && !shapeIsAQuestion
       ? [...new Set(
           shapeChoices(draft.roster, draft.cards)
-            .map((c) => c.disabledReason)
+            .map((c) => aiMode === 'search-teacher' && c.value !== 'ONE_GAME'
+              ? 'Search Teacher v1 is a single 1v1 game.'
+              : c.disabledReason)
             .filter((r): r is string => !!r),
         )]
       : []
@@ -154,7 +160,9 @@ export function PlayWizard({
   const pickCards = (cards: CardsAxis) => {
     const roster = draft.roster
     if (roster === null) return
-    const open = shapeChoices(roster, cards).filter((c) => !c.disabledReason)
+    const open = shapeChoices(roster, cards).filter((c) =>
+      !c.disabledReason && (aiMode !== 'search-teacher' || c.value === 'ONE_GAME')
+    )
     setDraft({ roster, cards, shape: open.length === 1 ? open[0]!.value : null })
   }
 
@@ -187,10 +195,21 @@ export function PlayWizard({
     onLaunch(selection)
   }
 
-  const complete: Selection | null =
+  const completeCandidate: Selection | null =
     draft.roster !== null && draft.cards !== null && draft.shape !== null
       ? { roster: draft.roster, cards: draft.cards, shape: draft.shape }
       : null
+  const complete = completeCandidate !== null && aiMode === 'search-teacher' &&
+    (completeCandidate.roster !== 'SOLO' || completeCandidate.cards.kind !== 'BRING_A_DECK' ||
+      completeCandidate.shape !== 'ONE_GAME')
+    ? null
+    : completeCandidate
+
+  useEffect(() => {
+    if (aiMode === 'search-teacher' && completeCandidate !== null && complete === null) {
+      navigate(WIZARD_PREFIX, { replace: true })
+    }
+  }, [aiMode, completeCandidate, complete, navigate])
 
   return (
     <>
@@ -204,7 +223,11 @@ export function PlayWizard({
 
       {step === 'roster' && (
         <OptionGrid
-          choices={rosterChoices(aiEnabled)}
+          choices={rosterChoices(aiEnabled).map((choice) =>
+            aiMode === 'search-teacher' && choice.value !== 'SOLO'
+              ? { ...choice, disabledReason: 'This local server is locked to Solo play against the Search Teacher.' }
+              : choice
+          )}
           selected={null}
           testIdPrefix="wizard-roster"
           testId={(r) => r.toLowerCase()}
@@ -214,7 +237,11 @@ export function PlayWizard({
 
       {step === 'cards' && draft.roster !== null && (
         <OptionGrid
-          choices={cardsChoices(draft.roster)}
+          choices={cardsChoices(draft.roster).map((choice) =>
+            aiMode === 'search-teacher' && choice.value !== 'BRING_A_DECK'
+              ? { ...choice, disabledReason: 'Search Teacher v1 uses the locked Mono-Red mirror.' }
+              : choice
+          )}
           selected={null}
           testIdPrefix="wizard-cards"
           testId={(k) => k.toLowerCase().replace(/_/g, '-')}
@@ -227,7 +254,11 @@ export function PlayWizard({
 
       {step === 'shape' && draft.roster !== null && draft.cards !== null && (
         <OptionGrid
-          choices={shapeChoices(draft.roster, draft.cards)}
+          choices={shapeChoices(draft.roster, draft.cards).map((choice) =>
+            aiMode === 'search-teacher' && choice.value !== 'ONE_GAME'
+              ? { ...choice, disabledReason: 'Search Teacher v1 is a single 1v1 game.' }
+              : choice
+          )}
           selected={draft.shape}
           testIdPrefix="wizard-shape"
           testId={(s) => s.toLowerCase().replace(/_/g, '-')}
@@ -441,4 +472,3 @@ function OptionGrid<V extends string>({
     </div>
   )
 }
-

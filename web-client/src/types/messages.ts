@@ -94,6 +94,7 @@ export interface ConnectedMessage {
   readonly playerId: string
   readonly token: string
   readonly aiEnabled?: boolean
+  readonly aiMode?: 'engine' | 'llm' | 'search-teacher'
   readonly availableSets?: readonly AvailableSet[]
 }
 
@@ -107,6 +108,7 @@ export interface ReconnectedMessage {
   readonly context: 'lobby' | 'drafting' | 'deckBuilding' | 'game' | 'tournament' | null
   readonly contextId: string | null
   readonly aiEnabled?: boolean
+  readonly aiMode?: 'engine' | 'llm' | 'search-teacher'
   readonly availableSets?: readonly AvailableSet[]
 }
 
@@ -2946,6 +2948,17 @@ export interface QuickGameLobbyStateMessage {
   readonly rankedEligible?: boolean
   /** What the AI seat will play. Present only in a vs-AI lobby. See [AiDeckSpecView]. */
   readonly aiDeck?: AiDeckSpecView | null
+  /** Present when the server owns both decks and the Solo recipe is intentionally immutable. */
+  readonly lockedAi?: LockedAiQuickGameView | null
+}
+
+export interface LockedAiQuickGameView {
+  readonly mode: 'search-teacher'
+  readonly deckId: string
+  readonly deckName: string
+  readonly cardCount: number
+  readonly profileLabel: string
+  readonly readOnlyInsight: boolean
 }
 
 /**

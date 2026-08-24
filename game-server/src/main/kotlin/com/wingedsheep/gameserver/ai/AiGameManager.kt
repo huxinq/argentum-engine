@@ -36,6 +36,7 @@ class AiGameManager(
     private val cardRegistry: CardRegistry,
     private val llmCostTracker: com.wingedsheep.gameserver.tournament.llm.LlmCostTracker,
     private val aiInsightService: AiInsightService,
+    private val controllerProviders: List<AiControllerProvider>,
 ) {
     /**
      * The live AI sessions of each game, keyed game → AI player. A multiplayer pod seats more than
@@ -56,16 +57,25 @@ class AiGameManager(
     @PostConstruct
     fun logConfig() {
         val ai = gameProperties.ai
+        // Parse even when AI is disabled: a misspelled configured mode is never silently accepted.
+        val mode = ai.resolvedMode
         if (!ai.enabled) {
             logger.info("AI opponent: disabled")
             return
         }
-        if (ai.isEngineMode) {
-            logger.info("AI opponent: enabled | mode=engine (built-in)")
-        } else {
+        when (mode) {
+            AiControllerMode.ENGINE -> logger.info("AI opponent: enabled | mode=engine (built-in)")
+            AiControllerMode.SEARCH_TEACHER -> {
+                require(controllerProviders.any { it.mode == AiControllerMode.SEARCH_TEACHER }) {
+                    "game.ai.mode=search-teacher requires an AiControllerProvider"
+                }
+                logger.info("AI opponent: enabled | mode=search-teacher (external provider)")
+            }
+            AiControllerMode.LLM -> {
             val provider = if (ai.baseUrl.contains("openrouter")) "OpenRouter" else "Local (${ai.baseUrl})"
             logger.info("AI opponent: enabled | mode=llm | provider={} | model={} | deckbuilding-model={}",
                 provider, ai.model, ai.effectiveDeckbuildingModel)
+            }
         }
     }
 
@@ -95,6 +105,9 @@ class AiGameManager(
         if (!gameProperties.ai.enabled) return false
         // Engine mode doesn't need an API key
         if (gameProperties.ai.isEngineMode) return true
+        if (gameProperties.ai.isSearchTeacherMode) {
+            return controllerProviders.any { it.mode == AiControllerMode.SEARCH_TEACHER }
+        }
         // LLM mode requires an API key
         return gameProperties.ai.effectiveApiKey.isNotBlank()
     }
@@ -105,6 +118,11 @@ class AiGameManager(
      * even when the server's global config is LLM.
      */
     val aiEnabledToggle: Boolean get() = gameProperties.ai.enabled
+
+    val controllerMode: AiControllerMode get() = gameProperties.ai.resolvedMode
+
+    val lockedQuickGameContract: AiLockedQuickGameContract?
+        get() = controllerProviders.singleOrNull { it.mode == controllerMode }?.lockedQuickGame
 
     /**
      * Look up the LLM model override for an AI player by querying its identity in the SessionRegistry.
@@ -134,6 +152,26 @@ class AiGameManager(
         // Local testing mode only, and null everywhere else: the LLM controller's engine fallback
         // gets one too, so a fallback decision doesn't silently vanish from the panel.
         val insightSink = gameSession?.sessionId?.let { aiInsightService.sinkFor(it, aiPlayerId) }
+        if (modelOverride == null && ai.isSearchTeacherMode) {
+            val session = requireNotNull(gameSession) {
+                "Search Teacher controllers can only be created for a live game"
+            }
+            val provider = controllerProviders.singleOrNull { it.mode == AiControllerMode.SEARCH_TEACHER }
+                ?: error("No Search Teacher AiControllerProvider is registered")
+            strictFailureSeats += aiPlayerId
+            return provider.create(
+                AiControllerContext(
+                    playerId = aiPlayerId,
+                    gameSessionId = session.sessionId,
+                    snapshot = session::getAiRuntimeSnapshot,
+                    publishInsight = { insight ->
+                        session.getStateSnapshot()?.let { state ->
+                            aiInsightService.recordSearch(session.sessionId, state, insight)
+                        }
+                    },
+                )
+            )
+        }
         return if (aiConfig.isEngineMode) {
             EngineAiPlayerController(
                 cardRegistry = cardRegistry,
@@ -159,7 +197,7 @@ class AiGameManager(
     }
 
     private fun com.wingedsheep.gameserver.config.AiProperties.toAiConfig() = com.wingedsheep.ai.llm.AiConfig(
-        enabled = enabled, mode = mode, baseUrl = baseUrl,
+        enabled = enabled, mode = resolvedMode.wireName, baseUrl = baseUrl,
         apiKey = apiKey, openRouterApiKey = openRouterApiKey,
         model = model, deckbuildingModel = deckbuildingModel,
         reasoningEffort = reasoningEffort, maxRetries = maxRetries,
@@ -190,12 +228,13 @@ class AiGameManager(
     ): AiWebSocketSession = AiWebSocketSession(
         aiPlayerId = aiPlayerId,
         controller = controller,
-        thinkingDelayMs = gameProperties.ai.thinkingDelayMs,
+        thinkingDelayMs = if (gameProperties.ai.isSearchTeacherMode) 0 else gameProperties.ai.thinkingDelayMs,
         onActionReady = onActionReady,
         onMulliganKeep = onMulliganKeep,
         onMulliganTake = onMulliganTake,
         onBottomCards = onBottomCards,
-        actionGate = gameSession?.let { aiInsightService.gateFor(it.sessionId) },
+        actionGate = if (gameProperties.ai.isSearchTeacherMode) null
+            else gameSession?.let { aiInsightService.gateFor(it.sessionId) },
     )
 
     /**
@@ -279,7 +318,7 @@ class AiGameManager(
         require(isEnabled) { "AI is not enabled. Set game.ai.enabled=true." }
 
         val aiPlayerId = EntityId("ai-${UUID.randomUUID().toString().take(8)}")
-        val aiName = randomAiName()
+        val aiName = if (gameProperties.ai.isSearchTeacherMode) "[AI] Search Teacher" else randomAiName()
 
         val controller = createController(aiPlayerId, gameSession)
 
@@ -379,6 +418,9 @@ class AiGameManager(
      */
     fun createAiIdentity(modelOverride: String? = null): PlayerIdentity {
         require(isEnabled) { "AI is not enabled. Set game.ai.enabled=true." }
+        require(!gameProperties.ai.isSearchTeacherMode) {
+            "Search Teacher v1 supports only the locked 1v1 quick-game mirror"
+        }
 
         val aiPlayerId = EntityId("ai-${UUID.randomUUID().toString().take(8)}")
         val aiProperties = gameProperties.ai
@@ -434,6 +476,9 @@ class AiGameManager(
                 identity.playerName)
             return
         }
+        require(!gameProperties.ai.isSearchTeacherMode) {
+            "Search Teacher v1 does not rehydrate tournament AI identities"
+        }
 
         val aiPlayerId = identity.playerId
         val aiProperties = gameProperties.ai
@@ -469,6 +514,9 @@ class AiGameManager(
         onMulliganTake: (EntityId) -> Unit,
         onBottomCards: (EntityId, List<EntityId>) -> Unit
     ) {
+        require(!gameProperties.ai.isSearchTeacherMode) {
+            "Search Teacher v1 supports only freshly created locked quick games"
+        }
         val identity = sessionRegistry.getAllIdentities().find { it.playerId == aiPlayerId }
         val oldSession = identity?.webSocketSession as? AiWebSocketSession
         if (oldSession != null) {
@@ -523,17 +571,35 @@ class AiGameManager(
 
     /** Set of all AI player IDs (persists across matches within a tournament). */
     private val aiPlayerIds = ConcurrentHashMap.newKeySet<EntityId>()
+    private val strictFailureSeats = ConcurrentHashMap.newKeySet<EntityId>()
 
     /**
      * Check if a player is an AI.
      */
     fun isAiPlayer(playerId: EntityId): Boolean = playerId in aiPlayerIds
 
+    /** Search correctness failures concede instead of entering the engine AI's recovery policy. */
+    fun usesStrictFailurePolicy(playerId: EntityId): Boolean = playerId in strictFailureSeats
+
+    fun recordStrictFailure(gameSession: GameSession, code: String, diagnostic: String) {
+        val snapshot = gameSession.getAiRuntimeSnapshot() ?: return
+        aiInsightService.recordSearch(
+            gameSession.sessionId,
+            snapshot.state,
+            SearchTeacherInsight(
+                actionIndex = snapshot.actions.size,
+                failureCode = code,
+                diagnostic = diagnostic.take(500),
+            ),
+        )
+    }
+
     /**
      * Clean up AI resources when a game ends.
      */
     fun cleanupGame(gameSessionId: String) {
         val sessions = activeSessions.remove(gameSessionId) ?: return
+        strictFailureSeats.removeAll(sessions.keys)
         sessions.values.forEach { it.shutdown() }
         logger.info("Cleaned up {} AI session(s) for game {}", sessions.size, gameSessionId)
     }

@@ -147,6 +147,7 @@ export function LobbyScreen() {
 
   const showSettings = view.isWaiting && view.isHost
   const isMomir = view.axes.cards.kind === 'MOMIR'
+  const lockedAi = quickLobby?.lockedAi ?? null
 
   return (
     <div className={styles.lobbyOverlay} style={{ backgroundImage: `url(${randomBackground})` }}>
@@ -157,7 +158,7 @@ export function LobbyScreen() {
           <h1 className={styles.lobbyTitle}>{view.title}</h1>
           <p className={styles.lobbySubtitle}>{view.subtitle}</p>
           <LobbyAxisSummary axes={view.axes} />
-          {view.isWaiting && view.isHost && (
+          {view.isWaiting && view.isHost && !lockedAi && (
             <button
               type="button"
               className={styles.saveSetupButton}
@@ -169,6 +170,18 @@ export function LobbyScreen() {
             </button>
           )}
         </div>
+
+        {lockedAi && (
+          <div className={styles.lobbyNotes} role="status" data-testid="search-teacher-lock">
+            <div className={styles.lobbyNotesBody}>
+              <p><strong>Locked Search Teacher match</strong></p>
+              <p>
+                Both seats: {lockedAi.deckName} ({lockedAi.cardCount} cards) · Standard BO1 ·{' '}
+                {lockedAi.profileLabel} · AI Insight is read-only.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* What a setup couldn't bring back, said once and dismissable.
             The server aborts an entire `updateLobbySettings` on a field it can't resolve — an unknown
@@ -271,7 +284,7 @@ export function LobbyScreen() {
                 {player.isHost && <span className={styles.hostBadge}>Host</span>}
               </div>
               <div className={styles.playerActions}>
-                {view.kind === 'QUICK' && !isMomir && player.isYou && (
+                {view.kind === 'QUICK' && !isMomir && !lockedAi && player.isYou && (
                   <button
                     type="button"
                     onClick={() => setQuickDeckSeat('human')}
@@ -282,7 +295,7 @@ export function LobbyScreen() {
                     {player.status} <span aria-hidden>✎</span>
                   </button>
                 )}
-                {view.kind === 'QUICK' && !isMomir && player.isAi && view.isHost && (
+                {view.kind === 'QUICK' && !isMomir && !lockedAi && player.isAi && view.isHost && (
                   <button
                     type="button"
                     onClick={() => setQuickDeckSeat('ai')}
@@ -318,12 +331,12 @@ export function LobbyScreen() {
                     {aiDeckSummary(player.aiDeck)}
                   </button>
                 )}
-                {!(view.kind === 'QUICK' && !isMomir && (player.isYou || (player.isAi && view.isHost))) &&
+                {!(view.kind === 'QUICK' && !isMomir && !lockedAi && (player.isYou || (player.isAi && view.isHost))) &&
                   !(view.kind === 'TOURNAMENT' && view.isWaiting &&
                     view.axes.cards.kind === 'BRING_A_DECK' && player.isYou) && (
                   <span className={`${styles.playerStatus} ${statusClass(player.tone)}`}>{player.status}</span>
                 )}
-                {view.isWaiting && view.isHost && player.isAi && (
+                {view.isWaiting && view.isHost && player.isAi && !lockedAi && (
                   <button
                     onClick={() => commands.removeAi(player.playerId)}
                     className={styles.removeAiButton}
@@ -351,7 +364,7 @@ export function LobbyScreen() {
 
         {/* Settings sit below the players and the deck picker, not above them. The lobby overlay is
             the single scroll container, so every relevant control can remain visible. */}
-        {showSettings && (
+        {showSettings && !lockedAi && (
           <div className={styles.settingsPanel}>
             {GROUP_IDS.map((id) => {
               const axisStrip = {
@@ -428,7 +441,7 @@ export function LobbyScreen() {
 
       </div>
 
-      {quickDeckSeat === 'human' && quickLobby && !isMomir && (
+      {quickDeckSeat === 'human' && quickLobby && !isMomir && !lockedAi && (
         <DeckPickerModal title={`${view.you?.name ?? 'Your'} deck`} onClose={() => setQuickDeckSeat(null)}>
           <QuickGameDeckPicker
             youSetCode={quickLobby.players.find((p) => p.playerId === quickLobby.youPlayerId)?.setCode ?? null}
@@ -444,7 +457,7 @@ export function LobbyScreen() {
         </DeckPickerModal>
       )}
 
-      {quickDeckSeat === 'ai' && quickLobby?.vsAi && !isMomir && (() => {
+      {quickDeckSeat === 'ai' && quickLobby?.vsAi && !isMomir && !lockedAi && (() => {
         const ai = view.players.find((player) => player.isAi)
         if (!ai) return null
         return (

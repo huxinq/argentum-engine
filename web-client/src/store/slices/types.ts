@@ -889,6 +889,7 @@ export type GameStore = {
   pendingTournamentId: string | null
   pendingSpectateGameId: string | null
   aiEnabled: boolean
+  aiMode: 'engine' | 'llm' | 'search-teacher'
   availableSets: readonly AvailableSet[]
   onlinePlayers: number | null
   /** True when another tab/device took over this identity; auto-reconnect is stopped. */

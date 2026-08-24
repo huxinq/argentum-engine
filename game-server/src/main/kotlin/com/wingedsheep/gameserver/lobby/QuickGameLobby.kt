@@ -35,6 +35,8 @@ class QuickGameLobby(
      * format's per-card legality. Null = no restriction (existing behaviour). Host-controlled.
      */
     @Volatile var format: DeckFormat? = null,
+    /** Fixed local-only opponent/deck contract (currently the Search Teacher mirror). */
+    @Volatile var lockedAiContract: com.wingedsheep.gameserver.ai.AiLockedQuickGameContract? = null,
     /**
      * When true this is a Momir Basic lobby: no deckbuilding (every seat gets a fixed 60-basic
      * deck), the avatar starts in the command zone, and the random creature pool is every creature

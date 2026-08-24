@@ -1273,6 +1273,23 @@ class GamePlayHandler(
                     broadcastStateUpdate(gameSession, result.events)
                 }
                 is GameSession.ActionResult.Failure -> {
+                    if (aiGameManager.usesStrictFailurePolicy(aiPlayerId)) {
+                        aiGameManager.recordStrictFailure(
+                            gameSession,
+                            "SELECTED_ACTION_REJECTED",
+                            result.reason,
+                        )
+                        logger.error(
+                            "Strict AI action rejected in game {} for {}: {} — conceding",
+                            gameSession.sessionId,
+                            aiPlayerId.value,
+                            result.reason,
+                        )
+                        gameSession.playerConcedes(aiPlayerId)
+                        broadcastStateUpdate(gameSession, emptyList())
+                        if (gameSession.isGameOver()) handleGameOver(gameSession, GameOverReason.CONCESSION)
+                        return
+                    }
                     // The chosen action was rejected (e.g. an illegal block the AI's combat model
                     // didn't foresee, like Ring-bearer "can't be blocked by greater power"). Try a
                     // sequence of step-appropriate, always-legal fallbacks so the game can't get
