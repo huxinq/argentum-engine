@@ -179,6 +179,9 @@ gradle-app.setting
 # Local environment files
 .env
 /web-client/tsconfig.tsbuildinfo
+/read-only-board/dist/
+/read-only-board/node_modules/
+/read-only-board/*.tsbuildinfo
 
 # Claude Code runtime lock (per-session pid/lock — never commit)
 .claude/scheduled_tasks.lock

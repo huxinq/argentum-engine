@@ -15,6 +15,7 @@
     "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
+    "@argentum/read-only-board": "file:../read-only-board",
     "d3-geo": "^3.1.1",
     "keyrune": "^3.19.0",
     "mana-font": "^1.18.0",
