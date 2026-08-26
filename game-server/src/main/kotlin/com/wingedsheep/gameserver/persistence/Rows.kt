@@ -127,10 +127,9 @@ data class MatchCardRow(
  * [com.wingedsheep.gameserver.replay.CompactReplay] so a history list never has to decode +
  * re-simulate just to render a row.
  *
- * Two payloads, both gzip+base64 (see [com.wingedsheep.gameserver.replay.ReplayCodec]): [data] is
- * the compact input log that re-simulates the game, [presentation] the frames that log produced when
- * it was folded by the build that recorded it. The first is small and exact; the second is the one
- * that still renders after the engine has moved on. See
+ * Payloads are gzip+base64 (see [com.wingedsheep.gameserver.replay.ReplayCodec]). [data] is the
+ * stable v3 envelope (or a complete legacy v1/v2 recipe); canonical transition batches live in
+ * [GameReplayChunkRow]. [presentation] is the optional archived viewer fallback. See
  * [com.wingedsheep.gameserver.replay.ReplayPresentation].
  */
 @Table("game_replays")
@@ -149,11 +148,13 @@ data class GameReplayRow(
     val playerNames: String = "",
     /** [com.wingedsheep.gameserver.replay.ReplayStatus] name. */
     val status: String = "FINISHED",
-    /** The build that recorded the game — diagnostic when a replay turns out not to re-simulate. */
+    /** The build that recorded the game — diagnostic and legacy reconstruction provenance. */
     val engineVersion: String? = null,
     /** Position fingerprint at the last flush; gates resuming an interrupted recording. */
     val resumeFingerprint: String? = null,
-    /** gzip+base64-encoded CompactReplay JSON, *without* the pins (see [pinnedCards]). */
+    /** Number of records stored in append-only [GameReplayChunkRow] batches. */
+    val canonicalRecordCount: Int = 0,
+    /** gzip+base64 CompactReplay envelope, without pins or chunked canonical records. */
     val data: String,
     /**
      * gzip+base64-encoded pinned `CardDefinition` JSON array — the largest part of a record and the
@@ -162,11 +163,21 @@ data class GameReplayRow(
      * Null for pre-V11 rows, whose pins are still inside [data], and for unpinned records.
      */
     val pinnedCards: String? = null,
-    /** gzip+base64-encoded `{initialSnapshot, deltas}` viewer body; null when not archived. */
+    /** Legacy gzip+base64 `{initialSnapshot, deltas}` viewer fallback; null for canonical v3. */
     val presentation: String? = null,
     /** Seat roster, indexed so "replays I played in" is a join rather than a scan. */
     @MappedCollection(idColumn = "replay_id")
     val players: Set<GameReplayPlayerRow> = emptySet(),
+)
+
+/** Independently compressed, contiguous canonical replay batch; rows are never updated in place. */
+@Table("game_replay_chunks")
+data class GameReplayChunkRow(
+    @Id val id: Long? = null,
+    val replayId: Long,
+    val firstRecord: Int,
+    val recordCount: Int,
+    val data: String,
 )
 
 /** One seat of a [GameReplayRow], by engine player id. */

@@ -174,9 +174,8 @@ class GameStallGuard(
          * Total actions in one game, as the backstop under both of the above: 400 turns of 1,999
          * actions each would satisfy them and still be pathological.
          *
-         * Deliberately larger than [com.wingedsheep.gameserver.replay.ReplayRecordingPolicy.MAX_RECORDED_ACTIONS]:
-         * if a game somehow gets that long we would rather truncate the *record* than end the game
-         * somebody is playing, so the recording gives up first and the game keeps going.
+         * Canonical replay v3 records every transition until this guard resolves the runaway game;
+         * unlike v2, the recorder does not silently freeze at a smaller action count.
          */
         const val MAX_ACTIONS = 50_000
 

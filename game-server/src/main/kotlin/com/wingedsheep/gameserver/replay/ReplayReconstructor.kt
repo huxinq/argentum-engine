@@ -10,6 +10,8 @@ import com.wingedsheep.engine.core.SubmitDecision
 import com.wingedsheep.engine.registry.CardRegistry
 import com.wingedsheep.engine.registry.PrintingRegistry
 import com.wingedsheep.engine.state.GameState
+import com.wingedsheep.engine.replay.CanonicalReplayReconstructor
+import com.wingedsheep.engine.replay.CanonicalReplayTerminal
 import com.wingedsheep.engine.view.ClientStateTransformer
 import com.wingedsheep.gameserver.protocol.ServerMessage
 import com.wingedsheep.gameserver.session.SpectatorSeat
@@ -52,7 +54,11 @@ data class ReconstructedReplay(
 }
 
 /**
- * Re-simulates a [CompactReplay] to regenerate exactly what was (or would have been) shown live.
+ * Reconstructs a [CompactReplay] into exactly what was shown live.
+ *
+ * Canonical v3 decodes its authoritative initial state and transition patches directly, validates
+ * their digest chain, and renders those states. The deterministic-engine path below is retained for
+ * v1/v2 records only.
  *
  * Because the engine is deterministic — same seed + same seat ids + same decks + same ordered
  * actions ⇒ byte-identical [GameState] sequence (entity ids included; the engine never mints a
@@ -89,6 +95,7 @@ class ReplayReconstructor(
 
     /** Rebuild the full snapshot + delta stream for [replay]. */
     fun reconstruct(replay: CompactReplay): ReconstructedReplay {
+        if (replay.canonicalRecords.isNotEmpty()) return reconstructCanonical(replay)
         val engine = engineFor(replay)
         val setup = replay.setup
         val seats = setup.players.map { SpectatorSeat(EntityId(it.playerId), it.name) }
@@ -136,6 +143,11 @@ class ReplayReconstructor(
      * replay diverges before reaching it — a shared scenario must be the real position or nothing.
      */
     fun reconstructStateAt(replay: CompactReplay, frame: Int): GameState? {
+        if (replay.canonicalRecords.isNotEmpty()) {
+            return runCatching {
+                canonicalPrefix(replay).stateAt(frame)
+            }.getOrNull()
+        }
         if (frame < 0 || frame > replay.actions.size) return null
         val engine = engineFor(replay)
         var state = engine.initialState(replay)
@@ -152,6 +164,34 @@ class ReplayReconstructor(
         }
         return state
     }
+
+    private fun reconstructCanonical(replay: CompactReplay): ReconstructedReplay {
+        val reconstructed = canonicalPrefix(replay)
+        val setup = replay.setup
+        val seats = setup.players.map { SpectatorSeat(EntityId(it.playerId), it.name) }
+        val builder = engineFor(replay).spectatorStateBuilder
+        val snapshots = reconstructed.states.map { stateJson ->
+            val state = com.wingedsheep.engine.replay.CanonicalReplayJson.decodeFromJsonElement(
+                GameState.serializer(),
+                stateJson,
+            )
+            builder.buildState(state, seats, setup.seatRoster, replay.gameId)
+        }
+        return ReconstructedReplay(
+            initialSnapshot = snapshots.first(),
+            deltas = snapshots.zipWithNext(SpectatorReplayDiffCalculator::computeDelta),
+            fidelity = ReplayFidelity.EXACT,
+        )
+    }
+
+    private fun canonicalPrefix(replay: CompactReplay) =
+        if (replay.canonicalRecords.lastOrNull() is CanonicalReplayTerminal) {
+            CanonicalReplayReconstructor.reconstruct(replay.canonicalRecords).let {
+                com.wingedsheep.engine.replay.ReconstructedCanonicalReplayPrefix(it.header, it.transitions, it.states)
+            }
+        } else {
+            CanonicalReplayReconstructor.reconstructPrefix(replay.canonicalRecords)
+        }
 
     /**
      * Engine services bound to this replay's pinned card definitions. Built per reconstruction

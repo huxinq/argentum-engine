@@ -12,10 +12,8 @@ import org.springframework.web.socket.WebSocketSession
 /**
  * The two runaway backstops, wired end to end through a real recorded session.
  *
- * Both are reached here with tightened thresholds ([GameSession.tightenBackstopsForTesting]) rather
- * than by playing 25,000 actions, so what these prove is the *wiring*: that the replay log really
- * stops growing and says so, that the game really ends and explains itself, and — the part that is
- * easy to get backwards — that the recording gives up without taking the game down with it.
+ * The stall threshold is tightened through [GameSession.tightenBackstopsForTesting]. The old replay
+ * cap argument remains as a compatibility seam, but canonical recordings deliberately ignore it.
  */
 class GameSessionBackstopTest : ScenarioTestBase() {
 
@@ -46,22 +44,17 @@ class GameSessionBackstopTest : ScenarioTestBase() {
     }
 
     init {
-        test("the replay recording freezes at its cap, and the game plays on") {
+        test("canonical replay recording ignores the former cap and remains exhaustive") {
             val session = startedGame(GameStallGuard(), replayCap = 6)
 
             session.autoPass(40)
 
-            // The record is a prefix and admits it. Frame count is 1 + actions, so it describes the
-            // recording rather than the game — which is exactly what the viewer needs to know.
-            session.getRecordedActions().size shouldBe 6
-            session.isReplayTruncated() shouldBe true
-            session.getReplayFrameCount() shouldBe 7
-            // The game itself is untouched: dropping the *record* of a pathological game is cheap,
-            // ending the game somebody is playing is not, so this ordering is load-bearing.
+            (session.getRecordedActions().size > 6) shouldBe true
+            session.isReplayTruncated() shouldBe false
+            session.getReplayFrameCount() shouldBe 1 + session.getRecordedActions().size
             session.isGameOver() shouldBe false
 
-            // And the flush snapshot carries the flag, so the stored row stops claiming to be whole.
-            session.replayRecordingSnapshot().shouldNotBeNull().truncated shouldBe true
+            session.replayRecordingSnapshot().shouldNotBeNull().truncated shouldBe false
         }
 
         test("a game that stops making progress is ended as a draw that explains itself") {

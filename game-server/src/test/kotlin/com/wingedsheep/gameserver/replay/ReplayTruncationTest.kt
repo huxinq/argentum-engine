@@ -61,8 +61,8 @@ class ReplayTruncationTest : ScenarioTestBase() {
     }
 
     init {
-        test("the flag survives the store's gzip+base64 round trip") {
-            val record = truncatedGame(cap = 8).record()
+        test("a legacy truncation flag survives the store's gzip+base64 round trip") {
+            val record = truncatedGame(cap = 8).record(truncated = true)
             record.truncated shouldBe true
 
             ReplayCodec.decode(ReplayCodec.encode(record)).truncated shouldBe true
@@ -82,8 +82,8 @@ class ReplayTruncationTest : ScenarioTestBase() {
             ReplayCodec.decode(ReplayCodec.encodeText(legacy)).truncated shouldBe false
         }
 
-        test("the viewer is told the recording stops before the game did") {
-            val record = truncatedGame(cap = 8).record()
+        test("the viewer still explains a legacy truncated recording") {
+            val record = truncatedGame(cap = 8).record(truncated = true)
             val store = InMemoryReplayStore().apply {
                 save(StoredReplay(record, ReplayStatus.FINISHED))
             }

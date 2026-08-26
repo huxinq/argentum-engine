@@ -391,12 +391,12 @@ fun withEntity(id: EntityId, container: ComponentContainer): GameState =
 - **Debugging.** Any bug can be reproduced by replaying the action sequence against the initial state.
   No hidden mutation means deterministic replay.
 
-Determinism is what lets a whole game be *stored* as its inputs (`CompactReplay` — kilobytes instead
-of a frame-by-frame archive). Note the limit, though: it is determinism across *runs of the same
-engine*, not across time. Cards are data this pure function folds through, so editing a card changes
-what an old input stream re-simulates to. Stored replays therefore pin the card definitions they ran
-on and carry position checkpoints, with an archived frame stream as the last resort — see
-[data-contracts.md](data-contracts.md) → *Compact replays*.
+Immutability also makes canonical replay storage practical: record the complete initial state, then
+lossless JSON patches between authoritative states, with periodic full-state checkpoints. Current
+replays reconstruct directly without running engine or card logic. Historical input-only records
+still rely on same-version determinism, pinned card definitions, position fingerprints, and an
+archived spectator stream as a last resort — see [data-contracts.md](data-contracts.md) →
+*Canonical replays*.
 
 ### 2.2 Entity-Component-System (ECS)
 

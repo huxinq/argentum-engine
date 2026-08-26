@@ -1,6 +1,8 @@
 package com.wingedsheep.gameserver.replay
 
 import com.wingedsheep.gameserver.ScenarioTestBase
+import com.wingedsheep.engine.replay.CanonicalReplayTerminal
+import com.wingedsheep.engine.replay.ReplayCompletionStatus
 import com.wingedsheep.gameserver.repository.GameRepository
 import com.wingedsheep.gameserver.session.GameSession
 import com.wingedsheep.gameserver.session.PlayerSession
@@ -13,6 +15,7 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.springframework.web.socket.WebSocketSession
 import java.time.Instant
 
@@ -80,6 +83,7 @@ class ReplayStorageTest : ScenarioTestBase() {
             actions = snapshot.actions,
             yields = snapshot.yields,
             checkpoints = snapshot.checkpoints,
+            canonicalRecords = snapshot.canonicalRecords,
         ) to snapshot.fingerprint
     }
 
@@ -128,6 +132,21 @@ class ReplayStorageTest : ScenarioTestBase() {
             // Finalizing twice is harmless — a finished record is left alone.
             service.finalizePartial("g-abandoned")
             store.find("g-abandoned").shouldNotBeNull().status shouldBe ReplayStatus.FINISHED
+        }
+
+        test("an abandoned canonical prefix gets an explicit incomplete terminal") {
+            val session = playPartialGame()
+            val (prefix, fingerprint) = session.flushRecord()
+            val store = InMemoryReplayStore().apply {
+                save(StoredReplay(prefix, ReplayStatus.IN_PROGRESS, resumeFingerprint = fingerprint))
+            }
+            val service = ReplayService(store, ReplayReconstructor(cardRegistry, null), mockk(relaxed = true))
+
+            service.finalizePartial(prefix.gameId)
+
+            val terminal = store.find(prefix.gameId).shouldNotBeNull().replay.canonicalRecords.last()
+                as CanonicalReplayTerminal
+            terminal.status shouldBe ReplayCompletionStatus.INCOMPLETE
         }
 
         test("a flush that lands after game over cannot downgrade the finished record") {
@@ -180,6 +199,36 @@ class ReplayStorageTest : ScenarioTestBase() {
             val replayed = ReplayReconstructor(cardRegistry, null)
                 .reconstructStateAt(record, record.actions.size).shouldNotBeNull()
             ReplayFingerprint.of(replayed) shouldBe fingerprint
+        }
+
+        test("new recordings carry a lossless canonical stream through durable encoding") {
+            val session = playPartialGame()
+            val (record, fingerprint) = session.flushRecord()
+
+            record.version shouldBe CompactReplay.CURRENT_VERSION
+            record.canonicalRecords.isNotEmpty() shouldBe true
+            val roundTripped = ReplayCodec.decode(ReplayCodec.encode(record))
+            roundTripped.canonicalRecords shouldBe record.canonicalRecords
+
+            val replayed = ReplayReconstructor(cardRegistry, null)
+                .reconstructStateAt(roundTripped, roundTripped.frameCount - 1).shouldNotBeNull()
+            ReplayFingerprint.of(replayed) shouldBe fingerprint
+        }
+
+        test("canonical recordings do not duplicate their states in a presentation archive") {
+            val session = playPartialGame()
+            val (record, _) = session.flushRecord()
+            val store = InMemoryReplayStore()
+            val reconstructor = mockk<ReplayReconstructor>(relaxed = true)
+            val presentation = mockk<ReplayPresentation>(relaxed = true)
+            val service = ReplayService(store, reconstructor, presentation)
+
+            service.save(record, archive = true)
+
+            store.find(record.gameId).shouldNotBeNull().presentation shouldBe null
+            verify(exactly = 0) { reconstructor.reconstruct(any()) }
+            verify(exactly = 0) { presentation.materialize(any()) }
+            service.awaitArchiving()
         }
 
         test("a recording whose flush captured the live position resumes") {

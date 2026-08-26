@@ -8,21 +8,16 @@ import com.wingedsheep.sdk.core.Format
 import com.wingedsheep.sdk.model.Deck
 import com.wingedsheep.sdk.scripting.AbilityIdentity
 import kotlinx.serialization.Serializable
+import com.wingedsheep.engine.replay.CanonicalReplayRecord
+import com.wingedsheep.engine.replay.CanonicalReplayTransition
 
 /**
  * The compact, durable form of a recorded game.
  *
- * The engine is a pure, deterministic function `(GameState, GameAction) -> GameState` — and every
- * entity id it mints is drawn from a state-threaded counter (`e0`, `e1`, …), never a UUID — so a
- * whole game is reproducible from nothing more than the [setup] (which seeds [Format], decks, the
- * RNG seed, and the seat ids) plus the ordered list of [actions] that were applied. This is the
- * "record the inputs, re-simulate" approach used by deterministic game engines everywhere: we store
- * kilobytes of inputs instead of megabytes of per-frame snapshots, and re-derive the full
- * spectator stream on demand via [ReplayReconstructor].
- *
- * Replaces the old snapshot-plus-deltas-plus-full-states record, which kept an entire masked
- * spectator snapshot, a per-frame delta, AND a complete unmasked [com.wingedsheep.engine.state.GameState]
- * for every frame in memory.
+ * Version 3 is an envelope around the authoritative [canonicalRecords] state/choice stream.
+ * Deterministic state patches and periodic full states reconstruct directly without executing the
+ * current engine. [setup], [actions], yields, and fingerprints remain defaulted compatibility fields
+ * for reading v1/v2 input-log records and are omitted from new JDBC transition storage.
  */
 @Serializable
 data class CompactReplay(
@@ -36,9 +31,9 @@ data class CompactReplay(
     val winnerName: String?,
     val tournamentName: String? = null,
     val tournamentRound: Int? = null,
-    /** Everything needed to rebuild the exact initial [com.wingedsheep.engine.state.GameState]. */
+    /** Legacy v1/v2 recipe metadata; retained in v3 as stable game/deck metadata. */
     val setup: ReplaySetup,
-    /** The ordered input stream applied to the game, replayed verbatim to reconstruct it. */
+    /** Legacy v1/v2 input stream. New durable v3 envelopes leave this empty. */
     val actions: List<GameAction>,
     /**
      * Persistent-yield mutations (MTGO right-click "always yes/no" / "yield" preferences) applied to
@@ -74,28 +69,32 @@ data class CompactReplay(
      * True when recording was frozen before the game ended, so [actions] is an honest *prefix* of
      * the game rather than all of it — the game went on past the last frame here.
      *
-     * Set when a game passes [ReplayRecordingPolicy.MAX_RECORDED_ACTIONS] (a wedge that outlived
-     * the stall guard, a mill-loop stalemate, an AI grinding hundreds of turns). The prefix
-     * reconstructs exactly as any other record does; what it must not do is *look* complete, so the
-     * viewer is told to say the recording stops early. Defaults false, so every record written
-     * before this existed reads as the complete game it was.
+     * Retained for read compatibility with v2 recordings that used a length cutoff. Canonical v3
+     * writers never set it: interrupted v3 streams use an explicit INCOMPLETE terminal instead.
      */
     val truncated: Boolean = false,
+    /**
+     * Schema-v3 authoritative record. New writers populate this exhaustive state/choice stream;
+     * [setup]/[actions] remain only as the read-only v1/v2 compatibility representation.
+     */
+    val canonicalRecords: List<CanonicalReplayRecord> = emptyList(),
 ) {
     /** Number of reconstructable frames: the initial state plus one per applied action. */
-    val frameCount: Int get() = 1 + actions.size
+    val frameCount: Int get() = 1 + if (canonicalRecords.isEmpty()) actions.size
+        else canonicalRecords.count { it is CanonicalReplayTransition }
 
     companion object {
         /**
          * Bump when a setup/action shape change would break reconstruction of older records.
          *
-         * v1 → v2 added [engineVersion], [pinnedCards] and [checkpoints]. All three default to
+         * v1 → v2 added [engineVersion], [pinnedCards] and [checkpoints]. v3 added the canonical
+         * state/choice stream; JDBC stores that stream in append-only chunks. All fields default to
          * empty, so v1 records decode and reconstruct unchanged — the version is a diagnostic
          * marker, not a decode gate. Decoding stays deliberately tolerant (`ignoreUnknownKeys`,
          * defaults for every added field) so a record written by a newer build never becomes
          * unreadable by an older one mid-deploy.
          */
-        const val CURRENT_VERSION = 2
+        const val CURRENT_VERSION = 3
 
         const val UNKNOWN_VERSION = "unknown"
     }
@@ -130,8 +129,9 @@ data class ReplayRecordingSnapshot(
     val startedAt: java.time.Instant?,
     /** Sampled with the rest, so a game that ended mid-sweep isn't flushed as in-progress. */
     val gameOver: Boolean,
-    /** Whether the recording has been frozen by the size cap — see [CompactReplay.truncated]. */
+    /** Whether a restored legacy recording had already been frozen by its former size cap. */
     val truncated: Boolean,
+    val canonicalRecords: List<CanonicalReplayRecord> = emptyList(),
 )
 
 /** Cadence knobs for the live recorder. */
@@ -142,21 +142,8 @@ object ReplayRecordingPolicy {
      */
     const val CHECKPOINT_EVERY_ACTIONS = 20
 
-    /**
-     * Actions after which a recording is frozen and marked [CompactReplay.truncated].
-     *
-     * Not a storage limit — the input log is ~7 stored bytes per action, so even this many is a
-     * couple of hundred KB, less than the archived frame stream of an ordinary game. It is a limit
-     * on the *cost of recording*: the live log is a copy-on-write list, so appending is O(n) and a
-     * game's recording is O(n²) in its own length, and the flusher re-encodes the whole log every
-     * few seconds until the game ends.
-     *
-     * A whole game of purely random play measures ~1,650 actions (`CompactReplaySizeBenchmark`) and
-     * a real one a few hundred, so this is an order of magnitude clear of any honest game and only
-     * a game that has already gone wrong can reach it. Deliberately below
-     * [com.wingedsheep.gameserver.session.GameStallGuard.MAX_ACTIONS], so the record gives up before
-     * the game does.
-     */
+    /** Legacy v2 cutoff, retained only for documentation/tests and never applied by canonical writers. */
+    @Deprecated("Canonical replay v3 is exhaustive and has no replay-length cutoff")
     const val MAX_RECORDED_ACTIONS = 25_000
 }
 

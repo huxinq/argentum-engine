@@ -102,7 +102,7 @@ interface GameReplayRepository : CrudRepository<GameReplayRow, Long> {
             frame_count = :frameCount,
             ended_at = :endedAt,
             engine_version = :engineVersion
-        WHERE game_id = :gameId
+        WHERE game_id = :gameId AND status = 'IN_PROGRESS'
         """
     )
     fun updateRecording(
@@ -114,6 +114,38 @@ interface GameReplayRepository : CrudRepository<GameReplayRow, Long> {
         @Param("endedAt") endedAt: Instant,
         @Param("engineVersion") engineVersion: String?,
     ): Int
+
+    /** Metadata-only checkpoint for canonical v3; immutable setup and prior chunks are untouched. */
+    @Modifying
+    @Query(
+        """
+        UPDATE game_replays
+        SET status = :status,
+            resume_fingerprint = :resumeFingerprint,
+            frame_count = :frameCount,
+            canonical_record_count = :canonicalRecordCount,
+            ended_at = :endedAt,
+            engine_version = :engineVersion
+        WHERE game_id = :gameId
+          AND status = 'IN_PROGRESS'
+          AND canonical_record_count = :expectedCanonicalRecordCount
+        """
+    )
+    fun updateCanonicalRecording(
+        @Param("gameId") gameId: String,
+        @Param("status") status: String,
+        @Param("resumeFingerprint") resumeFingerprint: String?,
+        @Param("frameCount") frameCount: Int,
+        @Param("canonicalRecordCount") canonicalRecordCount: Int,
+        @Param("expectedCanonicalRecordCount") expectedCanonicalRecordCount: Int,
+        @Param("endedAt") endedAt: Instant,
+        @Param("engineVersion") engineVersion: String?,
+    ): Int
+}
+
+interface GameReplayChunkRepository : CrudRepository<GameReplayChunkRow, Long> {
+    fun findByReplayIdOrderByFirstRecordAsc(replayId: Long): List<GameReplayChunkRow>
+    fun findFirstByReplayIdOrderByFirstRecordDesc(replayId: Long): GameReplayChunkRow?
 }
 
 interface UserRatingRepository : CrudRepository<UserRatingRow, Long> {

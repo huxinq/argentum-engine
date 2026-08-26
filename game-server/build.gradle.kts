@@ -45,4 +45,6 @@ dependencies {
     // Self-skips when Docker is unavailable (see PostgresAccountsRepositoryTest).
     testImplementation(libs.testcontainersPostgresql)
     testImplementation(libs.testcontainersJunit)
+    // Always-on real PostgreSQL coverage for migrations whose readiness cannot depend on Docker.
+    testImplementation(libs.embeddedPostgres)
 }

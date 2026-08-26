@@ -98,6 +98,12 @@ benchmark-random GAMES="100" SET="POR":
 benchmark-throughput GAMES="20" SET="BLB":
     ./gradlew :ai:test --tests "*.SimulationThroughputBenchmark" -Dbenchmark=true -DbenchmarkGames={{GAMES}} -DbenchmarkSet={{SET}}
 
+# Measure canonical replay envelope/chunk/pin/presentation sizes over real recorded games.
+[group: 'build']
+benchmark-replay GAMES="10" SET="POR":
+    scripts/gradle-locked :game-server:test --tests "*.CompactReplaySizeBenchmark" \
+        -Dbenchmark=true -DbenchmarkGames={{GAMES}} -DbenchmarkSet={{SET}}
+
 # Play two AI agents head-to-head over paired-swap games and report a win rate with a confidence
 # interval (e.g., just arena v0 blb-advisors 1000). Agents: v0, current, production, blb-advisors,
 # ons-advisors, v0-blind. 1000 games is the merge gate; 300 is directional; 100 is a smoke test.

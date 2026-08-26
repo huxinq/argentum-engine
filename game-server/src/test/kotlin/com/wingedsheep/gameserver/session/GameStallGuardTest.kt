@@ -110,9 +110,8 @@ class GameStallGuardTest : FunSpec({
         guard.onActionRejected(alice) shouldBe true
     }
 
-    test("the shipped policy lets the record give up before the game does") {
-        // Both KDocs claim this ordering, and it is the whole reason a pathological game degrades
-        // to a partial replay instead of being ended early: the recording stops first.
+    test("the retired v2 replay cutoff remains below the game stall bound") {
+        // This ordering explains historical truncated records. Canonical v3 no longer applies it.
         val cap = com.wingedsheep.gameserver.replay.ReplayRecordingPolicy.MAX_RECORDED_ACTIONS
         (cap < GameStallGuard.MAX_ACTIONS) shouldBe true
     }

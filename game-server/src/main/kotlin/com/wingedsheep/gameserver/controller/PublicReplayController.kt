@@ -16,9 +16,9 @@ import org.springframework.web.bind.annotation.*
  * Anyone with the game ID can view the replay — replays only contain spectator-view data
  * (no hidden information like hands). The unguessable game id is the share token.
  *
- * The body comes from [ReplayService.viewerPayload], which re-simulates the compact record when that
- * still reproduces the game faithfully and falls back to the frames archived at record time when it
- * doesn't. The metadata says which happened, so the viewer can be honest about it.
+ * The body comes from [ReplayService.viewerPayload], which directly decodes canonical states. Legacy
+ * input records are re-simulated and fall back to frames archived at record time if they diverge.
+ * The metadata says which happened, so the viewer can be honest about it.
  */
 @RestController
 @RequestMapping("/api/public/replays")
@@ -59,11 +59,12 @@ class PublicReplayController(
     /**
      * The full, unmasked game state for a single replay frame, used by "share frame as
      * scenario" to reproduce the EXACT position (stack, targets, floating effects, mana, …).
-     * Re-simulated from the compact record up to [frame]. Served separately from [getReplay] so
+     * Decoded from canonical state (or re-simulated for a legacy record) up to [frame]. Served
+     * separately from [getReplay] so
      * normal (masked) replay viewing never receives hidden information — only an explicit share
      * does. The game is finished, so revealing the full state of a snapshot is intended.
      *
-     * 404s when the record no longer re-simulates: a shared scenario has to be a real position, and
+     * 404s when a legacy record no longer re-simulates: a shared scenario has to be a real position, and
      * archived frames are pictures of a game, not a game state.
      */
     @GetMapping("/{gameId}/frames/{frame}/full-state", produces = [MediaType.APPLICATION_JSON_VALUE])

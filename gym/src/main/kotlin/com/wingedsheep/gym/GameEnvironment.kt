@@ -3,6 +3,7 @@ package com.wingedsheep.gym
 import com.wingedsheep.ai.engine.DecisionResponder
 import com.wingedsheep.ai.engine.GameSimulator
 import com.wingedsheep.ai.engine.SimulationResult
+import com.wingedsheep.ai.engine.SimulationTraceStep
 import com.wingedsheep.ai.engine.evaluation.BoardEvaluator
 import com.wingedsheep.ai.engine.evaluation.CompositeBoardEvaluator
 import com.wingedsheep.ai.engine.evaluation.BoardPresence
@@ -105,6 +106,10 @@ class GameEnvironment private constructor(
     var lastStepEvents: List<GameEvent> = emptyList()
         private set
 
+    /** Raw ActionProcessor boundaries from the most recent explicit traced step. */
+    var lastStepTrace: List<SimulationTraceStep> = emptyList()
+        private set
+
     /** Total number of actions submitted since [reset]. */
     var stepCount: Int = 0
         private set
@@ -157,6 +162,7 @@ class GameEnvironment private constructor(
         playerIds = initResult.playerIds
         events = initResult.events
         lastStepEvents = initResult.events
+        lastStepTrace = emptyList()
         lastRejection = null
         stepCount = 0
         return buildStepResult(initResult.events)
@@ -188,6 +194,30 @@ class GameEnvironment private constructor(
         state = simResult.state
         events = events + simResult.events
         lastStepEvents = simResult.events
+        lastStepTrace = emptyList()
+        lastRejection = (simResult as? SimulationResult.Illegal)?.reason
+        stepCount++
+
+        return buildStepResult(simResult.events)
+    }
+
+    /**
+     * Submit one action while retaining every raw action/state boundary used to reach the same
+     * quiet state as [step]. Intended for authoritative replay recording, never tree search.
+     */
+    fun stepTraced(action: GameAction): StepResult {
+        check(playerIds.isNotEmpty()) { "Call reset() before stepTraced()" }
+
+        val traced = if (action is SubmitDecision) {
+            simulator.simulateDecisionTraced(state, action.response)
+        } else {
+            simulator.simulateTraced(state, action)
+        }
+        val simResult = traced.result
+        state = simResult.state
+        events = events + simResult.events
+        lastStepEvents = simResult.events
+        lastStepTrace = traced.steps
         lastRejection = (simResult as? SimulationResult.Illegal)?.reason
         stepCount++
 
@@ -208,6 +238,7 @@ class GameEnvironment private constructor(
         state = result.state
         events = events + result.events
         lastStepEvents = result.events
+        lastStepTrace = emptyList()
         lastRejection = result.error
         stepCount++
 

@@ -1,5 +1,7 @@
 package com.wingedsheep.gameserver.replay
 
+import com.wingedsheep.engine.replay.CanonicalReplayJson
+import com.wingedsheep.engine.replay.CanonicalReplayRecord
 import com.wingedsheep.gameserver.persistence.persistenceJson
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -94,4 +96,18 @@ object ReplayCodec {
     fun decodePins(encoded: String?): List<String> =
         encoded?.let { persistenceJson.decodeFromString(ListSerializer(String.serializer()), decodeText(it)) }
             ?: emptyList()
+
+    /** One independently compressed append-only batch of canonical replay records. */
+    fun encodeCanonicalRecords(records: List<CanonicalReplayRecord>): String {
+        require(records.isNotEmpty())
+        return encodeText(
+            CanonicalReplayJson.encodeToString(ListSerializer(CanonicalReplayRecord.serializer()), records)
+        )
+    }
+
+    fun decodeCanonicalRecords(encoded: String): List<CanonicalReplayRecord> =
+        CanonicalReplayJson.decodeFromString(
+            ListSerializer(CanonicalReplayRecord.serializer()),
+            decodeText(encoded),
+        )
 }

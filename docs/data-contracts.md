@@ -622,50 +622,44 @@ banner and act for whichever seat currently holds priority (board actions ride t
 server-provided `legalActions`, which already carry the acting seat; `SubmitDecision` is stamped
 with `pendingDecision.playerId`; combat declarations with the active/defending seat).
 
-### Compact replays (record inputs, re-simulate)
+### Canonical replays (record choices and authoritative states)
 
-Replays are stored as **inputs, not snapshots**. A finished game is persisted as a `CompactReplay`:
-its `setup` (RNG seed, decks, seat ids, format/teams/attack-mode) plus the ordered `actions` stream
-that was applied. Because the engine is a pure, deterministic function and mints every entity id
-from a state-threaded counter (never a UUID), `ReplayReconstructor` rebuilds the initial
-`GameState` with that seed, folds the actions back through `ActionProcessor`, and re-runs the same
-`SpectatorStateBuilder`/diff the live broadcast used — regenerating the exact `{initialSnapshot,
-deltas}` stream the viewer consumes. This is kilobytes per game instead of a masked snapshot + a
-per-frame delta + a full unmasked `GameState` per frame.
+New recordings use canonical replay schema v1. The stream contains a header with the complete
+initial `GameState` and initialization events; one transition for every accepted player action,
+meaningful authorized rejection, automatic action, and out-of-band system mutation; and a terminal
+record. Each transition carries the exact action or mutation, actor and submitter, emitted events,
+resulting-state digest, and either a full canonical JSON state or a deterministic JSON patch.
 
-Decision ids are minted afresh each run (they are not part of the deterministic state), so a
-recorded `SubmitDecision` is re-bound to the freshly created decision's id during reconstruction;
-the choice payload (entity-id targets/cards) is unchanged, so the outcome is identical.
+Reconstruction applies the recorded patches directly. It does not execute current engine or card
+logic, so a rules change cannot rewrite the game. A SHA-256 record chain detects removal, insertion,
+reordering, and modification. Full states are forced every 128 transitions to bound patch depth for
+indexed seeking; between them a patch is selected only when its encoded form is smaller.
+`COMPLETE` is legal only for a terminal `GameState`; interrupted or abandoned streams end with an
+explicit `INCOMPLETE` reason. A crash before terminalization leaves a plainly named `.partial`
+tournament artifact or an in-progress server prefix, never a file that claims completion.
 
 #### One store
 
-Every replay — finished or still being recorded — is a row in `game_replays`, written by
+Every replay — finished or still being recorded — has a parent row in `game_replays`, written by
 `ReplayService` and nobody else. `ReplayStore` has two implementations: `JdbcReplayStore` when
 accounts (and therefore a database) are enabled, and a bounded `InMemoryReplayStore` for a server
-running without one. In-progress recordings are flushed to the store every few seconds by
-`ReplayCheckpointFlusher` and picked back up on restart, which is what lets the Redis session blob
-carry no replay data at all.
+running without one. With JDBC, the stable compatibility envelope stays in the parent and canonical
+records are gzip-compressed in append-only `game_replay_chunks` rows. A checkpoint inserts only the
+new suffix and updates the parent count/fingerprint; it never rewrites prior records, deck setup, or
+pinned definitions. Readers require contiguous chunks and an exact count before exposing a replay.
 
-#### Bounded recordings
+In-progress recordings are flushed every few seconds by `ReplayCheckpointFlusher` and picked back
+up on restart, which lets the Redis session blob carry no replay data. The flusher keys progress on
+canonical record count—not legacy action count—so rejected attempts and yield/undo mutations are
+durable even when they do not append an accepted action.
 
-A recording stops after `ReplayRecordingPolicy.MAX_RECORDED_ACTIONS` (25,000) actions and the record
-is flagged `truncated`. Storage isn't the reason — the input log is ~7 stored bytes per action — the
-cost of *recording* is: the live log is a copy-on-write list, so a game's recording is O(n²) element
-copies in its own length, and the flusher re-encodes the whole log every few seconds until the game
-ends. Both are free at the few hundred actions a real game takes and ruinous at six figures.
+#### Exhaustive recordings and legacy truncation
 
-Past the cap the log is frozen: an undo may still shorten it (leaving a valid shorter prefix) but
-nothing may extend it again, or the record would have a hole in the middle and reconstruct a game
-nobody played. The result is the same "keep the honest shorter prefix" outcome a lost flush already
-produces, and `viewerPayload` reports it — the frames are an exact re-simulation and
-`stateReproducible` stays true, so the scenario buttons keep working; only the ending is missing, and
-the viewer shows a **Partial recording** badge (as against **From archive**, which means `DIVERGED`).
-
-The cap sits deliberately *below* the game-level runaway backstop
-(`GameStallGuard.MAX_ACTIONS`, 50,000 — see
-[engine-server-interface.md](engine-server-interface.md) → *The server's own game over*): if a game
-gets that long we would rather truncate the record than end a game somebody is playing, so the
-recording gives up first and the game carries on.
+Canonical writers have no replay-length cutoff. The in-memory lists are append-efficient and the
+database writes append-only suffix batches. A pathological game is resolved by `GameStallGuard`; its
+final forced state change is itself recorded. `CompactReplay.truncated` and
+`ReplayRecordingPolicy.MAX_RECORDED_ACTIONS` remain only to decode and explain v2 prefixes written
+before canonical replay v3.
 
 The flush is on a timer, not per action, so a crash can lose the tail of a recording. Splicing the
 rest of the game onto that short prefix would produce a record of a game nobody played, so each
@@ -674,73 +668,39 @@ against the recovered state and stops recording if they disagree, keeping the sh
 
 #### Surviving deploys
 
-An input log only reproduces a game while the engine folding it behaves as it did on the day — and
-in this engine *cards are data the engine folds through*, so editing a card rewrites the past. Three
-things address that:
+Canonical states are the primary durable truth. The older deterministic setup/action recipe remains
+readable, and three compatibility payloads continue to protect those historical recordings:
 
 | | What | Cost |
 |---|---|---|
 | `pinnedCards` | Compiled `CardDefinition` JSON for every card in the decks, overlaid on the live corpus during reconstruction (`ReplayCardPin` → a child `CardRegistry`). Card edits stop mattering; ability ids also stay stable, so recorded yields keep matching. Stored in its own write-once `pinned_cards` column, not in `data`, so the periodic flush doesn't rewrite it. | 7 KB gzipped on POR (34 definitions) up to ~40 KB on a modern set (113) — scales with deck variety, not game length, and is usually the largest part of a record |
 | `checkpoints` | A cheap position fingerprint (`ReplayFingerprint`: entity counter, clock, turn/phase, zone sizes, life) every 20 actions. Catches *silent* drift — actions that still apply but no longer produce the board that was played — instead of rendering it. | ~30 bytes each |
-| `presentation` | The `{initialSnapshot, deltas}` stream, materialized just after game over (the last moment we're provably on the recording build, on a background thread so it stays off the game-over path) and stored gzipped in its own column. A result rather than a recipe, so it renders regardless of engine changes. | ~62 KB gzipped for a 357-action game, ~160 KB for a 1650-action one — this one *does* scale with game length |
+| `presentation` | Legacy-only `{initialSnapshot, deltas}` fallback, materialized just after game over and stored gzipped in its own column. Canonical v3 never writes this duplicate because it already decodes authoritative states without current engine code. | Zero for v3; historical v1/v2 archives scale with game length |
 
-`ReplayService.viewerPayload` picks between them: re-simulate first, and if that comes back faithful
-serve it (current view code, and "share frame as scenario" works because a real `GameState` exists);
-if it diverged, serve the archived frames instead, flagged `degraded`. `ReplayFidelity` (`EXACT` /
-`UNVERIFIED` / `DIVERGED`) and `stateReproducible` ride in the endpoint metadata, and the viewer
-shows a **From archive** badge and hides the scenario buttons when the position can't be rebuilt.
+`ReplayService.viewerPayload` directly reconstructs canonical states with `EXACT` fidelity. For a v1/v2
+record it re-simulates the legacy recipe and verifies checkpoints; if that diverges it serves the
+archived presentation instead. `stateReproducible` remains true only when a real authoritative
+`GameState` is available.
 
-`CompactReplay.version` is 2. All v2 fields default to empty and `persistenceJson` ignores unknown
-keys, so records round-trip in both directions across a rolling deploy. `engineVersion` (the git sha,
-passed to the backend image as `COMMIT_HASH`) is stamped on every record so a replay that stops
-re-simulating can be traced to the build that recorded it.
+`CompactReplay.version` is 3. New JDBC envelopes omit duplicate action/checkpoint/canonical arrays;
+their transition stream lives only in chunks. Defaults and tolerant envelope decoding preserve v1/v2
+reads, while the canonical codec itself is strict about unknown fields and schema versions.
 
-**How big are they in practice?** `CompactReplaySizeBenchmark` (game-server, disabled by default)
-plays whole games with purely random actions through the real `GameSession` recording path and
-measures both payloads. On POR, ~1650 actions over ~32 turns per game:
-
-| Payload | Raw JSON | Stored (gzip+base64) |
-|---|---|---|
-| Input log + pins + checkpoints (`data`) | ~237 KB | **~11 KB** (~7 B/action; ~7 KB of that is the 34 pinned card definitions) |
-| Archived frame stream (`presentation`) | ~8 MB | **~160 KB** — ~14× the input log |
-
-**POR is the cheap end of the range, though — don't plan capacity from it.** Portal's cards are
-simple, so its definitions are small and there are few distinct ones. The pins scale with *deck
-variety and card complexity*, not with game length, and on a modern set they dominate everything
-else. Measured on a real 357-action ECL game (40-card decks, human vs AI), per stored column:
-
-| Column | Stored (gzip+base64) | Scales with |
-|---|---|---|
-| `data` — input log + checkpoints | **~4.8 KB** | game length |
-| `pinned_cards` — 113 definitions | **~40 KB** | deck variety / card complexity (fixed per game) |
-| `presentation` — archived frames | **~62 KB** | game length |
-
-So ~107 KB per finished game, and **the pins are the single largest cost** — bigger than the input log
-by an order of magnitude, and unrelated to how long the game ran. Two consequences: budget per *game*,
-not per *action*; and a 20-turn concession costs nearly as much as a 40-minute grind.
-
-The input log itself stays genuinely tiny (~4.8 KB here, ~13× smaller than the archive), which is what
-keeps re-simulation the primary path. But note that the size argument is no longer the *reason* it is
-the record — with the pins counted, the recipe and the result are the same order of magnitude. The real
-reason is that only the input log can rebuild a real `GameState`, which is what "share frame as
-scenario" needs.
-
-This split is also why the pins live in their own column rather than inside `data`: the flush rewrites
-`data` every few seconds for the length of a game, and folding 40 KB of never-changing definitions into
-each of those writes cost ~12× more per flush than the action log itself. See `V11__replay_pins_write_once.sql`.
-
-Random play is action-heavy (it passes priority constantly and rarely closes out a game), so real
-AI/human games tend to have shorter action logs — but the same or larger pins. Run it with:
+**Size measurement.** `CompactReplaySizeBenchmark` plays random games through the real canonical
+recorder and reports the stable envelope, append-only chunks, pins, the avoided legacy presentation,
+and a full-state-at-every-transition baseline separately. It reports both compressed binary bytes
+and the Base64 text actually stored in JDBC. Random play is action-heavy, so run both a small smoke sample and a representative modern
+set before capacity planning:
 
 ```bash
-./gradlew :game-server:test --tests "*.CompactReplaySizeBenchmark" -Dbenchmark=true -DbenchmarkGames=40 -DbenchmarkSet=BLB
+just benchmark-replay 40 BLB
 ```
 
 ### "Share frame as scenario" (replay)
 
 The replay viewer can also reproduce an **exact full-state snapshot** — stack, targets, floating
-effects, mana, counters and all trackers, not just the public board — by re-simulating the compact
-replay up to the requested frame (so no full `GameState` is stored per frame). Two entry points:
+effects, mana, counters and all trackers, not just the public board — by decoding the canonical state
+at the requested frame (legacy records still re-simulate). Two entry points:
 
 - **Share as scenario** → copies a *short* link that only references the stored frame:
   `/scenario?replay=<gameId>&frame=<n>`. Opening it `POST`s to `/api/scenarios/from-replay-frame`

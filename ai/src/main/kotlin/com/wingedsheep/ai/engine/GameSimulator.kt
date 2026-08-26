@@ -69,6 +69,17 @@ class GameSimulator(
     }
 
     /**
+     * The exhaustive authoritative-action form of [simulate]. Unlike the ordinary AI result, this
+     * retains every raw action and intermediate state produced while advancing to a quiet state.
+     * Replay recorders use it; speculative search keeps using [simulate] and pays no trace cost.
+     */
+    fun simulateTraced(state: GameState, action: GameAction): TracedSimulationResult {
+        val steps = mutableListOf<SimulationTraceStep>()
+        val result = processTraced(state, action, SimulationActionOrigin.SUBMITTED, steps)
+        return TracedSimulationResult(resolveToQuietState(result, steps), steps)
+    }
+
+    /**
      * Simulate a decision response on a paused state.
      */
     fun simulateDecision(state: GameState, response: DecisionResponse): SimulationResult {
@@ -77,6 +88,19 @@ class GameSimulator(
         val action = SubmitDecision(pending.playerId, response)
         val result = processor.process(state, action).result
         return resolveToQuietState(result)
+    }
+
+    /** Exhaustive counterpart to [simulateDecision]. */
+    fun simulateDecisionTraced(state: GameState, response: DecisionResponse): TracedSimulationResult {
+        val pending = state.pendingDecision
+            ?: return TracedSimulationResult(
+                SimulationResult.Illegal(state, emptyList(), "No pending decision"),
+                emptyList(),
+            )
+        val steps = mutableListOf<SimulationTraceStep>()
+        val action = SubmitDecision(pending.playerId, response)
+        val result = processTraced(state, action, SimulationActionOrigin.SUBMITTED, steps)
+        return TracedSimulationResult(resolveToQuietState(result, steps), steps)
     }
 
     /**
@@ -109,7 +133,10 @@ class GameSimulator(
      * (lands tapped, creature not yet on battlefield), making every spell
      * look worse than passing.
      */
-    private fun resolveToQuietState(result: ExecutionResult): SimulationResult {
+    private fun resolveToQuietState(
+        result: ExecutionResult,
+        trace: MutableList<SimulationTraceStep>? = null,
+    ): SimulationResult {
         var current = result
         var allEvents = result.events
         var iterations = 0
@@ -127,7 +154,12 @@ class GameSimulator(
                 val trivialResponse = trivialResponseFor(decision)
                 if (trivialResponse != null) {
                     val submitAction = SubmitDecision(decision.playerId, trivialResponse)
-                    current = processor.process(current.state, submitAction).result
+                    current = process(
+                        current.state,
+                        submitAction,
+                        SimulationActionOrigin.AUTO_DECISION,
+                        trace,
+                    )
                     allEvents = allEvents + current.events
                     iterations++
                     continue
@@ -140,7 +172,12 @@ class GameSimulator(
                         isResolving = true
                         val response = resolver(current.state, decision)
                         val submitAction = SubmitDecision(decision.playerId, response)
-                        current = processor.process(current.state, submitAction).result
+                        current = process(
+                            current.state,
+                            submitAction,
+                            SimulationActionOrigin.AUTO_DECISION,
+                            trace,
+                        )
                         allEvents = allEvents + current.events
                         iterations++
                     } finally {
@@ -158,7 +195,7 @@ class GameSimulator(
             val priorityPlayerId = state.priorityPlayerId
             if (state.stack.isNotEmpty() && priorityPlayerId != null && !state.gameOver) {
                 val passAction = PassPriority(priorityPlayerId)
-                current = processor.process(state, passAction).result
+                current = process(state, passAction, SimulationActionOrigin.AUTO_PASS, trace)
                 allEvents = allEvents + current.events
                 iterations++
                 continue
@@ -169,7 +206,12 @@ class GameSimulator(
             // candidate may be the damage; pass priority to advance the step and look again.
             if (resolveThroughCombatDamage && isPreDamageCombatState(state)) {
                 if (priorityPlayerId == null || state.gameOver) break
-                current = processor.process(state, PassPriority(priorityPlayerId)).result
+                current = process(
+                    state,
+                    PassPriority(priorityPlayerId),
+                    SimulationActionOrigin.AUTO_PASS,
+                    trace,
+                )
                 allEvents = allEvents + current.events
                 iterations++
                 continue
@@ -187,6 +229,35 @@ class GameSimulator(
             else ->
                 SimulationResult.Terminal(current.state, allEvents)
         }
+    }
+
+    private fun process(
+        state: GameState,
+        action: GameAction,
+        origin: SimulationActionOrigin,
+        trace: MutableList<SimulationTraceStep>?,
+    ): ExecutionResult = if (trace == null) {
+        processor.process(state, action).result
+    } else {
+        processTraced(state, action, origin, trace)
+    }
+
+    private fun processTraced(
+        state: GameState,
+        action: GameAction,
+        origin: SimulationActionOrigin,
+        trace: MutableList<SimulationTraceStep>,
+    ): ExecutionResult {
+        val result = processor.process(state, action).result
+        trace += SimulationTraceStep(
+            origin = origin,
+            action = action,
+            beforeState = state,
+            afterState = result.state,
+            events = result.events,
+            rejectionReason = result.error,
+        )
+        return result
     }
 
     /**

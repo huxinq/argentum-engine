@@ -1,6 +1,10 @@
 package com.wingedsheep.gameserver.replay
 
 import com.wingedsheep.engine.state.GameState
+import com.wingedsheep.engine.replay.CanonicalReplayRecorder
+import com.wingedsheep.engine.replay.CanonicalReplayTerminal
+import com.wingedsheep.engine.replay.ReplayCompletionStatus
+import com.wingedsheep.engine.replay.ReplayIncompleteReason
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
@@ -51,9 +55,10 @@ data class ReplayViewerPayload(
  * [StoredReplay] and then decides *how* to answer, which is the whole point of the two-payload
  * format:
  *
- * - Re-simulate the input log. If it comes back faithful, serve that — it renders through today's
- *   view code and supports "share frame as scenario", because we hold a real [GameState].
- * - If it diverged (an old recording the current engine can no longer reproduce), serve the frames
+ * - Reconstruct canonical v3 directly from its recorded states, or re-simulate a legacy input log.
+ *   If it comes back faithful, serve that through today's view code and support "share frame as
+ *   scenario", because we hold a real [GameState].
+ * - If a legacy replay diverged, serve the frames
  *   that were archived at record time instead, flagged as degraded. The player still watches the
  *   game they played; they just can't fork a scenario out of it.
  * - Only if there is no archive either do we serve the truncated re-simulation, which is the old
@@ -68,10 +73,11 @@ class ReplayService(
     private val logger = LoggerFactory.getLogger(ReplayService::class.java)
 
     /**
-     * Materializes archived frame streams off the game-over path. Folding a long game and building a
-     * spectator snapshot per action takes seconds; game over runs on a WebSocket handler thread and
-     * has already done its DB writes and lobby callbacks by the time we get here. Single-threaded so
-     * a tournament finishing eight matches at once queues rather than stampedes.
+     * Materializes legacy archived frame streams off the game-over path. Folding a long game and
+     * building a spectator snapshot per action takes seconds; game over runs on a WebSocket handler
+     * thread and has already done its DB writes and lobby callbacks by the time we get here.
+     * Single-threaded so a tournament finishing eight legacy matches at once queues rather than
+     * stampedes.
      */
     private val archiver = Executors.newSingleThreadExecutor { r ->
         Thread(r, "replay-archiver").apply { isDaemon = true }
@@ -80,19 +86,18 @@ class ReplayService(
     /**
      * Record a finished game.
      *
-     * The input log is stored synchronously — it is the record, and losing it to a crash a second
-     * later would be the one unrecoverable outcome. The archived frame stream follows asynchronously
-     * (see [archiver]); it still counts as "materialized by the recording build", just moments after
-     * the game rather than during it.
+     * The canonical stream (or legacy input log) is stored synchronously—it is the record. Canonical
+     * v3 already contains every authoritative state and survives engine changes by direct decoding,
+     * so storing a second spectator-only frame stream would add cost without fidelity. Legacy
+     * records can still archive that fallback asynchronously (see [archiver]).
      *
-     * [archive] is false for AI-only games (the LLM tournament). They are still stored — their replay
-     * links are the whole point of that page — but they are dev artefacts nobody will watch in two
-     * years and don't earn the hundreds of KB an archived frame stream costs.
+     * [archive] requests this fallback for a legacy record and is ignored for canonical v3. It is
+     * false for AI-only games (the LLM tournament).
      */
     fun save(replay: CompactReplay, archive: Boolean) {
         val record = StoredReplay(replay = replay, status = ReplayStatus.FINISHED)
         store.save(record)
-        if (!archive) return
+        if (!archive || replay.canonicalRecords.isNotEmpty()) return
 
         archiver.execute {
             runCatching {
@@ -143,7 +148,8 @@ class ReplayService(
      * Close out an in-progress record that will never get a proper ending — the game was abandoned,
      * or its recording was stopped because a restart left the stored log behind the live state.
      *
-     * The partial recording is a real replay of however far it got, so it is promoted to `FINISHED`
+     * The partial recording is a real replay of however far it got, so it gets an explicit canonical
+     * `INCOMPLETE/ABANDONED` terminal and is promoted to `FINISHED`
      * (and becomes visible in history) rather than left in a limbo status forever. No archive: we
      * are not necessarily on the build that recorded it any more.
      */
@@ -152,7 +158,7 @@ class ReplayService(
         if (stored.status != ReplayStatus.IN_PROGRESS) return
         store.save(
             stored.copy(
-                replay = stored.replay.copy(endedAt = Instant.now().toString()),
+                replay = finalizeCanonicalPrefix(stored.replay).copy(endedAt = Instant.now().toString()),
                 status = ReplayStatus.FINISHED,
                 resumeFingerprint = null,
             )
@@ -160,6 +166,19 @@ class ReplayService(
         logger.info(
             "Finalized partial replay {} at {} actions", gameId, stored.replay.actions.size,
         )
+    }
+
+    private fun finalizeCanonicalPrefix(replay: CompactReplay): CompactReplay {
+        val records = replay.canonicalRecords
+        if (records.isEmpty() || records.lastOrNull() is CanonicalReplayTerminal) return replay
+        val prefix = com.wingedsheep.engine.replay.CanonicalReplayReconstructor.reconstructPrefix(records)
+        val finalState = prefix.stateAt(prefix.states.lastIndex)
+        val terminal = CanonicalReplayRecorder.resume(records).finish(
+            status = ReplayCompletionStatus.INCOMPLETE,
+            finalState = finalState,
+            incompleteReason = ReplayIncompleteReason.ABANDONED,
+        )
+        return replay.copy(canonicalRecords = records + terminal)
     }
 
     /** The stored record for [gameId], or null if unknown. */
@@ -172,9 +191,8 @@ class ReplayService(
     fun inProgress(): List<StoredReplay> = store.findInProgress()
 
     /**
-     * The viewer body for [gameId] — re-simulated when that is faithful, archived frames when it
-     * isn't. Null if the game is unknown, or known but unwatchable (no archive and nothing
-     * reconstructs).
+     * The viewer body for [gameId] — directly decoded for canonical v3, or re-simulated/fallen back
+     * to archived frames for legacy data. Null if the game is unknown, or known but unwatchable.
      */
     fun viewerPayload(gameId: String): ReplayViewerPayload? =
         store.find(gameId)?.let { viewerPayload(it) }

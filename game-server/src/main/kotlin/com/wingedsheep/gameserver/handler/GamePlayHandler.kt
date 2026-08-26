@@ -687,7 +687,7 @@ class GamePlayHandler(
         }
 
         // Save the compact replay if the game had meaningful activity (>= 5 frames) and was started
-        // through the normal path (so its inputs were recorded and it can be re-simulated). Dev
+        // through the normal path (so its canonical state stream was recorded). Dev
         // scenario / hotseat games inject state directly and have no setup, so they aren't saved.
         val replaySetup = gameSession.getReplaySetup()
         val frameCount = gameSession.getReplayFrameCount()
@@ -723,10 +723,10 @@ class GamePlayHandler(
                 pinnedCards = gameSession.getPinnedCards(),
                 checkpoints = gameSession.getReplayCheckpoints(),
                 truncated = gameSession.isReplayTruncated(),
+                canonicalRecords = gameSession.finishCanonicalReplay(),
             )
-            // AI-only games (e.g. the LLM tournament) are stored — that page links straight at their
-            // replays — but skip the archived frame stream, which is orders of magnitude larger than
-            // the input log and only earns its keep for games someone may still watch years later.
+            // The archive flag is retained for legacy input records. Canonical v3 reconstructs its
+            // authoritative states directly and ReplayService never duplicates them as frames.
             val persistenceInfo = gameSession.getPlayerPersistenceInfo()
             val hasHumanSeat = gameSession.getPlayers().any { persistenceInfo[it.playerId]?.isAi != true }
             // Isolated: everything below still has to run. A replay is nice to have, but losing one

@@ -14,6 +14,14 @@ import com.wingedsheep.engine.core.*
 import com.wingedsheep.engine.legalactions.LegalActionEnumerator
 import com.wingedsheep.engine.mechanics.mana.ManaPaymentWindow
 import com.wingedsheep.engine.registry.CardRegistry
+import com.wingedsheep.engine.replay.CanonicalReplayRecord
+import com.wingedsheep.engine.replay.CanonicalReplayJson
+import com.wingedsheep.engine.replay.CanonicalReplayRecorder
+import com.wingedsheep.engine.replay.ReplayCompletionStatus
+import com.wingedsheep.engine.replay.ReplayIncompleteReason
+import com.wingedsheep.engine.replay.ReplaySystemMutation
+import com.wingedsheep.engine.replay.ReplaySystemMutationKind
+import com.wingedsheep.engine.replay.ReplayTransitionOrigin
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.combat.AttackersDeclaredThisCombatComponent
 import com.wingedsheep.engine.state.components.combat.BlockersDeclaredThisCombatComponent
@@ -33,6 +41,10 @@ import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 private val logger = LoggerFactory.getLogger(GameSession::class.java)
 
@@ -236,10 +248,6 @@ class GameSession(
      */
     private var stallGuard = GameStallGuard()
 
-    /** Where [appendToReplayLog] stops recording. Mutable only for the test seam below. */
-    private var replayActionCap =
-        com.wingedsheep.gameserver.replay.ReplayRecordingPolicy.MAX_RECORDED_ACTIONS
-
     private val actionProcessor = ActionProcessor(services)
     private val gameInitializer = GameInitializer(cardRegistry, services.printingRegistry)
     private val autoPassManager = AutoPassManager(cardRegistry)
@@ -261,16 +269,14 @@ class GameSession(
     private val priorityModes = java.util.concurrent.ConcurrentHashMap<EntityId, PriorityMode>()
     private val stopOverrides = java.util.concurrent.ConcurrentHashMap<EntityId, StopOverrideSettings>()
 
-    // Compact replay recording — see [com.wingedsheep.gameserver.replay.CompactReplay]. Instead of
-    // storing a masked snapshot, a per-frame delta, and a full unmasked GameState for every frame,
-    // we record only the reproducible inputs: the [replaySetup] (seed + decks + seat ids, captured
-    // at [startGame]) and the ordered [recordedActions] applied to the game. The full spectator
-    // stream is re-derived on demand by ReplayReconstructor.
+    // Canonical replay recording — see [com.wingedsheep.engine.replay.CanonicalReplayRecorder].
+    // The authoritative stream stores choices/events plus deterministic state patches. The setup,
+    // action, yield, and checkpoint collections below remain as a v1/v2 compatibility shadow while
+    // new JDBC storage writes only canonical transition chunks.
     @Volatile
     private var replaySetup: com.wingedsheep.gameserver.replay.ReplaySetup? = null
-    private val recordedActions = CopyOnWriteArrayList<GameAction>()
-    // Set once the recording has hit [ReplayRecordingPolicy.MAX_RECORDED_ACTIONS] and been frozen.
-    // Sticky, and stored with the record — see [recordAction].
+    private val recordedActions = ArrayList<GameAction>()
+    // Read compatibility for a legacy recording that was already frozen before canonical v3.
     @Volatile
     private var replayTruncated = false
     // Persistent-yield mutations applied out-of-band of [recordedActions]. Captured in turn order so
@@ -280,6 +286,9 @@ class GameSession(
     // played" from "this is a game the current engine produces from the same inputs".
     private val recordedCheckpoints =
         CopyOnWriteArrayList<com.wingedsheep.gameserver.replay.ReplayCheckpoint>()
+    private var canonicalReplayRecorder: CanonicalReplayRecorder? = null
+    private val canonicalReplayRecords = ArrayList<CanonicalReplayRecord>()
+    private var canonicalReplayFinished = false
     // Archived card definitions for this game, computed lazily on first use — see [getPinnedCards].
     @Volatile
     private var pinnedCards: List<String>? = null
@@ -581,6 +590,19 @@ class GameSession(
             },
             seatRoster = seatInfos(),
         )
+        canonicalReplayRecorder = CanonicalReplayRecorder(
+            gameId = sessionId,
+            createdAtUtc = requireNotNull(replayStartedAt).toString(),
+            engineVersion = com.wingedsheep.gameserver.replay.CompactReplay.UNKNOWN_VERSION,
+            producer = "argentum-game-server",
+            players = playerConfigs.map { requireNotNull(it.playerId).value },
+            initialState = result.state,
+            initializationEvents = result.events,
+        ).also { recorder ->
+            canonicalReplayRecords.clear()
+            canonicalReplayRecords += recorder.header
+            canonicalReplayFinished = false
+        }
         return result.state
     }
 
@@ -656,10 +678,11 @@ class GameSession(
 
         val error = result.error
         if (error != null) {
+            recordRejectedAction(action, result)
             MulliganActionResult.Failure(error)
         } else {
             gameState = result.state
-            recordAction(action)
+            recordAction(action, state, result)
             val mullState = result.state.getEntity(playerId)?.get<MulliganStateComponent>()
             if (mullState?.cardsToBottom ?: 0 > 0) {
                 MulliganActionResult.NeedsBottomCards(mullState!!.cardsToBottom)
@@ -682,10 +705,11 @@ class GameSession(
 
         val error = result.error
         if (error != null) {
+            recordRejectedAction(action, result)
             MulliganActionResult.Failure(error)
         } else {
             gameState = result.state
-            recordAction(action)
+            recordAction(action, state, result)
             MulliganActionResult.Success
         }
     }
@@ -703,10 +727,11 @@ class GameSession(
 
         val error = result.error
         if (error != null) {
+            recordRejectedAction(action, result)
             MulliganActionResult.Failure(error)
         } else {
             gameState = result.state
-            recordAction(action)
+            recordAction(action, state, result)
             MulliganActionResult.Success
         }
     }
@@ -835,6 +860,7 @@ class GameSession(
 
         val error = result.error
         if (error != null) {
+            recordRejectedAction(action, result, submitterId = playerId)
             return ActionResult.Failure(error)
         }
 
@@ -842,7 +868,7 @@ class GameSession(
         applyUndoPolicy(undoPolicy, action, state, playerId)
 
         gameState = result.state
-        recordAction(action)
+        recordAction(action, state, result, submitterId = playerId)
         if (messageId != null) lastProcessedMessageId[playerId] = messageId
         val pendingDecision = result.pendingDecision
         return if (pendingDecision != null) {
@@ -862,7 +888,8 @@ class GameSession(
         val result = actionProcessor.process(state, action).result
 
         gameState = result.state
-        if (result.error == null) recordAction(action)
+        if (result.error == null) recordAction(action, state, result)
+        else recordRejectedAction(action, result)
         result.state
     }
 
@@ -1059,6 +1086,16 @@ class GameSession(
     ) = synchronized(stateLock) {
         gameState = gameState?.withYield(playerId, identity, kind)
         recordYield(com.wingedsheep.gameserver.replay.ReplayYieldOp.SET, playerId, identity, kind)
+        recordCanonicalMutation(
+            ReplaySystemMutationKind.SET_YIELD,
+            playerId,
+            detail = buildJsonObject {
+                put("identity", CanonicalReplayJson.encodeToJsonElement(
+                    com.wingedsheep.sdk.scripting.AbilityIdentity.serializer(), identity
+                ))
+                put("kind", JsonPrimitive(kind.name))
+            },
+        )
     }
 
     /** Revoke every yield [playerId] holds against [identity]. */
@@ -1068,12 +1105,22 @@ class GameSession(
     ) = synchronized(stateLock) {
         gameState = gameState?.withoutYield(playerId, identity)
         recordYield(com.wingedsheep.gameserver.replay.ReplayYieldOp.CLEAR_ABILITY, playerId, identity, null)
+        recordCanonicalMutation(
+            ReplaySystemMutationKind.CLEAR_YIELD,
+            playerId,
+            detail = buildJsonObject {
+                put("identity", CanonicalReplayJson.encodeToJsonElement(
+                    com.wingedsheep.sdk.scripting.AbilityIdentity.serializer(), identity
+                ))
+            },
+        )
     }
 
     /** Drop all of [playerId]'s yields. */
     fun clearAllYields(playerId: EntityId) = synchronized(stateLock) {
         gameState = gameState?.withoutYields(playerId)
         recordYield(com.wingedsheep.gameserver.replay.ReplayYieldOp.CLEAR_ALL, playerId, null, null)
+        recordCanonicalMutation(ReplaySystemMutationKind.CLEAR_ALL_YIELDS, playerId)
     }
 
     // =========================================================================
@@ -1160,13 +1207,34 @@ class GameSession(
      * Only the player who took the undoable action can undo.
      */
     fun executeUndo(playerId: EntityId): ActionResult = synchronized(stateLock) {
-        val checkpoint = undoCheckpoint ?: return ActionResult.Failure("No undo available")
+        val checkpoint = undoCheckpoint ?: run {
+            recordCanonicalMutation(
+                ReplaySystemMutationKind.UNDO,
+                playerId,
+                accepted = false,
+                rejectionReason = "No undo available",
+            )
+            return ActionResult.Failure("No undo available")
+        }
 
         if (checkpoint.priorityPlayerId != playerId) {
+            recordCanonicalMutation(
+                ReplaySystemMutationKind.UNDO,
+                playerId,
+                accepted = false,
+                rejectionReason = "Not your action to undo",
+            )
             return ActionResult.Failure("Not your action to undo")
         }
 
         gameState = checkpoint
+        recordCanonicalMutation(
+            ReplaySystemMutationKind.UNDO,
+            playerId,
+            detail = buildJsonObject {
+                put("targetActionCount", JsonPrimitive(undoCheckpointActionCount ?: recordedActions.size))
+            },
+        )
         // Roll the replay log back to the actions that produced the restored state, so a later
         // reconstruction replays exactly this history. Yields recorded after the rollback point are
         // dropped too — they were set against actions that no longer exist.
@@ -1247,6 +1315,11 @@ class GameSession(
 
         // Verify this player has priority
         if (state.priorityPlayerId != playerId) {
+            recordCanonicalAction(
+                PassPriority(playerId),
+                ExecutionResult.error(state, "Player does not have priority"),
+                ReplayTransitionOrigin.AUTO_PASS,
+            )
             return ActionResult.Failure("Player does not have priority")
         }
 
@@ -1267,6 +1340,7 @@ class GameSession(
 
         val error = result.error
         if (error != null) {
+            recordCanonicalAction(action, result, ReplayTransitionOrigin.AUTO_PASS)
             return ActionResult.Failure(error)
         }
 
@@ -1283,7 +1357,7 @@ class GameSession(
         applyUndoPolicy(undoPolicy, action, state, playerId)
 
         gameState = result.state
-        recordAction(action)
+        recordAction(action, state, result, ReplayTransitionOrigin.AUTO_PASS)
         val pendingDecision = result.pendingDecision
         return if (pendingDecision != null) {
             ActionResult.PausedForDecision(result.state, pendingDecision, result.events)
@@ -1358,44 +1432,86 @@ class GameSession(
     // =========================================================================
 
     /**
-     * The one thing every applied action passes through: append it to the compact replay log, and
+     * The one thing every applied action passes through: append it to the canonical replay, and
      * ask the [stallGuard] whether this game is still going anywhere.
      *
      * Both halves are bounded on purpose, and for different reasons — see [appendToReplayLog] and
      * [enforceProgress].
      */
-    private fun recordAction(action: GameAction) {
+    private fun recordAction(
+        action: GameAction,
+        beforeState: GameState,
+        result: ExecutionResult,
+        origin: ReplayTransitionOrigin = ReplayTransitionOrigin.PLAYER,
+        submitterId: EntityId? = action.playerId,
+    ) {
+        if (result.error != null) require(result.state == beforeState)
+        recordCanonicalAction(action, result, origin, submitterId)
         appendToReplayLog(action)
+        val beforeProgressGuard = gameState
         enforceProgress()
+        val afterProgressGuard = gameState
+        if (beforeProgressGuard != null && afterProgressGuard != null && beforeProgressGuard != afterProgressGuard) {
+            canonicalReplayRecorder?.let { recorder ->
+                canonicalReplayRecords += recorder.appendMutation(
+                    ReplaySystemMutation(ReplaySystemMutationKind.FORCED_TERMINATION),
+                    afterProgressGuard,
+                )
+            }
+        }
     }
 
-    /**
-     * Append to the replay log, up to [ReplayRecordingPolicy.MAX_RECORDED_ACTIONS] actions.
-     *
-     * A replay costs ~7 stored bytes per action, so length is not what makes a runaway game
-     * expensive — this list is. It is a [CopyOnWriteArrayList] (read by the flusher off the game
-     * thread, appended under the state lock), so every append copies the whole array: the recording
-     * costs O(n²) element copies over a game, which is nothing at the few hundred actions a real
-     * game takes and ruinous at six figures. On top of that the flusher re-encodes the entire log
-     * every few seconds for as long as the game lasts.
-     *
-     * So the recording gives up rather than the game: past the cap the log is frozen and marked
-     * [replayTruncated], which is the same "keep the honest shorter prefix" outcome a lost flush
-     * already produces (see [restoreReplayRecording]) and which the viewer reports as a partial
-     * recording. Freezing is permanent for the session — an undo may shorten the log afterwards
-     * (leaving a valid, shorter prefix) but nothing may extend it again, or the record would have a
-     * hole in the middle and reconstruct a game nobody played.
-     */
+    private fun recordRejectedAction(
+        action: GameAction,
+        result: ExecutionResult,
+        submitterId: EntityId? = action.playerId,
+    ) {
+        check(result.error != null)
+        recordCanonicalAction(action, result, ReplayTransitionOrigin.PLAYER, submitterId)
+    }
+
+    private fun recordCanonicalAction(
+        action: GameAction,
+        result: ExecutionResult,
+        origin: ReplayTransitionOrigin,
+        submitterId: EntityId? = action.playerId,
+    ) {
+        canonicalReplayRecorder?.let { recorder ->
+            canonicalReplayRecords += recorder.appendAction(
+                origin = origin,
+                action = action,
+                accepted = result.error == null,
+                rejectionReason = result.error,
+                resultingState = result.state,
+                events = result.events,
+                submitterId = submitterId?.value,
+            )
+        }
+    }
+
+    private fun recordCanonicalMutation(
+        kind: ReplaySystemMutationKind,
+        actorId: EntityId? = null,
+        accepted: Boolean = true,
+        rejectionReason: String? = null,
+        detail: JsonObject = JsonObject(emptyMap()),
+    ) {
+        val state = gameState ?: return
+        canonicalReplayRecorder?.let { recorder ->
+            canonicalReplayRecords += recorder.appendMutation(
+                ReplaySystemMutation(kind = kind, actorId = actorId?.value, detail = detail),
+                state,
+                accepted = accepted,
+                rejectionReason = rejectionReason,
+            )
+        }
+    }
+
+    /** Append the legacy action shadow; canonical v3 itself is exhaustive and append-only. */
     private fun appendToReplayLog(action: GameAction) {
         if (replayTruncated) return
-        if (recordedActions.size >= replayActionCap) {
-            replayTruncated = true
-            logger.warn(
-                "Replay recording for $sessionId hit $replayActionCap actions — freezing the log; " +
-                    "the game continues but its replay stops here"
-            )
-            return
-        }
+        // Canonical v3 recording is append-only and has no gameplay-length cutoff. A true runaway
+        // is ended by the stall guard; silently dropping its tail would violate replay completeness.
         recordedActions.add(action)
         stampCheckpointIfDue()
     }
@@ -1489,7 +1605,7 @@ class GameSession(
     fun getReplaySetup(): com.wingedsheep.gameserver.replay.ReplaySetup? = replaySetup
 
     /** The ordered input stream applied to this game. */
-    fun getRecordedActions(): List<GameAction> = recordedActions.toList()
+    fun getRecordedActions(): List<GameAction> = synchronized(stateLock) { recordedActions.toList() }
 
     /** Atomic live input for externally hosted AI controllers. */
     fun getAiRuntimeSnapshot(): com.wingedsheep.gameserver.ai.AiRuntimeSnapshot? = synchronized(stateLock) {
@@ -1514,6 +1630,22 @@ class GameSession(
     /** Sparse position fingerprints taken while this game was played. */
     fun getReplayCheckpoints(): List<com.wingedsheep.gameserver.replay.ReplayCheckpoint> =
         recordedCheckpoints.toList()
+
+    /** Finalize and return the authoritative canonical replay stream at game-over. */
+    fun finishCanonicalReplay(): List<CanonicalReplayRecord> = synchronized(stateLock) {
+        val recorder = canonicalReplayRecorder ?: return emptyList()
+        val state = gameState ?: return emptyList()
+        if (!canonicalReplayFinished) {
+            canonicalReplayRecords += recorder.finish(
+                status = if (state.gameOver) ReplayCompletionStatus.COMPLETE else ReplayCompletionStatus.INCOMPLETE,
+                finalState = state,
+                winnerId = state.winnerId?.value,
+                incompleteReason = ReplayIncompleteReason.ABANDONED.takeUnless { state.gameOver },
+            )
+            canonicalReplayFinished = true
+        }
+        canonicalReplayRecords.toList()
+    }
 
     /**
      * The compiled definitions of every card in this game's decks, archived with the replay so it
@@ -1555,6 +1687,7 @@ class GameSession(
                 startedAt = replayStartedAt,
                 gameOver = state.gameOver,
                 truncated = replayTruncated,
+                canonicalRecords = canonicalReplayRecords.toList(),
             )
         }
 
@@ -1562,7 +1695,9 @@ class GameSession(
      * Total number of replay frames: the initial state plus one per recorded action. Zero until the
      * game is started via [startGame] (injected-state sessions have no setup and aren't replayable).
      */
-    fun getReplayFrameCount(): Int = if (replaySetup != null) 1 + recordedActions.size else 0
+    fun getReplayFrameCount(): Int = synchronized(stateLock) {
+        if (replaySetup != null) 1 + recordedActions.size else 0
+    }
 
     // =========================================================================
     // Test Support (for scenario-based testing)
@@ -1576,9 +1711,11 @@ class GameSession(
      * tens of thousands of actions to get there. Must be called before the game starts — the guard
      * carries the counters, so swapping it mid-game resets them.
      */
-    internal fun tightenBackstopsForTesting(guard: GameStallGuard, replayCap: Int) {
+    internal fun tightenBackstopsForTesting(
+        guard: GameStallGuard,
+        @Suppress("UNUSED_PARAMETER") legacyReplayCap: Int,
+    ) {
         stallGuard = guard
-        replayActionCap = replayCap
     }
 
 
@@ -1802,6 +1939,17 @@ class GameSession(
             return false
         }
 
+        val resumedCanonical = record.canonicalRecords.takeIf { it.isNotEmpty() }?.let { prefix ->
+            runCatching { CanonicalReplayRecorder.resume(prefix) }
+                .onFailure { logger.error("Canonical replay prefix for $sessionId cannot resume", it) }
+                .getOrNull()
+        }
+        if (record.canonicalRecords.isNotEmpty() && resumedCanonical == null) {
+            logger.error("Stopping replay recording for $sessionId because its canonical prefix is invalid")
+            replaySetup = null
+            return false
+        }
+
         replaySetup = record.setup
         recordedActions.clear()
         recordedActions.addAll(record.actions)
@@ -1809,6 +1957,10 @@ class GameSession(
         recordedYields.addAll(record.yields)
         recordedCheckpoints.clear()
         recordedCheckpoints.addAll(record.checkpoints)
+        canonicalReplayRecords.clear()
+        canonicalReplayRecords.addAll(record.canonicalRecords)
+        canonicalReplayRecorder = resumedCanonical
+        canonicalReplayFinished = false
         // A record frozen by the size cap before the restart stays frozen: the actions played
         // between the cap and now were never recorded, so appending from here would splice a hole
         // into the log exactly as extending a stale prefix would.

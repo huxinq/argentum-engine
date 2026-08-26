@@ -15,11 +15,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * That guarantee used to come free: the Redis session blob carried the recording along with the live
  * state, and Redis was written on every state change. Moving replays to a single store meant taking
- * the guarantee back explicitly — but *not* by writing on every action. The record is a whole
- * re-encoded blob, so per-action writes are quadratic in the length of the game for a property
- * (surviving a crash) that a few seconds of granularity satisfies just as well.
+ * the guarantee back explicitly — but *not* by writing on every action. Canonical records are
+ * persisted as independently compressed append-only batches, so each sweep writes only the new
+ * suffix while retaining a few seconds of crash-loss granularity.
  *
- * So we sweep instead: every few seconds, flush the sessions whose action count moved. The cost of
+ * So we sweep instead: every few seconds, flush the sessions whose replay record count moved. The cost of
  * coarse flushing is that a crash loses the last few actions, which
  * [GameSession.restoreReplayRecording] detects on the way back up (via the fingerprint written with
  * each flush) and handles by keeping the honest shorter replay rather than splicing the rest of the
@@ -36,13 +36,8 @@ class ReplayCheckpointFlusher(
     /** sessionId -> what the last flush wrote, so an idle game isn't rewritten every sweep. */
     private val flushed = ConcurrentHashMap<String, Flushed>()
 
-    /**
-     * The action count is what normally moves; [truncated] is here because it can flip *without*
-     * the count moving — a recording frozen by the size cap stops appending, so a game that was
-     * flushed at exactly the cap would otherwise keep a stored record that claims to be the whole
-     * game right up until game over.
-     */
-    private data class Flushed(val actions: Int, val truncated: Boolean)
+    /** Canonical record count for v3; legacy recordings fall back to action count + truncation. */
+    private data class Flushed(val progress: Int, val legacyTruncated: Boolean)
 
     /** Guards the one-time startup reconciliation in [adoptRecordsLeftByAPreviousRun]. */
     private val reconciled = AtomicBoolean(false)
@@ -89,7 +84,7 @@ class ReplayCheckpointFlusher(
         for (record in stranded) {
             val gameId = record.replay.gameId
             if (gameId in liveIds) {
-                flushed[gameId] = Flushed(record.replay.actions.size, record.replay.truncated)
+                flushed[gameId] = Flushed(record.replay.recordingProgress, record.replay.truncated)
             } else {
                 runCatching { replayService.finalizePartial(gameId) }
                     .onFailure { logger.warn("Failed to finalize stranded replay $gameId: ${it.message}") }
@@ -117,7 +112,8 @@ class ReplayCheckpointFlusher(
         // live and still recorded; there is nothing left to checkpoint, and [ReplayService] would
         // refuse the write anyway. Skip before paying for the encode.
         if (snapshot.gameOver) return
-        if (flushed[session.sessionId] == Flushed(snapshot.actions.size, snapshot.truncated)) return
+        val progress = snapshot.canonicalRecords.size.takeIf { it > 0 } ?: snapshot.actions.size
+        if (flushed[session.sessionId] == Flushed(progress, snapshot.truncated)) return
 
         replayService.saveInProgress(
             replay = CompactReplay(
@@ -134,13 +130,17 @@ class ReplayCheckpointFlusher(
                 pinnedCards = session.getPinnedCards(),
                 checkpoints = snapshot.checkpoints,
                 truncated = snapshot.truncated,
+                canonicalRecords = snapshot.canonicalRecords,
             ),
             resumeFingerprint = snapshot.fingerprint,
         )
-        flushed[session.sessionId] = Flushed(snapshot.actions.size, snapshot.truncated)
+        flushed[session.sessionId] = Flushed(progress, snapshot.truncated)
     }
 
     private companion object {
         const val FLUSH_INTERVAL_MS = 5_000L
     }
 }
+
+private val CompactReplay.recordingProgress: Int
+    get() = canonicalRecords.size.takeIf { it > 0 } ?: actions.size

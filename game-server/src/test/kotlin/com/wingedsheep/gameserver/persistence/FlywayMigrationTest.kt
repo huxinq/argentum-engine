@@ -483,4 +483,56 @@ class FlywayMigrationTest : FunSpec({
             postgres.stop()
         }
     }
+
+    test("V13 stores canonical replay suffixes as ordered append-only chunks").config(enabled = dockerAvailable) {
+        val postgres = PostgreSQLContainer<Nothing>(DockerImageName.parse("postgres:16-alpine"))
+        postgres.start()
+        try {
+            migrateAll(postgres)
+
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { conn ->
+                conn.createStatement().use { st ->
+                    st.execute(
+                        "INSERT INTO game_replays(id, game_id, data, status, canonical_record_count, ended_at) " +
+                            "VALUES (13, 'canonical', 'IMMUTABLE_ENVELOPE', 'IN_PROGRESS', 1, now())"
+                    )
+                    st.execute(
+                        "INSERT INTO game_replay_chunks(replay_id, first_record, record_count, data) " +
+                            "VALUES (13, 0, 1, 'HEADER')"
+                    )
+                    st.execute(
+                        "INSERT INTO game_replay_chunks(replay_id, first_record, record_count, data) " +
+                            "VALUES (13, 1, 2, 'TRANSITIONS')"
+                    )
+                    st.execute(
+                        "UPDATE game_replays SET canonical_record_count = 3, frame_count = 3 " +
+                            "WHERE game_id = 'canonical'"
+                    )
+
+                    st.executeQuery(
+                        "SELECT data, canonical_record_count FROM game_replays WHERE id = 13"
+                    ).use { rs ->
+                        rs.next()
+                        rs.getString(1) shouldBe "IMMUTABLE_ENVELOPE"
+                        rs.getInt(2) shouldBe 3
+                    }
+                    st.executeQuery(
+                        "SELECT first_record, record_count FROM game_replay_chunks " +
+                            "WHERE replay_id = 13 ORDER BY first_record"
+                    ).use { rs ->
+                        rs.next(); rs.getInt(1) shouldBe 0; rs.getInt(2) shouldBe 1
+                        rs.next(); rs.getInt(1) shouldBe 1; rs.getInt(2) shouldBe 2
+                        rs.next() shouldBe false
+                    }
+
+                    st.execute("DELETE FROM game_replays WHERE id = 13")
+                    st.executeQuery("SELECT count(*) FROM game_replay_chunks WHERE replay_id = 13").use { rs ->
+                        rs.next(); rs.getInt(1) shouldBe 0
+                    }
+                }
+            }
+        } finally {
+            postgres.stop()
+        }
+    }
 })

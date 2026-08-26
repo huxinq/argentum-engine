@@ -1,5 +1,6 @@
 package com.wingedsheep.ai.engine
 
+import com.wingedsheep.engine.core.GameAction
 import com.wingedsheep.engine.core.GameEvent
 import com.wingedsheep.engine.core.PendingDecision
 import com.wingedsheep.engine.state.GameState
@@ -31,3 +32,23 @@ sealed interface SimulationResult {
         val reason: String
     ) : SimulationResult
 }
+
+/** Why an authoritative action appears in an exhaustive simulation trace. */
+enum class SimulationActionOrigin { SUBMITTED, AUTO_PASS, AUTO_DECISION }
+
+/** One raw ActionProcessor invocation, including its exact state boundary and emitted events. */
+data class SimulationTraceStep(
+    val origin: SimulationActionOrigin,
+    val action: GameAction,
+    val beforeState: GameState,
+    val afterState: GameState,
+    val events: List<GameEvent>,
+    val rejectionReason: String?,
+) {
+    val accepted: Boolean get() = rejectionReason == null
+}
+
+data class TracedSimulationResult(
+    val result: SimulationResult,
+    val steps: List<SimulationTraceStep>,
+)

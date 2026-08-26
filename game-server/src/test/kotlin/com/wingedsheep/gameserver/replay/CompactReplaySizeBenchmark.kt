@@ -2,8 +2,16 @@ package com.wingedsheep.gameserver.replay
 
 import com.wingedsheep.ai.engine.buildHeuristicSealedDeck
 import com.wingedsheep.engine.core.*
+import com.wingedsheep.engine.replay.CanonicalReplayJson
+import com.wingedsheep.engine.replay.CanonicalReplayRecord
+import com.wingedsheep.engine.replay.CanonicalReplayReconstructor
+import com.wingedsheep.engine.replay.CanonicalReplayTerminal
+import com.wingedsheep.engine.replay.CanonicalReplayTransition
+import com.wingedsheep.engine.replay.ReplayFullState
+import com.wingedsheep.engine.replay.ReplayRecordDigests
 import com.wingedsheep.gameserver.protocol.ServerMessage
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import com.wingedsheep.engine.legalactions.LegalActionEnumerator
 import com.wingedsheep.gameserver.ScenarioTestBase
@@ -24,11 +32,10 @@ import kotlin.math.roundToInt
 import kotlin.random.Random
 
 /**
- * Benchmark: play full games with PURELY RANDOM actions through the real [GameSession] recording
- * path, build the [CompactReplay] each produces, and measure how large that durable record is —
- * raw JSON bytes and the stored gzip+base64 form ([ReplayCodec]) — plus bytes-per-action and
- * bytes-per-frame. This answers "how big are compact replays in practice?" with real games rather
- * than a hand-crafted scenario.
+ * Benchmark: play games with PURELY RANDOM actions through the real [GameSession] canonical
+ * recorder and measure the actual JDBC representation: one stable compatibility envelope, one
+ * write-once pin payload, and independently gzipped append-only record batches. It also measures an
+ * exhaustive full-state baseline and the legacy presentation duplicate that canonical v3 omits.
  *
  * Disabled by default (it plays whole games). Run with:
  *   ./gradlew :game-server:test --tests "*.CompactReplaySizeBenchmark" -Dbenchmark=true
@@ -75,7 +82,8 @@ class CompactReplaySizeBenchmark : ScenarioTestBase() {
                     println("  [game $i] not replayable (no recorded setup) — skipping")
                     continue
                 }
-                val actions = session.getRecordedActions()
+                val snapshot = requireNotNull(session.replayRecordingSnapshot())
+                val actions = snapshot.actions
                 val replay = CompactReplay(
                     gameId = session.sessionId,
                     players = session.getPlayers().map { ReplayPlayerInfo(it.playerId.value, it.playerName) },
@@ -86,22 +94,93 @@ class CompactReplaySizeBenchmark : ScenarioTestBase() {
                     actions = actions,
                     pinnedCards = session.getPinnedCards(),
                     checkpoints = session.getReplayCheckpoints(),
+                    canonicalRecords = snapshot.canonicalRecords,
                 )
 
                 // Sanity: the stored form round-trips losslessly (same guarantee the codec test proves).
                 ReplayCodec.decode(ReplayCodec.encode(replay)) shouldBe replay
 
-                val json = persistenceJson.encodeToString(CompactReplay.serializer(), replay)
-                val jsonBytes = json.toByteArray(Charsets.UTF_8).size
-                val encoded = ReplayCodec.encode(replay)
-                val gzipBytes = Base64.getDecoder().decode(encoded).size
+                val envelope = replay.copy(
+                    actions = emptyList(),
+                    yields = emptyList(),
+                    pinnedCards = emptyList(),
+                    checkpoints = emptyList(),
+                    canonicalRecords = emptyList(),
+                )
+                val envelopeJson = persistenceJson.encodeToString(CompactReplay.serializer(), envelope)
+                val recordJson = CanonicalReplayJson.encodeToString(
+                    ListSerializer(CanonicalReplayRecord.serializer()), replay.canonicalRecords
+                )
+                val pinsJson = persistenceJson.encodeToString(
+                    ListSerializer(String.serializer()), replay.pinnedCards
+                )
+                val jsonBytes = envelopeJson.toByteArray().size + recordJson.toByteArray().size +
+                    pinsJson.toByteArray().size
+                val envelopeEncoded = ReplayCodec.encode(envelope)
+                val chunkEncoded = replay.canonicalRecords.chunked(128).map(ReplayCodec::encodeCanonicalRecords)
+                val pinsEncoded = ReplayCodec.encodePins(replay.pinnedCards)
+                val envelopeGzip = Base64.getDecoder().decode(envelopeEncoded).size
+                val chunkGzip = chunkEncoded.sumOf { Base64.getDecoder().decode(it).size }
+                val pinsGzip = pinsEncoded?.let { Base64.getDecoder().decode(it).size } ?: 0
+                val base64Bytes = envelopeEncoded.length + chunkEncoded.sumOf { it.length } +
+                    (pinsEncoded?.length ?: 0)
+                // Compare the patch stream with an equally faithful stream that stores every full
+                // state. Record hashes stay fixed-length, so replacing only the state encoding is a
+                // fair storage-size baseline; reconstruction above proves both contain the same
+                // state sequence.
+                val canonicalStates = if (replay.canonicalRecords.lastOrNull() is CanonicalReplayTerminal) {
+                    CanonicalReplayReconstructor.reconstruct(replay.canonicalRecords).states
+                } else {
+                    CanonicalReplayReconstructor.reconstructPrefix(replay.canonicalRecords).states
+                }
+                var previousDigest = replay.canonicalRecords.first().recordDigest
+                val fullStateRecords = replay.canonicalRecords.mapIndexed { recordIndex, record ->
+                    when (record) {
+                        is CanonicalReplayTransition -> {
+                            val unsigned = record.copy(
+                                state = ReplayFullState(canonicalStates[recordIndex]),
+                                previousRecordDigest = previousDigest,
+                                recordDigest = "",
+                            )
+                            unsigned.copy(recordDigest = ReplayRecordDigests.of(unsigned)).also {
+                                previousDigest = it.recordDigest
+                            }
+                        }
+                        is CanonicalReplayTerminal -> {
+                            val unsigned = record.copy(
+                                previousRecordDigest = previousDigest,
+                                recordDigest = "",
+                            )
+                            unsigned.copy(recordDigest = ReplayRecordDigests.of(unsigned)).also {
+                                previousDigest = it.recordDigest
+                            }
+                        }
+                        else -> record
+                    }
+                }
+                val fullStateStates = if (fullStateRecords.lastOrNull() is CanonicalReplayTerminal) {
+                    CanonicalReplayReconstructor.reconstruct(fullStateRecords).states
+                } else {
+                    CanonicalReplayReconstructor.reconstructPrefix(fullStateRecords).states
+                }
+                fullStateStates shouldBe canonicalStates
+                val fullStateChunkEncoded = fullStateRecords.chunked(128)
+                    .map(ReplayCodec::encodeCanonicalRecords)
+                val fullStateChunkGzip = fullStateChunkEncoded.sumOf {
+                    Base64.getDecoder().decode(it).size
+                }
+                val gzipBytes = envelopeGzip + chunkGzip + pinsGzip
+                val fullStateGzipBytes = envelopeGzip + fullStateChunkGzip + pinsGzip
+                val fullStateBase64Bytes = envelopeEncoded.length +
+                    fullStateChunkEncoded.sumOf { it.length } + (pinsEncoded?.length ?: 0)
 
-                // The durability fallback: the frames the input log produces, archived at record
-                // time. Measured here because it is the expensive half of the storage decision.
+                // Legacy durability fallback. Canonical v3 deliberately does not persist this
+                // spectator-only duplicate; measuring it shows the storage avoided by that choice.
                 val reconstructed = ReplayReconstructor(cardRegistry, null).reconstruct(replay)
                 val presentation = buildPresentation(reconstructed)
                 val presentationBody = presentation.toByteArray(Charsets.UTF_8).size
-                val presentationGzip = Base64.getDecoder().decode(ReplayCodec.encodeText(presentation)).size
+                val presentationEncoded = ReplayCodec.encodeText(presentation)
+                val presentationGzip = Base64.getDecoder().decode(presentationEncoded).size
 
                 val row = ReplaySizeRow(
                     actions = actions.size,
@@ -109,16 +188,21 @@ class CompactReplaySizeBenchmark : ScenarioTestBase() {
                     turns = outcome.turns,
                     jsonBytes = jsonBytes,
                     gzipBytes = gzipBytes,
-                    base64Chars = encoded.length,
+                    base64Bytes = base64Bytes,
+                    fullStateGzipBytes = fullStateGzipBytes,
+                    fullStateBase64Bytes = fullStateBase64Bytes,
                     pinnedCardCount = replay.pinnedCards.size,
                     presentationJsonBytes = presentationBody,
                     presentationGzipBytes = presentationGzip,
+                    presentationBase64Bytes = presentationEncoded.length,
                 )
                 rows.add(row)
                 if (i < 5 || (i + 1) % 10 == 0 || i == numGames - 1) {
                     println(
                         "  [${i + 1}/$numGames] ${row.turns} turns, ${row.actions} actions -> " +
-                            "inputs gzip=${fmtBytes(row.gzipBytes)} " +
+                            "canonical gzip=${fmtBytes(row.gzipBytes)} " +
+                            "/ JDBC=${fmtBytes(row.base64Bytes)} " +
+                            "(full-state=${fmtBytes(row.fullStateGzipBytes)}), " +
                             "(${row.pinnedCardCount} pinned cards), " +
                             "frames gzip=${fmtBytes(row.presentationGzipBytes)}"
                     )
@@ -136,21 +220,29 @@ class CompactReplaySizeBenchmark : ScenarioTestBase() {
             println("Turns:        avg=${"%.1f".format(rows.map { it.turns }.avg())}, max=${rows.maxOf { it.turns }}")
             println("Actions:      avg=${rows.map { it.actions }.avg().roundToInt()}, min=${rows.minOf { it.actions }}, max=${rows.maxOf { it.actions }}")
             println()
-            println("Compact replay size:")
+            println("Canonical replay size (envelope + chunks + pins):")
             println("  JSON (raw):   avg=${fmtBytes(rows.map { it.jsonBytes }.avg().roundToInt())}, max=${fmtBytes(rows.maxOf { it.jsonBytes })}")
-            println("  gzip+base64:  avg=${fmtBytes(rows.map { it.gzipBytes }.avg().roundToInt())}, max=${fmtBytes(rows.maxOf { it.gzipBytes })}  (the stored form)")
+            println("  gzip binary:  avg=${fmtBytes(rows.map { it.gzipBytes }.avg().roundToInt())}, max=${fmtBytes(rows.maxOf { it.gzipBytes })}")
+            println("  JDBC Base64:  avg=${fmtBytes(rows.map { it.base64Bytes }.avg().roundToInt())}, max=${fmtBytes(rows.maxOf { it.base64Bytes })}  (the stored text)")
             val avgJson = rows.map { it.jsonBytes }.avg()
             val avgGzip = rows.map { it.gzipBytes }.avg()
+            val avgStored = rows.map { it.base64Bytes }.avg()
             println("  compression:  ~${(100 - avgGzip * 100 / avgJson).roundToInt()}% smaller than raw JSON")
-            println("  per action:   ~${(avgGzip / rows.map { it.actions }.avg()).roundToInt()} B/action (stored)")
-            println("  total stored: ${fmtBytes(rows.sumOf { it.gzipBytes })} for ${rows.size} games")
+            println("  per action:   ~${(avgStored / rows.map { it.actions }.avg()).roundToInt()} B/action (JDBC)")
+            println("  total stored: ${fmtBytes(rows.sumOf { it.base64Bytes })} for ${rows.size} games")
             println("  pinned cards: avg=${rows.map { it.pinnedCardCount }.avg().roundToInt()} definitions per game")
+            val avgFullState = rows.map { it.fullStateBase64Bytes }.avg()
+            println(
+                "  vs full state: ~${(100 - avgStored * 100 / avgFullState).roundToInt()}% smaller " +
+                    "with identical reconstructed states"
+            )
             println()
-            val avgPres = rows.map { it.presentationGzipBytes }.avg()
-            println("Archived frame stream (the deploy-proof fallback):")
+            val avgPres = rows.map { it.presentationBase64Bytes }.avg()
+            println("Legacy presentation duplicate (not stored for canonical v3):")
             println("  JSON (raw):   avg=${fmtBytes(rows.map { it.presentationJsonBytes }.avg().roundToInt())}, max=${fmtBytes(rows.maxOf { it.presentationJsonBytes })}")
-            println("  gzip+base64:  avg=${fmtBytes(avgPres.roundToInt())}, max=${fmtBytes(rows.maxOf { it.presentationGzipBytes })}  (the stored form)")
-            println("  vs inputs:    ~${(avgPres / avgGzip).roundToInt()}x the input log")
+            println("  gzip binary:  avg=${fmtBytes(rows.map { it.presentationGzipBytes }.avg().roundToInt())}, max=${fmtBytes(rows.maxOf { it.presentationGzipBytes })}")
+            println("  JDBC Base64:  avg=${fmtBytes(avgPres.roundToInt())}, max=${fmtBytes(rows.maxOf { it.presentationBase64Bytes })}")
+            println("  avoided:      ${"%.2f".format(avgPres / avgStored)}x canonical replay size")
         }
     }
 }
@@ -161,10 +253,13 @@ private data class ReplaySizeRow(
     val turns: Int,
     val jsonBytes: Int,
     val gzipBytes: Int,
-    val base64Chars: Int,
+    val base64Bytes: Int,
+    val fullStateGzipBytes: Int,
+    val fullStateBase64Bytes: Int,
     val pinnedCardCount: Int = 0,
     val presentationJsonBytes: Int = 0,
     val presentationGzipBytes: Int = 0,
+    val presentationBase64Bytes: Int = 0,
 ) {
     fun bytesPerAction(): Double = if (actions == 0) 0.0 else gzipBytes.toDouble() / actions
 }

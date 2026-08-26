@@ -8,26 +8,17 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 
 /**
- * The archived *output* of a recorded game: the `{initialSnapshot, deltas}` stream the replay viewer
- * consumes, serialized once at record time and stored next to the compact input log.
+ * The archived *output* of a legacy recorded game: the `{initialSnapshot, deltas}` stream the replay
+ * viewer consumes, serialized once at record time and stored next to its compact input recipe.
  *
- * ## Why keep both
- * The input log is the good record — kilobytes, exact, and the only thing that can rebuild a real
- * [com.wingedsheep.engine.state.GameState] for "share frame as scenario". Its weakness is that it is
- * a *recipe*: reading it means re-running the engine, and the engine moves. [ReplayCardPin] pins the
- * part of the engine that moves most, and [ReplayFingerprint] catches the rest, but "catches" means
- * the viewer gets a truncated game — correct, and useless to the player who wanted to watch it.
+ * A v1/v2 input log has to run through engine code that changes over time. [ReplayCardPin] protects
+ * card definitions and [ReplayFingerprint] detects other drift, but only this record-time output can
+ * still render after a divergence. It is a spectator view, not a complete game state, so it remains
+ * a viewing fallback rather than authoritative replay data.
  *
- * So at game over — the one moment we are provably running the build that played the game — we fold
- * the input log once and keep the frames it produces. That is a *result*, not a recipe: it renders
- * years later regardless of what happened to the engine, because nothing needs to be re-derived. It
- * is bigger (hundreds of KB gzipped against a handful for the inputs), which is exactly why it's the
- * fallback rather than the primary: [ReplayService] serves the re-simulation whenever it is faithful
- * and reaches for this only when it isn't.
- *
- * This is the same trade every deterministic-lockstep game makes when it wants replays to survive
- * patches — inputs for size, recorded output for longevity — and storing both is what lets us have
- * the compact record without betting the archive on it.
+ * Canonical v3 needs no presentation copy: it already stores authoritative full states and lossless
+ * patches, reconstructs without executing current engine code, and supports exact frame sharing.
+ * [ReplayService] therefore invokes this component only for legacy records.
  *
  * Stored as the already-composed JSON body rather than a DTO: serving it is then a byte passthrough,
  * with no chance of a DTO reshape making an old archive unreadable.
@@ -39,8 +30,8 @@ class ReplayPresentation(
      * Skip archiving when the *stored* (gzipped) stream exceeds this many bytes. A full game is
      * ~160 KB stored, so the 4 MB default only bites on something pathological — a mill-loop
      * stalemate, an AI grinding 400 turns — where the frames cost far more than they're worth.
-     * Those replays keep their input log and degrade to a truncated view in the unlikely event they
-     * ever stop re-simulating. 0 disables archiving entirely.
+     * Those legacy replays keep their input log and degrade to a truncated view if they stop
+     * re-simulating. 0 disables archiving entirely.
      */
     @Value("\${game.replay.presentation-max-stored-bytes:4194304}")
     private val maxStoredBytes: Int,
@@ -65,7 +56,7 @@ class ReplayPresentation(
         val storedBytes = ReplayCodec.encodeText(body).length
         if (storedBytes > maxStoredBytes) {
             logger.info(
-                "Replay presentation is {} stored bytes (> {}) — keeping the input log only",
+                "Replay presentation is {} stored bytes (> {}) — keeping the legacy input log only",
                 storedBytes, maxStoredBytes,
             )
             return null

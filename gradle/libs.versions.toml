@@ -14,6 +14,7 @@ springdocOpenapi = "3.0.3"
 kover = "0.9.8"
 classgraph = "4.8.184"
 testcontainers = "1.20.4"
+embeddedPostgres = "2.2.2"
 
 [libraries]
 kotlinGradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
@@ -45,6 +46,7 @@ flywayPostgresql = { module = "org.flywaydb:flyway-database-postgresql" }
 postgresql = { module = "org.postgresql:postgresql" }
 testcontainersPostgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
 testcontainersJunit = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
+embeddedPostgres = { module = "io.zonky.test:embedded-postgres", version.ref = "embeddedPostgres" }
 
 # SpringDoc OpenAPI (Swagger UI)
 springdocOpenapi = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "springdocOpenapi" }
