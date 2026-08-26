@@ -51,7 +51,13 @@ data class TypeLine(
 
     companion object {
         fun parse(typeLineString: String): TypeLine {
-            val parts = typeLineString.split("—", "–", "-").map { it.trim() }
+            // An ASCII hyphen is also legal inside a subtype (for example Assembly-Worker), so it
+            // is a type/subtype separator only when surrounded by whitespace. Unicode type-line
+            // dashes remain separators with or without surrounding spaces.
+            val parts = typeLineString.split(
+                Regex("""\s*(?:—|–)\s*|\s+-\s+"""),
+                limit = 2,
+            ).map { it.trim() }
             val typesPart = parts[0]
             val subtypesPart = parts.getOrNull(1)
 

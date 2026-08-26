@@ -611,15 +611,23 @@ object CanonicalReplayReconstructor {
                 ?.also { require(it.ordinal == index) { "Replay transition ${it.ordinal}; expected $index" } }
                 ?: error("Replay record $index is not a transition")
         }
-        require(ReplayRecordDigests.of(header.copy(recordDigest = "")) == header.recordDigest)
+        require(ReplayRecordDigests.of(header.copy(recordDigest = "")) == header.recordDigest) {
+            "Replay header digest mismatch"
+        }
         var previousRecordDigest = header.recordDigest
         var current = ReplayCanonicalJson.canonicalize(header.initialState)
         require(ReplayCanonicalJson.digest(current) == header.initialStateDigest)
         val states = mutableListOf(current)
         transitions.forEach { transition ->
-            require(transition.gameId == header.gameId)
-            require(transition.previousRecordDigest == previousRecordDigest)
-            require(ReplayRecordDigests.of(transition.copy(recordDigest = "")) == transition.recordDigest)
+            require(transition.gameId == header.gameId) {
+                "Replay game id mismatch at transition ${transition.ordinal}"
+            }
+            require(transition.previousRecordDigest == previousRecordDigest) {
+                "Replay chain mismatch at transition ${transition.ordinal}"
+            }
+            require(ReplayRecordDigests.of(transition.copy(recordDigest = "")) == transition.recordDigest) {
+                "Replay record digest mismatch at transition ${transition.ordinal}"
+            }
             current = when (val encoded = transition.state) {
                 is ReplayFullState -> ReplayCanonicalJson.canonicalize(encoded.value)
                 is ReplayPatchedState -> ReplayCanonicalJson.apply(current, encoded.operations)
