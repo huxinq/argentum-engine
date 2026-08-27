@@ -32,8 +32,8 @@ class GameWebSocketHandler(
     fun wireCallbacks() {
         // Wire cross-handler callbacks to avoid circular dependencies
         gamePlayHandler.broadcastActiveMatchesCallback = { lobbyId -> lobbyHandler.broadcastActiveMatchesToWaitingPlayers(lobbyId) }
-        gamePlayHandler.handleMatchResultCallback = { lobbyId, gameSessionId, winnerId, winnerLife ->
-            lobbyHandler.handleMatchResult(lobbyId, gameSessionId, winnerId, winnerLife)
+        gamePlayHandler.handleMatchResultCallback = { lobbyId, gameSessionId, outcome ->
+            lobbyHandler.handleMatchResult(lobbyId, gameSessionId, outcome)
         }
         gamePlayHandler.llmTournamentGameOverCallback = { gameSessionId, winnerId, winnerLife ->
             llmTournamentService.onGameComplete(gameSessionId, winnerId, winnerLife)
@@ -81,6 +81,7 @@ class GameWebSocketHandler(
                 is ClientMessage.JoinGame,
                 is ClientMessage.SubmitAction,
                 is ClientMessage.Concede,
+                is ClientMessage.RecoverPolicyFault,
                 is ClientMessage.CancelGame,
                 is ClientMessage.KeepHand,
                 is ClientMessage.Mulligan,

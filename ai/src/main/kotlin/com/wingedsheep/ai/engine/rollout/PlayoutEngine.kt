@@ -109,7 +109,7 @@ class PlayoutEngine(
 
             val decision = state.pendingDecision
             if (decision != null) {
-                val response = decisions.respond(state, decision, playerId)
+                val response = decisions.respond(state, decision)
                 val result = processor.process(state, SubmitDecision(decision.playerId, response)).result
                 if (result.error != null) break
                 state = result.state

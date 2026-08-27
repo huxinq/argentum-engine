@@ -1,5 +1,7 @@
 package com.wingedsheep.gym.trainer.search
 
+import com.wingedsheep.ai.ResponsiblePolicyUnavailableException
+import com.wingedsheep.ai.engine.TrivialDecisions
 import com.wingedsheep.engine.core.AssignDamageDecision
 import com.wingedsheep.engine.core.BudgetModalDecision
 import com.wingedsheep.engine.core.CardsSelectedResponse
@@ -35,10 +37,11 @@ import com.wingedsheep.gym.trainer.spi.Evaluator
 import com.wingedsheep.gym.trainer.spi.StateFeaturizer
 import com.wingedsheep.gym.trainer.defaults.BoundedStructuredDecisionExpander
 import com.wingedsheep.gym.trainer.spi.StructuredDecisionExpander
+import com.wingedsheep.gym.trainer.spi.StructuredExpansion
 import com.wingedsheep.gym.trainer.spi.StructuredDecisionResolver
 import com.wingedsheep.gym.trainer.spi.TrainerContext
-import com.wingedsheep.gym.trainer.spi.asExpander
 import com.wingedsheep.engine.legalactions.LegalAction
+import com.wingedsheep.engine.handlers.actions.decision.DecisionValidators
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.sdk.model.EntityId
 import kotlin.math.ln
@@ -79,8 +82,9 @@ import java.util.Random as JavaRandom
  * @param featurizer state → feature representation fed to [evaluator]
  * @param actionFeaturizer action → `(head, slot)` policy index
  * @param evaluator priors + value provider; typically a remote NN
- * @param structuredResolver deprecated compatibility hook for integrations that still force one
- *        response; when non-null it overrides [structuredExpander]
+ * @param structuredResolver deprecated compatibility hook. It is bypassed only for an
+ *        independently enumerated, exhaustive, single non-cancel response; every other reached
+ *        decision refuses because the legacy hook has no declared identity or measurement.
  * @param structuredExpander expands every typed decision into search edges
  * @param cPuct exploration constant; `1.0` is a sensible default
  * @param dirichletAlpha optional Dirichlet noise alpha applied to root
@@ -102,8 +106,6 @@ class AlphaZeroSearch<T>(
 ) {
     private val workingEnv: GameEnvironment = env.fork()
     private val javaRng: JavaRandom = JavaRandom(rng.nextLong())
-    private val effectiveStructuredExpander: StructuredDecisionExpander =
-        structuredResolver?.asExpander() ?: structuredExpander
 
     /**
      * Run [simulations] rollouts from the current env state, returning the
@@ -234,7 +236,44 @@ class AlphaZeroSearch<T>(
             }
         }
 
-        val expansion = effectiveStructuredExpander.expand(node.state, pending)
+        val expansion = if (structuredResolver == null) {
+            structuredExpander.expand(node.state, pending)
+        } else {
+            // A legacy resolver has neither a declared behavior identity nor a measurement hook.
+            // It therefore cannot own a real player choice. Preserve compatibility only for a
+            // response that an independent exhaustive validator enumeration proves is forced.
+            val forced = TrivialDecisions.responseFor(node.state, pending)
+            if (forced == null) {
+                throw ResponsiblePolicyUnavailableException(
+                    choiceKind = pending::class.simpleName ?: "PENDING_DECISION",
+                    diagnostic = "legacy StructuredDecisionResolver has no declared behavior " +
+                        "identity or measurement; use StructuredDecisionExpander so search owns " +
+                        "all exposed responses",
+                )
+            }
+            StructuredExpansion(
+                responses = listOf(forced),
+                isExhaustive = true,
+                estimatedResponseCount = 1L,
+            )
+        }
+        if (expansion.responses.isEmpty()) {
+            throw ResponsiblePolicyUnavailableException(
+                choiceKind = pending::class.simpleName ?: "PENDING_DECISION",
+                diagnostic = "structured response expansion returned no response for the " +
+                    "responsible search policy",
+            )
+        }
+        expansion.responses.forEach { response ->
+            val validationError = DecisionValidators.validate(pending, response, node.state)
+            if (validationError != null) {
+                throw ResponsiblePolicyUnavailableException(
+                    choiceKind = pending::class.simpleName ?: "PENDING_DECISION",
+                    diagnostic = "structured response expansion produced an invalid response: " +
+                        validationError,
+                )
+            }
+        }
         node.structuredExpansionExhaustive = expansion.isExhaustive
         node.structuredEstimatedResponseCount = expansion.estimatedResponseCount
         return expansion.responses.map { response ->
@@ -360,10 +399,9 @@ class MctsSearchResult(
 }
 
 /**
- * Default [StructuredDecisionResolver] — picks a uniformly-random valid
- * response for any structured decision. Good enough for getting a training
- * loop to run end-to-end; replace with a heuristic or learned resolver for
- * real training runs.
+ * Legacy [StructuredDecisionResolver] implementation. [AlphaZeroSearch] refuses to use this for
+ * a real player choice because the resolver has no declared identity or measurement; retain only
+ * for callers that still invoke the old SPI directly while migrating to an expander.
  */
 @Deprecated("Use BoundedStructuredDecisionExpander so search retains multiple decision branches")
 class RandomStructuredResolver(private val rng: Random = Random.Default) : StructuredDecisionResolver {

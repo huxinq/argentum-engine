@@ -24,6 +24,9 @@ export type ServerMessage =
   | ChooseBottomCardsMessage
   | MulliganCompleteMessage
   | WaitingForOpponentMulliganMessage
+  | PolicyFaultPausedMessage
+  | PolicyFaultRecoveredMessage
+  | PolicyFaultNoContestMessage
   | GameOverMessage
   | ErrorMessage
   // Sealed Draft Messages
@@ -1242,6 +1245,35 @@ export interface GameOverMessage {
   readonly gameId?: string
 }
 
+/** A host policy-software interruption. It declares no game winner. */
+export interface PolicyFaultPausedMessage {
+  readonly type: 'policyFaultPaused'
+  readonly gameId: string
+  readonly incidentId: string
+  readonly failingSeatId: EntityId
+  readonly code: string
+  readonly canRetry: boolean
+  readonly canTransferControl: boolean
+  readonly canConcede: boolean
+  readonly recoveryPersistence: 'PROCESS_LIFETIME'
+}
+
+export interface PolicyFaultRecoveredMessage {
+  readonly type: 'policyFaultRecovered'
+  readonly gameId: string
+  readonly incidentId: string
+  readonly recovery: 'RETRY' | 'TRANSFER_CONTROL' | 'CONCEDE'
+}
+
+/** A terminal hosted-game interruption held outside tournament standings and FFA placements. */
+export interface PolicyFaultNoContestMessage {
+  readonly type: 'policyFaultNoContest'
+  readonly lobbyId: string
+  readonly gameId: string
+  readonly incidentId: string
+  readonly code: string
+}
+
 /**
  * Error response from the server.
  */
@@ -1648,6 +1680,8 @@ export interface MatchResultInfo {
   readonly winnerId: string | null
   readonly isDraw: boolean
   readonly isBye: boolean
+  /** Present for a held software interruption; it is never a draw. */
+  readonly policyFaultIncidentId?: string | null
 }
 
 export interface TournamentStartedMessage {
@@ -1979,6 +2013,7 @@ export type ClientMessage =
   | MulliganMessage
   | ClientChooseBottomCardsMessage
   | ConcedeMessage
+  | RecoverPolicyFaultMessage
   | CancelGameMessage
   // Sealed Draft Messages
   | CreateSealedGameMessage
@@ -2131,6 +2166,12 @@ export interface ClientChooseBottomCardsMessage {
  */
 export interface ConcedeMessage {
   readonly type: 'concede'
+}
+
+export interface RecoverPolicyFaultMessage {
+  readonly type: 'recoverPolicyFault'
+  readonly incidentId: string
+  readonly recovery: 'RETRY' | 'TRANSFER_CONTROL' | 'CONCEDE'
 }
 
 /**
@@ -2323,6 +2364,13 @@ export function createChooseBottomCardsMessage(cardIds: readonly EntityId[]): Cl
 
 export function createConcedeMessage(): ConcedeMessage {
   return { type: 'concede' }
+}
+
+export function createRecoverPolicyFaultMessage(
+  incidentId: string,
+  recovery: RecoverPolicyFaultMessage['recovery'],
+): RecoverPolicyFaultMessage {
+  return { type: 'recoverPolicyFault', incidentId, recovery }
 }
 
 export function createCancelGameMessage(): CancelGameMessage {

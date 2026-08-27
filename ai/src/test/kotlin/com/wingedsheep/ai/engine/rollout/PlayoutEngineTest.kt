@@ -6,6 +6,10 @@ import com.wingedsheep.ai.engine.CombatAdvisor
 import com.wingedsheep.ai.engine.evaluation.EvaluationWeights
 import com.wingedsheep.ai.engine.GameSimulator
 import com.wingedsheep.engine.core.ActionProcessor
+import com.wingedsheep.engine.core.ChooseTargetsDecision
+import com.wingedsheep.engine.core.DecisionContext
+import com.wingedsheep.engine.core.TargetRequirementInfo
+import com.wingedsheep.engine.core.TargetsResponse
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.support.ScenarioTestBase
 import com.wingedsheep.sdk.model.EntityId
@@ -77,6 +81,22 @@ class PlayoutEngineTest : ScenarioTestBase() {
             // would mean the playout ran past its horizon to a decided game.
             value shouldBeGreaterThan WinProbability.LOSS
             value shouldBeLessThan WinProbability.WIN
+        }
+
+        test("pending decisions are answered from the responsible chooser perspective") {
+            val game = scenario().withPlayers().build()
+            val decision = ChooseTargetsDecision(
+                id = "opponent-target",
+                playerId = game.player2Id,
+                prompt = "Choose a player",
+                context = DecisionContext(),
+                targetRequirements = listOf(TargetRequirementInfo(0, "player")),
+                legalTargets = mapOf(0 to listOf(game.player1Id, game.player2Id)),
+            )
+
+            val response = FastDecisionResponder().respond(game.state, decision) as TargetsResponse
+
+            response.selectedTargets.getValue(0) shouldBe listOf(game.player1Id)
         }
 
         test("the same seed replays the same playout") {

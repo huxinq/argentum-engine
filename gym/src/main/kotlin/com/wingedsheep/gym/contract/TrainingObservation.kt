@@ -84,8 +84,9 @@ data class TrainingObservation(
 
     /**
      * Per-zone entity views. A `(ownerId, zoneType)` pair appears at most once.
-     * Hidden zones (opponent hand, libraries) expose [ZoneView.hidden] = true
-     * and [ZoneView.cards] is empty (only [ZoneView.size] is populated).
+     * Hidden zones (opponent hand, libraries) expose [ZoneView.hidden] = true.
+     * [ZoneView.cards] contains only individually admitted objects, while
+     * [ZoneView.size] always reports the complete zone size.
      */
     val zones: List<ZoneView>,
 
@@ -169,8 +170,9 @@ data class ManaPoolView(
 /**
  * A zone's contents from [TrainingObservation.perspectivePlayerId]'s point of view.
  *
- * When [hidden] is true (opponent's hand, any library), [cards] is empty and
- * only [size] is meaningful. This mirrors real-MTG information hiding.
+ * When [hidden] is true (opponent's hand, any library), [cards] contains only
+ * objects individually admitted by the visibility policy (for example a
+ * selectively revealed card). [size] still reports every object in the zone.
  */
 @Serializable
 data class ZoneView(

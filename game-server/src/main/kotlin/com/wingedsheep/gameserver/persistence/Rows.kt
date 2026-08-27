@@ -90,6 +90,11 @@ data class MatchResultRow(
     val turnCount: Int = 0,
     val startedAt: Instant? = null,
     val endedAt: Instant = Instant.now(),
+    /** Explicit policy-fault concession origin, independent of the ordinary winner/loss fields. */
+    val policyFaultIncidentId: String? = null,
+    val policyFaultCode: String? = null,
+    /** False results must not enter policy-training or strategy-evidence cohorts. */
+    val strategyEvidenceEligible: Boolean = true,
     @MappedCollection(idColumn = "match_id")
     val participants: Set<MatchParticipantRow> = emptySet(),
 )

@@ -246,8 +246,8 @@ export function ProfilePage() {
                     <td style={styles.td}>
                       <EloCell entry={g} />
                     </td>
-                    <td style={{ ...styles.tdNum, color: g.won ? '#5bd16e' : '#e15b6e' }}>
-                      {g.won ? 'Win' : 'Loss'}
+                    <td style={{ ...styles.tdNum, color: g.strategyEvidenceEligible ? (g.won ? '#5bd16e' : '#e15b6e') : '#c9943d' }} title={g.policyFaultIncidentId ?? undefined}>
+                      {g.strategyEvidenceEligible ? (g.won ? 'Win' : 'Loss') : 'Software interruption'}
                     </td>
                     <td style={styles.tdNum}>
                       <button

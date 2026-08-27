@@ -536,7 +536,7 @@ type GameplayHandlerKeys =
   | 'onGameCreated' | 'onGameStarted' | 'onGameCancelled'
   | 'onStateUpdate' | 'onStateDeltaUpdate'
   | 'onMulliganDecision' | 'onChooseBottomCards' | 'onMulliganComplete' | 'onWaitingForOpponentMulligan'
-  | 'onGameOver' | 'onPlayerEliminated' | 'onError'
+  | 'onPolicyFaultPaused' | 'onPolicyFaultRecovered' | 'onGameOver' | 'onPlayerEliminated' | 'onError'
 
 export function createGameplayHandlers(set: SetState, get: GetState): Pick<MessageHandlers, GameplayHandlerKeys> {
   return {
@@ -603,6 +603,7 @@ export function createGameplayHandlers(set: SetState, get: GetState): Pick<Messa
         }
       }
       set({
+        policyFaultPause: null,
         matchIntro: {
           playerName,
           opponentName,
@@ -698,6 +699,29 @@ export function createGameplayHandlers(set: SetState, get: GetState): Pick<Messa
       set({ waitingForOpponentMulligan: true })
     },
 
+    onPolicyFaultPaused: (msg) => {
+      if (msg.gameId !== get().sessionId) return
+      set({
+        policyFaultPause: {
+          incidentId: msg.incidentId,
+          failingSeatId: msg.failingSeatId,
+          code: msg.code,
+          canRetry: msg.canRetry,
+          canTransferControl: msg.canTransferControl,
+          canConcede: msg.canConcede,
+          recoveryPersistence: msg.recoveryPersistence,
+        },
+        legalActions: [],
+        pendingDecision: null,
+      })
+    },
+
+    onPolicyFaultRecovered: (msg) => {
+      if (msg.gameId !== get().sessionId) return
+      if (get().policyFaultPause?.incidentId !== msg.incidentId) return
+      set({ policyFaultPause: null })
+    },
+
     onGameOver: (msg) => {
       const { playerId, sessionId } = get()
       // Ignore a game-over for a game we already left — e.g. an eliminated FFA player who
@@ -708,6 +732,7 @@ export function createGameplayHandlers(set: SetState, get: GetState): Pick<Messa
       trackEvent('game_over', { result, reason: msg.reason })
       setInGame(false)
       set({
+        policyFaultPause: null,
         gameOverState: {
           winnerId: msg.winnerId,
           reason: msg.reason,

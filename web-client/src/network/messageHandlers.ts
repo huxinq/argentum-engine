@@ -10,6 +10,8 @@ import type {
   MulliganDecisionMessage,
   ChooseBottomCardsMessage,
   MulliganCompleteMessage,
+  PolicyFaultPausedMessage,
+  PolicyFaultRecoveredMessage,
   GameOverMessage,
   ErrorMessage,
   SealedGameCreatedMessage,
@@ -71,6 +73,8 @@ export interface MessageHandlers {
   onChooseBottomCards: (message: ChooseBottomCardsMessage) => void
   onMulliganComplete: (message: MulliganCompleteMessage) => void
   onWaitingForOpponentMulligan: () => void
+  onPolicyFaultPaused: (message: PolicyFaultPausedMessage) => void
+  onPolicyFaultRecovered: (message: PolicyFaultRecoveredMessage) => void
   onGameOver: (message: GameOverMessage) => void
   onError: (message: ErrorMessage) => void
   // Sealed draft handlers
@@ -171,6 +175,18 @@ export function handleServerMessage(message: ServerMessage, handlers: MessageHan
       break
     case 'waitingForOpponentMulligan':
       handlers.onWaitingForOpponentMulligan()
+      break
+    case 'policyFaultPaused':
+      handlers.onPolicyFaultPaused(message)
+      break
+    case 'policyFaultRecovered':
+      handlers.onPolicyFaultRecovered(message)
+      break
+    case 'policyFaultNoContest':
+      // The lobby remains held until an explicit recovery path is chosen.  Do not
+      // synthesize a game result here: the replay/history provenance determines
+      // how this interruption is presented.
+      console.warn('Policy-fault no-contest held', message)
       break
     case 'gameOver':
       handlers.onGameOver(message)

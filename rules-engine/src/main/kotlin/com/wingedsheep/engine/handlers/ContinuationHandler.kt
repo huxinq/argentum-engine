@@ -3,6 +3,7 @@ package com.wingedsheep.engine.handlers
 import com.wingedsheep.engine.core.*
 import com.wingedsheep.engine.handlers.continuations.*
 import com.wingedsheep.engine.state.GameState
+import kotlin.reflect.KClass
 
 /**
  * Handles resumption of execution after a player decision.
@@ -67,6 +68,14 @@ class ContinuationHandler(
         registerModule(replacementResumer)
         registerAutoResumerModule(replacementResumer)
     }
+
+    /** Exact production response-driven continuation topology for invariant verification. */
+    internal fun registeredResponseTypes(): Set<KClass<out ContinuationFrame>> =
+        registry.registeredResponseTypes()
+
+    /** Exact production automatic continuation topology for invariant verification. */
+    internal fun registeredAutomaticTypes(): Set<KClass<out ContinuationFrame>> =
+        registry.registeredAutomaticTypes()
 
     /**
      * Resume execution after a decision is submitted.

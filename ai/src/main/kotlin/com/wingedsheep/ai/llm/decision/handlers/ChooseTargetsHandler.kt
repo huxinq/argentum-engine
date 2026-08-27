@@ -61,6 +61,7 @@ class ChooseTargetsHandler : AiDecisionHandler<ChooseTargetsDecision> {
     ): DecisionResponse? {
         return if (decision.targetRequirements.size == 1) {
             val req = decision.targetRequirements[0]
+            if (1 !in req.minTargets..req.maxTargets) return null
             val validTargets = decision.legalTargets[req.index] ?: return null
             val index = parser.parseActionChoice(response, validTargets.size - 1) ?: return null
             TargetsResponse(
@@ -69,6 +70,7 @@ class ChooseTargetsHandler : AiDecisionHandler<ChooseTargetsDecision> {
             )
         } else {
             // Multi-target: parse comma-separated letters, one per requirement
+            if (decision.targetRequirements.any { 1 !in it.minTargets..it.maxTargets }) return null
             val maxIndices = decision.targetRequirements.map { req ->
                 (decision.legalTargets[req.index]?.size ?: 1) - 1
             }
@@ -80,20 +82,7 @@ class ChooseTargetsHandler : AiDecisionHandler<ChooseTargetsDecision> {
                     req.index to listOf(validTargets[idx])
                 }
                 TargetsResponse(decisionId = decision.id, selectedTargets = result)
-            } else {
-                // Fallback: try single letter for all requirements
-                val result = mutableMapOf<Int, List<EntityId>>()
-                for (req in decision.targetRequirements) {
-                    val validTargets = decision.legalTargets[req.index] ?: continue
-                    val index = parser.parseActionChoice(response, validTargets.size - 1)
-                    if (index != null) {
-                        result[req.index] = listOf(validTargets[index])
-                    }
-                }
-                if (result.isNotEmpty()) {
-                    TargetsResponse(decisionId = decision.id, selectedTargets = result)
-                } else null
-            }
+            } else null
         }
     }
 

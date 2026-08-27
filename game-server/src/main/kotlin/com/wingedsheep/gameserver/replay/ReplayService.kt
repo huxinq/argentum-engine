@@ -264,8 +264,10 @@ class ReplayService(
             endedAt = it.endedAt,
             winnerName = it.winnerName,
             frameCount = it.frameCount,
-            tournamentName = it.tournamentName,
-            tournamentRound = it.tournamentRound,
+                tournamentName = it.tournamentName,
+                tournamentRound = it.tournamentRound,
+                strategyEvidenceEligible = it.strategyEvidenceEligible,
+                policyFaultIncidentId = it.policyFaults.lastOrNull { fault -> fault.recovery == "CONCEDE" }?.incidentId,
         )
     }
 }

@@ -157,6 +157,25 @@ class TournamentMatchHandler(
         }
     }
 
+    /**
+     * Preserve an operational policy-fault no-contest as a held table.  This deliberately omits
+     * the normal result pipeline: no standings row, tiebreaker recomputation, auto-ready sweep,
+     * round completion, or tournament evidence record may be produced from software failure.
+     */
+    fun handlePolicyFaultNoContest(lobbyId: String, gameSessionId: String, incidentId: String, code: String) {
+        val lock = ctx.roundLocks.computeIfAbsent(lobbyId) { Any() }
+        synchronized(lock) {
+            val tournament = ctx.lobbyRepository.findTournamentById(lobbyId) ?: return
+            if (!tournament.holdPolicyFaultNoContest(gameSessionId, incidentId, code)) return
+            ctx.lobbyRepository.saveTournament(lobbyId, tournament)
+            ctx.lobbyRepository.findLobbyById(lobbyId)?.let { lobby ->
+                lobby.clearReadyState()
+                ctx.lobbyRepository.saveLobby(lobby)
+            }
+            logger.warn("Tournament game {} in lobby {} held as policy-fault no-contest {}", gameSessionId, lobbyId, incidentId)
+        }
+    }
+
     fun handleAbandon(lobbyId: String, playerId: EntityId) {
         val lock = ctx.roundLocks.computeIfAbsent(lobbyId) { Any() }
         synchronized(lock) {
@@ -656,17 +675,17 @@ class TournamentMatchHandler(
                     gameSession = gameSession,
                     aiPlayerId = ps.playerId,
                     deckList = lobby.getSubmittedDeck(ps.playerId),
-                    onActionReady = { aiPlayerId, action ->
-                        gamePlayHandler.handleAiAction(gameSession, aiPlayerId, action)
+                    onActionReady = { aiPlayerId, action, retryId ->
+                        gamePlayHandler.handleAiAction(gameSession, aiPlayerId, action, retryId)
                     },
-                    onMulliganKeep = { aiPlayerId ->
-                        gamePlayHandler.handleAiMulliganKeep(gameSession, aiPlayerId)
+                    onMulliganKeep = { aiPlayerId, retryId ->
+                        gamePlayHandler.handleAiMulliganKeep(gameSession, aiPlayerId, retryId)
                     },
-                    onMulliganTake = { aiPlayerId ->
-                        gamePlayHandler.handleAiMulliganTake(gameSession, aiPlayerId)
+                    onMulliganTake = { aiPlayerId, retryId ->
+                        gamePlayHandler.handleAiMulliganTake(gameSession, aiPlayerId, retryId)
                     },
-                    onBottomCards = { aiPlayerId, cardIds ->
-                        gamePlayHandler.handleAiBottomCards(gameSession, aiPlayerId, cardIds)
+                    onBottomCards = { aiPlayerId, cardIds, retryId ->
+                        gamePlayHandler.handleAiBottomCards(gameSession, aiPlayerId, cardIds, retryId)
                     }
                 )
                 val aiIdentity = lobby.players[ps.playerId]?.identity

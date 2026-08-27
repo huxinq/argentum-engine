@@ -43,13 +43,33 @@ class SearchLibraryHandler : AiDecisionHandler<SearchLibraryDecision> {
         state: ClientGameState,
         parser: AiResponseParser
     ): DecisionResponse? {
-        val indices = parser.parseMultipleSelections(response, decision.options.size - 1)
-        val selected = if (indices != null) {
-            indices.take(decision.maxSelections).map { decision.options[it] }
-        } else {
-            if (decision.options.isNotEmpty()) listOf(decision.options.first()) else emptyList()
+        val cleaned = response.trim().uppercase()
+        val exactLetterList = Regex(
+            """^(?:\[[A-Z]{1,2}]|[A-Z]{1,2})(?:\s*,\s*(?:\[[A-Z]{1,2}]|[A-Z]{1,2}))*$"""
+        )
+        if (!exactLetterList.matches(cleaned)) return null
+
+        val failToFindIndex = decision.options.size
+        val maxIndex = if (decision.minSelections == 0) failToFindIndex else decision.options.lastIndex
+        val indices = Regex("""[A-Z]{1,2}""").findAll(cleaned).map { match ->
+            GameStateFormatter.letterToIndex(match.value)
+        }.toList()
+        if (indices.any { it == null || it !in 0..maxIndex }) return null
+        val selectedIndices = indices.filterNotNull().distinct()
+
+        if (failToFindIndex in selectedIndices) {
+            if (decision.minSelections != 0 || selectedIndices.size != 1) return null
+            return CardsSelectedResponse(decisionId = decision.id, selectedCards = emptyList())
         }
-        return CardsSelectedResponse(decisionId = decision.id, selectedCards = selected)
+
+        if (selectedIndices.size !in decision.minSelections..decision.maxSelections ||
+            selectedIndices.any { it !in decision.options.indices }
+        ) return null
+
+        return CardsSelectedResponse(
+            decisionId = decision.id,
+            selectedCards = selectedIndices.map { decision.options[it] },
+        )
     }
 
 }

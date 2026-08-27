@@ -113,8 +113,13 @@ MCTS edges are ordinary `GameAction`s. At a priority state, edges are
 most 64; larger spaces retain deterministic boundary/default choices and cap at 64 branches after
 at most 2,048 generation attempts. Targets, distributions, orderings, pile splits, damage, mana,
 searches, and budget modes therefore remain policy choices instead of being forced through one
-random response. Expansion never consumes the game RNG, and its exhaustive/count diagnostics are
-written into self-play rows.
+random response. Combat responses use one lazy Cartesian product across every simultaneous
+attacker/blocker ordering and every damage-edge amount, so a fully traversed product retains choices
+that change an order together with a trample or deathtouch allocation. Expansion never consumes the
+game RNG. Its exhaustive/count diagnostics are written into self-play rows: a fully traversed combat
+product has an exact legal-response count, while a product stopped by the 2,048-attempt bound can
+still omit later combinations, is explicitly non-exhaustive, and leaves that count unknown rather
+than reporting the size of its explored prefix.
 
 The old single-response `StructuredDecisionResolver` remains as a deprecated compatibility adapter.
 

@@ -203,12 +203,15 @@ class Strategist(
         val dropped = if (insightSink != null) mutableListOf<AiActionOption>() else null
         var searched = 0
         if (pass != null) {
+            val passSimulation = simulator.simulate(evaluationState, pass.action)
+                .requireNoAutomaticResolutionStop("Pass evaluation")
             leaves += pass
-            leafStates += simulator.simulate(evaluationState, pass.action).state
+            leafStates += passSimulation.state
         }
         for (action in affordable) {
             searched++
             val (materialized, simulation) = materialize(evaluationState, action, playerId, budget, here)
+            simulation.requireNoAutomaticResolutionStop("Candidate evaluation")
             val usable = when {
                 // LegalAction affordability is necessarily a preview for costs such as convoke and
                 // modal/additional payments. If materializing the concrete action cannot pass the
@@ -426,6 +429,7 @@ class Strategist(
     ): Pair<GameAction, SimulationResult> {
         val materialized = chooseCommittedTargets(state, action, playerId, budget)
         val simulation = simulator.simulate(state, materialized)
+            .requireNoAutomaticResolutionStop("Target materialization")
         // Ordered so the budget that already refines pays nothing at all here — no digest, no
         // second simulation. `chooseAction` digests the leaf it keeps either way.
         if (budget.allowances.refineTargetsBySimulation) return materialized to simulation
@@ -437,6 +441,7 @@ class Strategist(
         val refined = chooseCommittedTargets(state, action, playerId, budget, forceTargetRefinement = true)
         if (refined == materialized) return materialized to simulation
         return refined to simulator.simulate(state, refined)
+            .requireNoAutomaticResolutionStop("Refined target materialization")
     }
 
     /**
@@ -736,6 +741,7 @@ class Strategist(
                 val trial = chosenTargets.toMutableList()
                 trial[i] = TargetSelection.toChosenTarget(state, info, candidate, playerId)
                 val result = simulator.simulate(state, TargetSelection.applyTargets(baseAction, trial))
+                    .requireNoAutomaticResolutionStop("Target-choice evaluation")
                 // A target that resolves back into the position we are standing in is not a target
                 // choice, it is a no-op wearing one — Aphetto Alchemist untapping itself. Rank it
                 // below every real option, so `chooseAction` only ever drops the whole ability as

@@ -2,6 +2,7 @@ package com.wingedsheep.gym
 
 import com.wingedsheep.ai.engine.DecisionResponder
 import com.wingedsheep.ai.engine.GameSimulator
+import com.wingedsheep.ai.engine.SimulationActionOrigin
 import com.wingedsheep.ai.engine.SimulationResult
 import com.wingedsheep.ai.engine.SimulationTraceStep
 import com.wingedsheep.ai.engine.evaluation.BoardEvaluator
@@ -80,7 +81,7 @@ import com.wingedsheep.sdk.model.EntityId
  * ```
  */
 class GameEnvironment private constructor(
-    private val cardRegistry: CardRegistry,
+    val cardRegistry: CardRegistry,
     private val processor: ActionProcessor,
     private val enumerator: LegalActionEnumerator,
     private val evaluator: BoardEvaluator,
@@ -125,6 +126,13 @@ class GameEnvironment private constructor(
     var lastRejection: String? = null
         private set
 
+    /**
+     * Non-null when [step] stopped because its declared automatic-transition limit was reached.
+     * The retained state is unfinished; this condition is neither a game end nor a draw.
+     */
+    var lastAutomaticResolutionStop: SimulationResult.StoppedAtLimit? = null
+        private set
+
     // =========================================================================
     // Queries
     // =========================================================================
@@ -164,6 +172,7 @@ class GameEnvironment private constructor(
         lastStepEvents = initResult.events
         lastStepTrace = emptyList()
         lastRejection = null
+        lastAutomaticResolutionStop = null
         stepCount = 0
         return buildStepResult(initResult.events)
     }
@@ -196,6 +205,7 @@ class GameEnvironment private constructor(
         lastStepEvents = simResult.events
         lastStepTrace = emptyList()
         lastRejection = (simResult as? SimulationResult.Illegal)?.reason
+        lastAutomaticResolutionStop = simResult as? SimulationResult.StoppedAtLimit
         stepCount++
 
         return buildStepResult(simResult.events)
@@ -219,6 +229,7 @@ class GameEnvironment private constructor(
         lastStepEvents = simResult.events
         lastStepTrace = traced.steps
         lastRejection = (simResult as? SimulationResult.Illegal)?.reason
+        lastAutomaticResolutionStop = simResult as? SimulationResult.StoppedAtLimit
         stepCount++
 
         return buildStepResult(simResult.events)
@@ -227,9 +238,9 @@ class GameEnvironment private constructor(
     /**
      * Apply exactly one raw engine action without the simulator's quiet-state auto-resolution.
      *
-     * Live replay consumers use this boundary because priority passes and forced responses arrive
-     * as their own authoritative actions. Ordinary search should continue to use [step], whose
-     * quiet-state horizon is part of the established evaluation policy.
+     * Search and live replay consumers use this boundary when priority passes and responses must
+     * remain separate player choices. [step] is the legacy AI convenience boundary that may pass
+     * priority or answer a decision after the submitted action.
      */
     fun stepRaw(action: GameAction): StepResult {
         check(playerIds.isNotEmpty()) { "Call reset() before stepRaw()" }
@@ -240,6 +251,36 @@ class GameEnvironment private constructor(
         lastStepEvents = result.events
         lastStepTrace = emptyList()
         lastRejection = result.error
+        lastAutomaticResolutionStop = null
+        stepCount++
+
+        return buildStepResult(result.events)
+    }
+
+    /**
+     * Apply exactly one raw engine action and retain that one processor boundary for replay.
+     * No priority pass or decision response is supplied on either player's behalf.
+     */
+    fun stepRawTraced(action: GameAction): StepResult {
+        check(playerIds.isNotEmpty()) { "Call reset() before stepRawTraced()" }
+
+        val beforeState = state
+        val result = processor.process(beforeState, action).result
+        state = result.state
+        events = events + result.events
+        lastStepEvents = result.events
+        lastStepTrace = listOf(
+            SimulationTraceStep(
+                origin = SimulationActionOrigin.SUBMITTED,
+                action = action,
+                beforeState = beforeState,
+                afterState = result.state,
+                events = result.events,
+                rejectionReason = result.error,
+            )
+        )
+        lastRejection = result.error
+        lastAutomaticResolutionStop = null
         stepCount++
 
         return buildStepResult(result.events)
@@ -295,6 +336,9 @@ class GameEnvironment private constructor(
         forked.playerIds = playerIds
         forked.events = emptyList() // forked environments start with clean event history
         forked.lastStepEvents = emptyList()
+        forked.lastStepTrace = emptyList()
+        forked.lastRejection = null
+        forked.lastAutomaticResolutionStop = null
         forked.stepCount = stepCount
         return forked
     }
@@ -315,6 +359,9 @@ class GameEnvironment private constructor(
         this.playerIds = playerIds
         this.events = emptyList()
         this.lastStepEvents = emptyList()
+        this.lastStepTrace = emptyList()
+        this.lastRejection = null
+        this.lastAutomaticResolutionStop = null
         this.stepCount = stepCount
     }
 

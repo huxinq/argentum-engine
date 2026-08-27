@@ -78,6 +78,14 @@ sealed interface ClientMessage {
     @SerialName("concede")
     data object Concede : ClientMessage
 
+    /** Explicit, incident-bound recovery for a host-paused policy failure. */
+    @Serializable
+    @SerialName("recoverPolicyFault")
+    data class RecoverPolicyFault(
+        val incidentId: String,
+        val recovery: PolicyFaultRecoveryCommand,
+    ) : ClientMessage
+
     /**
      * Cancel a game that hasn't started yet (waiting for opponent).
      */
@@ -646,4 +654,11 @@ sealed interface ClientMessage {
         val format: com.wingedsheep.sdk.core.DeckFormat?,
         val momirBasic: Boolean = false,
     ) : ClientMessage
+}
+
+@Serializable
+enum class PolicyFaultRecoveryCommand {
+    RETRY,
+    TRANSFER_CONTROL,
+    CONCEDE,
 }

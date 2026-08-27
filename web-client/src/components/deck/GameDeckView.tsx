@@ -191,9 +191,11 @@ export function DeckCardBody({
  */
 export function SeatDeckColumn({
   p,
+  strategyEvidenceEligible = true,
   renderActions,
 }: {
   p: GameDeckParticipant
+  strategyEvidenceEligible?: boolean
   renderActions?: (p: GameDeckParticipant) => React.ReactNode
 }) {
   const total = p.cards.reduce((sum, c) => sum + c.copies, 0)
@@ -205,7 +207,9 @@ export function SeatDeckColumn({
           {p.isSelf ? 'You' : p.playerName}
           {p.isAi ? <span style={styles.aiTag}> AI</span> : null}
         </span>
-        <span style={{ ...styles.resultTag, color: p.won ? '#5bd16e' : '#e15b6e' }}>{p.won ? 'Win' : 'Loss'}</span>
+        <span style={{ ...styles.resultTag, color: strategyEvidenceEligible ? (p.won ? '#5bd16e' : '#e15b6e') : '#c9943d' }}>
+          {strategyEvidenceEligible ? (p.won ? 'Win' : 'Loss') : 'Software interruption'}
+        </span>
       </div>
       <div style={styles.colMeta}>
         <span>{p.colors ? colorLabel(p.colors) : 'Colourless'}</span>
@@ -225,15 +229,17 @@ export function SeatDeckColumn({
  */
 export function GameDeckColumns({
   participants,
+  strategyEvidenceEligible = true,
   renderActions,
 }: {
   participants: GameDeckParticipant[]
+  strategyEvidenceEligible?: boolean
   renderActions?: (p: GameDeckParticipant) => React.ReactNode
 }) {
   return (
     <div style={styles.columns}>
       {participants.map((p, i) => (
-        <SeatDeckColumn key={`${p.playerName}-${i}`} p={p} {...(renderActions ? { renderActions } : {})} />
+        <SeatDeckColumn key={`${p.playerName}-${i}`} p={p} strategyEvidenceEligible={strategyEvidenceEligible} {...(renderActions ? { renderActions } : {})} />
       ))}
     </div>
   )

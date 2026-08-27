@@ -14,6 +14,7 @@ import com.wingedsheep.engine.handlers.actions.spell.SpellModule
 import com.wingedsheep.engine.registry.CardRegistry
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.core.UndoPolicyComputer
+import kotlin.reflect.KClass
 
 /**
  * Wraps the result of [ActionProcessor.process] with an undo checkpoint policy.
@@ -64,6 +65,9 @@ class ActionProcessor(
         registerModule(DecisionModule(services))
     }
 
+    /** Exact production dispatch topology, exposed internally for invariant verification. */
+    internal fun registeredActionTypes(): Set<KClass<out GameAction>> = registry.registeredActionTypes()
+
     /**
      * Process a game action and return the result.
      *
@@ -85,10 +89,20 @@ class ActionProcessor(
         }
 
         // Execute the action, then update which revealed/returned cards opponents may see
-        // (cards revealed into hand or bounced back to hand stay visible until a same-named
-        // card is played — see [RevealedInHandTracker]).
-        val result = com.wingedsheep.engine.mechanics.RevealedInHandTracker
-            .applyAfterAction(registry.execute(state, action))
+        // only when the handler accepted it. Rejected events must not reach this event-driven
+        // tracker.
+        val executed = registry.execute(state, action)
+        val tracked = if (executed.error == null) {
+            com.wingedsheep.engine.mechanics.RevealedInHandTracker.applyAfterAction(executed)
+        } else {
+            executed
+        }
+
+        // Finish behind one transaction boundary. Handlers and continuation resumers may
+        // compose several immutable intermediate states before a later step rejects the
+        // operation. An error means the action did not happen, so none of those states,
+        // events, decisions, or processing metadata may escape to callers.
+        val result = normalizeFailedAction(state, tracked)
         val undoPolicy = if (computeUndo) {
             UndoPolicyComputer.compute(action, state, result, services.cardRegistry)
         } else {
@@ -113,4 +127,20 @@ class ActionProcessor(
 
         return null
     }
+}
+
+/**
+ * Enforce the public action contract at the single [ActionProcessor] boundary.
+ *
+ * Individual handlers remain pure and may build intermediate immutable states while an
+ * operation is in progress. If any nested handler ultimately reports an error, the whole
+ * operation is rejected: return the exact entry state and retain only the error message.
+ */
+internal fun normalizeFailedAction(
+    originalState: GameState,
+    result: ExecutionResult
+): ExecutionResult = if (result.error == null) {
+    result
+} else {
+    ExecutionResult.error(originalState, result.error)
 }

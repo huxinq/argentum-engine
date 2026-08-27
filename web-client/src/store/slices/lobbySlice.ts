@@ -217,6 +217,7 @@ export const createLobbySlice: SliceCreator<LobbySlice> = (set, get) => ({
       nextStopPoint: null,
           eventLog: [],
       gameOverState: null,
+      policyFaultPause: null,
       lastError: null,
       deckBuildingState: null,
       lobbyState: null,

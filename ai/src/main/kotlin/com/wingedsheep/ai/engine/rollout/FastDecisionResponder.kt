@@ -62,14 +62,10 @@ import com.wingedsheep.sdk.model.EntityId
  */
 class FastDecisionResponder(private val intents: IntentCatalog = IntentCatalog.NONE) {
 
-    /**
-     * @param playerId the *rollout owner*, not necessarily the decision's player: target ranking is
-     *   only meaningful from someone's perspective, and using the decider's own perspective would
-     *   need a per-seat evaluator a playout does not have. The decision's own player is who the
-     *   engine bills the choice to either way.
-     */
-    fun respond(state: GameState, decision: PendingDecision, playerId: EntityId): DecisionResponse {
-        TrivialDecisions.responseFor(decision)?.let { return it }
+    /** Answer from the pending decision's responsible player's perspective. */
+    fun respond(state: GameState, decision: PendingDecision): DecisionResponse {
+        val playerId = decision.playerId
+        TrivialDecisions.responseFor(state, decision)?.let { return it }
         return when (decision) {
             // Rank by the same heuristic the Strategist's cheap path uses. Not "first legal": a
             // playout that aims every removal spell at the nearest 1/1 systematically undervalues

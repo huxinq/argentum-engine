@@ -78,6 +78,10 @@ data class CompactReplay(
      * [setup]/[actions] remain only as the read-only v1/v2 compatibility representation.
      */
     val canonicalRecords: List<CanonicalReplayRecord> = emptyList(),
+    /** Host policy incidents are sidecar records, never synthetic [GameAction]s. */
+    val policyFaults: List<PolicyFaultReplayRecord> = emptyList(),
+    /** A concession selected after a policy fault is not strategy evidence or a training label. */
+    val strategyEvidenceEligible: Boolean = true,
 ) {
     /** Number of reconstructable frames: the initial state plus one per applied action. */
     val frameCount: Int get() = 1 + if (canonicalRecords.isEmpty()) actions.size
@@ -99,6 +103,17 @@ data class CompactReplay(
         const val UNKNOWN_VERSION = "unknown"
     }
 }
+
+@Serializable
+data class PolicyFaultReplayRecord(
+    val incidentId: String,
+    val failingSeatId: String,
+    val code: String,
+    val actionIndex: Int,
+    val detectedAt: String,
+    val parentIncidentId: String? = null,
+    val recovery: String? = null,
+)
 
 /**
  * A position fingerprint taken after [afterActionCount] recorded actions had been applied to the

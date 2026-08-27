@@ -293,7 +293,10 @@ class CombatAdvisor(
         mandatoryBlockerIds: Set<EntityId>,
     ): Map<EntityId, List<EntityId>> {
         val candidate = proposed.toMutableMap()
-        while (simulator.simulate(state, DeclareBlockers(playerId, candidate)) is SimulationResult.Illegal) {
+        while (true) {
+            val validation = simulator.simulate(state, DeclareBlockers(playerId, candidate))
+                .requireNoAutomaticResolutionStop("Block-plan validation")
+            if (validation !is SimulationResult.Illegal) break
             val removable = candidate.keys
                 .filterNot { it in mandatoryBlockerIds }
                 .minByOrNull { CombatMath.creatureValue(state, state.projectedState, it) }
@@ -752,6 +755,7 @@ class CombatAdvisor(
     ): Double? {
         val blockAction = DeclareBlockers(playerId, blockerMap)
         val simResult = simulator.simulate(state, blockAction)
+            .requireNoAutomaticResolutionStop("Block-plan evaluation")
         if (simResult is SimulationResult.Illegal) return null
 
         var current = simResult.state
@@ -761,7 +765,9 @@ class CombatAdvisor(
         while (iterations < 50 && !current.gameOver && current.pendingDecision == null) {
             iterations++
             val priorityPlayer = current.priorityPlayerId ?: break
-            current = simulator.simulate(current, PassPriority(priorityPlayer)).state
+            current = simulator.simulate(current, PassPriority(priorityPlayer))
+                .requireNoAutomaticResolutionStop("Combat-damage evaluation")
+                .state
             if (current.phase != Phase.COMBAT) break
         }
 
@@ -963,6 +969,7 @@ class CombatAdvisor(
     ): GameState? {
         val attackAction = DeclareAttackers(playerId, attackerMap)
         val simResult = simulator.simulate(state, attackAction)
+            .requireNoAutomaticResolutionStop("Attack-plan evaluation")
         if (simResult is SimulationResult.Illegal) return null
         var current = simResult.state
 
@@ -978,13 +985,17 @@ class CombatAdvisor(
                 val blockAction = legalActions.find { it.actionType == "DeclareBlockers" }
                 if (blockAction != null) {
                     val blockerAction = chooseBlockers(current, blockAction, opponentId, useSimulation = false)
-                    current = simulator.simulate(current, blockerAction).state
+                    current = simulator.simulate(current, blockerAction)
+                        .requireNoAutomaticResolutionStop("Full-attack blocker evaluation")
+                        .state
                     needsBlockerCheck = false
                     continue
                 }
             }
 
-            current = simulator.simulate(current, PassPriority(priorityPlayer)).state
+            current = simulator.simulate(current, PassPriority(priorityPlayer))
+                .requireNoAutomaticResolutionStop("Full-attack priority evaluation")
+                .state
             if (current.phase != Phase.COMBAT) break
         }
 

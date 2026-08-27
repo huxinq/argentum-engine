@@ -600,6 +600,17 @@ class TournamentLobby(
     var ffaLastStandings: List<ServerMessage.FfaStandingInfo>? = null
 
     /**
+     * A terminal policy-fault concession is held outside the normal FFA result lifecycle.  It has
+     * no placement list and must be resolved by an explicit later operational decision, never by
+     * the ready-up path treating it as a completed game.
+     */
+    @Volatile
+    var ffaHeldNoContestIncidentId: String? = null
+
+    @Volatile
+    var ffaHeldNoContestCode: String? = null
+
+    /**
      * Update the sets for this lobby. Can only be changed while waiting for players.
      * Returns true if all sets were valid and changed, false otherwise.
      * Recalculates the default booster distribution for the new set selection.

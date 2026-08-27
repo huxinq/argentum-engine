@@ -114,9 +114,11 @@ export function AdminActivity({ auth, onBack }: { auth: AdminAuth; onBack: () =>
                     {g.tournamentName ? <span style={styles.tournamentTag}> · {g.tournamentName}</span> : null}
                   </td>
                   <td style={cellStyle.td}>
-                    <Players players={g.players} onProfile={(uid) => navigate(`/u/${uid}`)} />
+                    <Players players={g.players} strategyEvidenceEligible={g.strategyEvidenceEligible} onProfile={(uid) => navigate(`/u/${uid}`)} />
                   </td>
-                  <td style={cellStyle.td}>{g.winnerName ?? '—'}</td>
+                  <td style={cellStyle.td} title={g.policyFaultIncidentId ?? undefined}>
+                    {g.strategyEvidenceEligible ? (g.winnerName ?? '—') : 'Software interruption'}
+                  </td>
                   <td style={cellStyle.tdNum}>
                     {g.hasReplay ? (
                       <button type="button" style={styles.link} onClick={() => navigate(`/replay/${g.gameId}`)}>
@@ -167,7 +169,7 @@ export function AdminActivity({ auth, onBack }: { auth: AdminAuth; onBack: () =>
 }
 
 /** A game's seats, joined by "vs", with the winner bolded; named accounts link to their profile. */
-function Players({ players, onProfile }: { players: AdminGamePlayer[]; onProfile: (userId: string) => void }) {
+function Players({ players, strategyEvidenceEligible, onProfile }: { players: AdminGamePlayer[]; strategyEvidenceEligible: boolean; onProfile: (userId: string) => void }) {
   if (players.length === 0) return <span style={cellStyle.muted}>—</span>
   return (
     <span>
@@ -175,11 +177,11 @@ function Players({ players, onProfile }: { players: AdminGamePlayer[]; onProfile
         <span key={`${p.name}-${i}`}>
           {i > 0 && <span style={styles.vs}> vs </span>}
           {p.userId ? (
-            <button type="button" style={p.won ? styles.playerLinkWon : styles.playerLink} onClick={() => onProfile(p.userId as string)}>
+            <button type="button" style={strategyEvidenceEligible && p.won ? styles.playerLinkWon : styles.playerLink} onClick={() => onProfile(p.userId as string)}>
               {p.name}
             </button>
           ) : (
-            <span style={p.won ? styles.winner : undefined}>
+            <span style={strategyEvidenceEligible && p.won ? styles.winner : undefined}>
               {p.name}
               {p.isAi ? <span style={styles.aiTag}> AI</span> : null}
             </span>

@@ -271,8 +271,8 @@ function PlayerDetail({
                       )}
                     </td>
                     <td style={cellStyle.td}>{g.opponents ?? '—'}</td>
-                    <td style={{ ...cellStyle.tdNum, color: g.won ? adminTheme.good : adminTheme.bad }}>
-                      {g.won ? 'Win' : 'Loss'}
+                    <td style={{ ...cellStyle.tdNum, color: g.strategyEvidenceEligible ? (g.won ? adminTheme.good : adminTheme.bad) : '#c9943d' }} title={g.policyFaultIncidentId ?? undefined}>
+                      {g.strategyEvidenceEligible ? (g.won ? 'Win' : 'Loss') : 'Software interruption'}
                     </td>
                     <td style={cellStyle.tdNum}>
                       <button

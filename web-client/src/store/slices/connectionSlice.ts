@@ -159,6 +159,7 @@ export const createConnectionSlice: SliceCreator<ConnectionSlice> = (set, get) =
       mulliganState: null,
       waitingForOpponentMulligan: false,
       gameOverState: null,
+      policyFaultPause: null,
       deckBuildingState: null,
       lobbyState: null,
       tournamentState: null,

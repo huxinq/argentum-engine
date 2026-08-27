@@ -2,6 +2,7 @@ package com.wingedsheep.gameserver.handler
 
 import com.wingedsheep.gameserver.ai.AiGameManager
 import com.wingedsheep.gameserver.ai.AiWebSocketSession
+import com.wingedsheep.gameserver.ai.PolicySubmissionAck
 import com.wingedsheep.ai.engine.SealedDeckGenerator
 import com.wingedsheep.gameserver.protocol.ClientMessage
 import com.wingedsheep.gameserver.protocol.ErrorCode
@@ -13,6 +14,10 @@ import com.wingedsheep.gameserver.replay.ReplayService
 import com.wingedsheep.gameserver.repository.GameRepository
 import com.wingedsheep.gameserver.repository.LobbyRepository
 import com.wingedsheep.gameserver.session.GameSession
+import com.wingedsheep.gameserver.session.PolicyFaultRecovery
+import com.wingedsheep.gameserver.session.PolicyFaultRetryStart
+import com.wingedsheep.gameserver.session.PolicyFaultConcession
+import com.wingedsheep.gameserver.session.PolicyFaultReport
 import com.wingedsheep.gameserver.session.PlayerSession
 import com.wingedsheep.gameserver.session.SessionRegistry
 import com.wingedsheep.gameserver.config.GameProperties
@@ -30,6 +35,16 @@ import org.springframework.web.socket.WebSocketSession
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * Lobby completion routing is intentionally typed: an explicit policy-fault concession ends the
+ * game but is not a draw or a normal match result.  Treating its null winner as a draw corrupted
+ * bracket standings and FFA placements.
+ */
+sealed interface LobbyGameOutcome {
+    data class Result(val winnerId: EntityId?, val winnerLifeRemaining: Int) : LobbyGameOutcome
+    data class PolicyFaultNoContest(val incidentId: String, val code: String) : LobbyGameOutcome
+}
 
 @Component
 class GamePlayHandler(
@@ -51,6 +66,11 @@ class GamePlayHandler(
     private val deckProfiler: com.wingedsheep.gameserver.stats.DeckProfiler
 ) {
     private val logger = LoggerFactory.getLogger(GamePlayHandler::class.java)
+
+    init {
+        aiGameManager.policyFaultCallback = ::handleAiPolicyFault
+        aiGameManager.policyRetryDispatchAbandonedCallback = ::handleAiRetryDispatchAbandoned
+    }
 
     @Volatile
     var waitingGameSession: GameSession? = null
@@ -74,7 +94,7 @@ class GamePlayHandler(
     var broadcastActiveMatchesCallback: ((String) -> Unit)? = null
 
     // Callback for full match result handling (report result + notify + check round complete, all under lock)
-    var handleMatchResultCallback: ((String, String, EntityId?, Int) -> Unit)? = null
+    var handleMatchResultCallback: ((String, String, LobbyGameOutcome) -> Unit)? = null
 
     // Callback fired when ANY game ends, used by the dev-only LLM tournament orchestrator to
     // advance its bracket. Args: (gameSessionId, winnerId, winnerLifeRemaining). The orchestrator
@@ -87,6 +107,7 @@ class GamePlayHandler(
             is ClientMessage.JoinGame -> handleJoinGame(session, message)
             is ClientMessage.SubmitAction -> handleSubmitAction(session, message)
             is ClientMessage.Concede -> handleConcede(session)
+            is ClientMessage.RecoverPolicyFault -> handlePolicyFaultRecovery(session, message)
             is ClientMessage.CancelGame -> handleCancelGame(session)
             is ClientMessage.KeepHand -> handleKeepHand(session)
             is ClientMessage.Mulligan -> handleMulligan(session)
@@ -163,17 +184,17 @@ class GamePlayHandler(
             aiGameManager.createAiOpponent(
                 gameSession = gameSession,
                 setCode = quickGameSetCode,
-                onActionReady = { aiPlayerId, action ->
-                    handleAiAction(gameSession, aiPlayerId, action)
+                onActionReady = { aiPlayerId, action, retryId ->
+                    handleAiAction(gameSession, aiPlayerId, action, retryId)
                 },
-                onMulliganKeep = { aiPlayerId ->
-                    handleAiMulliganKeep(gameSession, aiPlayerId)
+                onMulliganKeep = { aiPlayerId, retryId ->
+                    handleAiMulliganKeep(gameSession, aiPlayerId, retryId)
                 },
-                onMulliganTake = { aiPlayerId ->
-                    handleAiMulliganTake(gameSession, aiPlayerId)
+                onMulliganTake = { aiPlayerId, retryId ->
+                    handleAiMulliganTake(gameSession, aiPlayerId, retryId)
                 },
-                onBottomCards = { aiPlayerId, cardIds ->
-                    handleAiBottomCards(gameSession, aiPlayerId, cardIds)
+                onBottomCards = { aiPlayerId, cardIds, retryId ->
+                    handleAiBottomCards(gameSession, aiPlayerId, cardIds, retryId)
                 }
             )
 
@@ -374,10 +395,10 @@ class GamePlayHandler(
             gameSession = gameSession,
             aiPlayerId = aiPlayerId,
             deckList = deck,
-            onActionReady = { id, action -> handleAiAction(gameSession, id, action) },
-            onMulliganKeep = { id -> handleAiMulliganKeep(gameSession, id) },
-            onMulliganTake = { id -> handleAiMulliganTake(gameSession, id) },
-            onBottomCards = { id, cardIds -> handleAiBottomCards(gameSession, id, cardIds) }
+            onActionReady = { id, action, retryId -> handleAiAction(gameSession, id, action, retryId) },
+            onMulliganKeep = { id, retryId -> handleAiMulliganKeep(gameSession, id, retryId) },
+            onMulliganTake = { id, retryId -> handleAiMulliganTake(gameSession, id, retryId) },
+            onBottomCards = { id, cardIds, retryId -> handleAiBottomCards(gameSession, id, cardIds, retryId) }
         )
 
         // wireAiForGame swapped in a fresh AiWebSocketSession; point the game session's player
@@ -553,9 +574,149 @@ class GamePlayHandler(
         }
 
         val gameSession = getGameSession(session, playerSession) ?: return
+        if (gameSession.isPolicyFaultPaused()) {
+            sender.sendError(session, ErrorCode.INVALID_ACTION, "Game is paused for policy recovery; use the incident recovery control")
+            return
+        }
 
         logger.info("Player ${playerSession.playerName} conceded game ${gameSession.sessionId}")
         concedeSeat(gameSession, playerSession.playerId)
+    }
+
+    /**
+     * Recovery is a host decision, not ordinary opponent input. A tournament lobby already has a
+     * durable host seat, so only that host may decide. Outside a lobby we authorize only the sole
+     * non-AI participant (the normal human-vs-AI host); multi-human non-lobby games remain paused
+     * until a durable per-game owner authority is introduced. No deadline, disconnect, or retry
+     * fallback chooses on anyone's behalf.
+     */
+    private fun handlePolicyFaultRecovery(
+        session: WebSocketSession,
+        message: ClientMessage.RecoverPolicyFault,
+    ) {
+        val player = sessionRegistry.getPlayerSession(session.id)
+            ?: return sender.sendError(session, ErrorCode.NOT_CONNECTED, "Not connected")
+        val game = getGameSession(session, player) ?: return
+        val incident = game.getPolicyFaultIncident()
+            ?: return sender.sendError(session, ErrorCode.INVALID_ACTION, "No policy fault is currently paused")
+        if (incident.incidentId != message.incidentId) {
+            sender.sendError(session, ErrorCode.INVALID_ACTION, "Stale policy-fault incident")
+            return
+        }
+        if (!canAuthorizePolicyFaultRecovery(game, player.playerId)) {
+            sender.sendError(session, ErrorCode.INVALID_ACTION, "Only the game host may authorize policy recovery")
+            return
+        }
+
+        when (message.recovery) {
+            com.wingedsheep.gameserver.protocol.PolicyFaultRecoveryCommand.TRANSFER_CONTROL -> {
+                // GameSession currently has only engine turn-hijack and scenario-wide hotseat
+                // authority. Neither can safely grant one live seat without exposing hidden state
+                // or letting one controller operate opposing seats, so transfer is advertised false
+                // and rejected rather than approximated insecurely.
+                sender.sendError(session, ErrorCode.INVALID_ACTION, "Per-seat live control transfer is not available")
+            }
+            com.wingedsheep.gameserver.protocol.PolicyFaultRecoveryCommand.RETRY -> {
+                if (!aiGameManager.canRetryPolicyFailure(game.sessionId, incident.failingSeat, incident.incidentId)) {
+                    sender.sendError(session, ErrorCode.INVALID_ACTION, "The failed policy invocation is no longer retryable")
+                    return
+                }
+                when (val start = game.beginPolicyFaultRetry(incident.incidentId)) {
+                    is PolicyFaultRetryStart.Started -> {
+                        // This schedules exactly the retained message once while the GameSession
+                        // gate remains closed. The accepted retried action clears it atomically.
+                        if (!aiGameManager.retryPolicyFailure(game.sessionId, incident.failingSeat, incident.incidentId)) {
+                            game.cancelPolicyFaultRetry(incident.incidentId)
+                            sender.sendError(session, ErrorCode.INVALID_ACTION, "The failed policy invocation is no longer retryable")
+                        }
+                    }
+                    else -> sendPolicyFaultRetryStartError(session, start)
+                }
+            }
+            com.wingedsheep.gameserver.protocol.PolicyFaultRecoveryCommand.CONCEDE -> {
+                when (val conceded = game.concedePolicyFault(incident.incidentId)) {
+                    is PolicyFaultConcession.Conceded -> {
+                        // This is the only policy-fault branch that enters normal terminal handling.
+                        // The canonical non-action incident/recovery records retain its software origin.
+                        finishConcession(game)
+                    }
+                    PolicyFaultConcession.NoActiveIncident -> sender.sendError(session, ErrorCode.INVALID_ACTION, "No policy fault is currently paused")
+                    PolicyFaultConcession.StaleIncident -> sender.sendError(session, ErrorCode.INVALID_ACTION, "Stale policy-fault incident")
+                }
+            }
+        }
+    }
+
+    private fun canAuthorizePolicyFaultRecovery(game: GameSession, playerId: EntityId): Boolean {
+        if (game.getPlayerPersistenceInfo()[playerId]?.isAi == true) return false
+        val lobbyId = gameRepository.getLobbyForGame(game.sessionId)
+        if (lobbyId != null) return lobbyRepository.findLobbyById(lobbyId)?.isHost(playerId) == true
+        val humanSeats = game.getPlayers().filter { game.getPlayerPersistenceInfo()[it.playerId]?.isAi != true }
+        return humanSeats.size == 1 && humanSeats.single().playerId == playerId
+    }
+
+    private fun sendPolicyFaultRetryStartError(session: WebSocketSession, start: PolicyFaultRetryStart) {
+        val message = when (start) {
+            PolicyFaultRetryStart.NoActiveIncident -> "No policy fault is currently paused"
+            PolicyFaultRetryStart.StaleIncident -> "Stale policy-fault incident"
+            PolicyFaultRetryStart.AlreadyRecovering -> "Policy retry is already in progress"
+            is PolicyFaultRetryStart.Started -> return
+        }
+        sender.sendError(session, ErrorCode.INVALID_ACTION, message)
+    }
+
+    private fun handleAiPolicyFault(game: GameSession, seat: EntityId, code: String, diagnostic: String): String? =
+        when (val reported = game.reportPolicyFault(seat, code, diagnostic)) {
+            is PolicyFaultReport.Paused -> {
+                logger.error("Policy fault paused game {} seat {}: {}", game.sessionId, seat.value, code)
+                broadcastPolicyFaultPaused(game, reported.incident)
+                gameRepository.save(game)
+                reported.incident.incidentId
+            }
+            is PolicyFaultReport.AlreadyPaused -> {
+                logger.warn(
+                    "Ignored additional policy fault for already-paused game {} incident {}",
+                    game.sessionId, reported.incident.incidentId,
+                )
+                reported.incident.incidentId
+            }
+            PolicyFaultReport.GameAlreadyOver -> {
+                logger.warn("Ignored policy fault after game over: {}", game.sessionId)
+                null
+            }
+        }
+
+    private fun handleAiRetryDispatchAbandoned(game: GameSession, seat: EntityId, incidentId: String, token: String) {
+        val incident = game.getPolicyFaultIncident() ?: return
+        if (incident.failingSeat != seat || !incident.retryInProgress || incident.incidentId != incidentId) return
+        game.cancelPolicyFaultRetry(incidentId)
+        logger.warn("Released cancelled policy retry for game {} incident {} token {}", game.sessionId, incidentId, token)
+    }
+
+    private fun broadcastPolicyFaultPaused(game: GameSession, incident: com.wingedsheep.gameserver.session.PolicyFaultIncident) {
+        val retryAvailable = aiGameManager.canRetryPolicyFailure(game.sessionId, incident.failingSeat, incident.incidentId)
+        game.getPlayers().forEach { player ->
+            val canRecover = canAuthorizePolicyFaultRecovery(game, player.playerId)
+            sender.send(player.webSocketSession, ServerMessage.PolicyFaultPaused(
+                gameId = game.sessionId,
+                incidentId = incident.incidentId,
+                failingSeatId = incident.failingSeat,
+                code = incident.code,
+                canRetry = retryAvailable && canRecover,
+                canTransferControl = false,
+                canConcede = canRecover,
+            ))
+        }
+    }
+
+    private fun broadcastPolicyFaultRecovered(game: GameSession, incident: com.wingedsheep.gameserver.session.PolicyFaultIncident) {
+        game.getPlayers().forEach { player ->
+            sender.send(player.webSocketSession, ServerMessage.PolicyFaultRecovered(
+                gameId = game.sessionId,
+                incidentId = incident.incidentId,
+                recovery = requireNotNull(incident.recovery).name,
+            ))
+        }
     }
 
     /**
@@ -566,7 +727,16 @@ class GamePlayHandler(
      * ends it — the degenerate case.
      */
     internal fun concedeSeat(gameSession: GameSession, playerId: EntityId) {
+        if (gameSession.isPolicyFaultPaused()) {
+            logger.info("Ignored ordinary concession for policy-paused game {}", gameSession.sessionId)
+            return
+        }
         gameSession.playerConcedes(playerId)
+        finishConcession(gameSession)
+    }
+
+    /** Finalize or rebroadcast after a concession has already been applied under GameSession's lock. */
+    private fun finishConcession(gameSession: GameSession) {
         if (gameSession.isGameOver()) {
             handleGameOver(gameSession, GameOverReason.CONCESSION)
             return
@@ -634,6 +804,9 @@ class GamePlayHandler(
 
     fun handleGameOver(gameSession: GameSession, reason: GameOverReason? = null, events: List<GameEvent> = emptyList()) {
         val winnerId = gameSession.getWinnerId()
+        val policyFaultConcession = gameSession.getPolicyFaultHistory()
+            .lastOrNull { it.recovery == PolicyFaultRecovery.CONCEDE }
+        val strategyEvidenceEligible = policyFaultConcession == null
         val gameOverReason = reason ?: gameSession.getGameOverReason() ?: GameOverReason.LIFE_ZERO
         // Extract custom message from PlayerLostEvent if present. A game the server abandoned for
         // lack of progress explains itself first — its stock reason is a bare "Draw", which reads
@@ -682,8 +855,15 @@ class GamePlayHandler(
                     ?.currentGameSessionId = null
             }
 
-            // Report result, notify players, check round complete — all under the per-lobby lock
-            handleMatchResultCallback?.invoke(lobbyId, gameSessionId, winnerId, winnerLifeRemaining)
+            // Report result, notify players, check round complete — all under the per-lobby lock.
+            // A software-fault concession is an operational no-contest, never a null-winner draw.
+            handleMatchResultCallback?.invoke(
+                lobbyId,
+                gameSessionId,
+                policyFaultConcession?.let { incident ->
+                    LobbyGameOutcome.PolicyFaultNoContest(incident.incidentId, incident.code)
+                } ?: LobbyGameOutcome.Result(winnerId, winnerLifeRemaining),
+            )
         }
 
         // Save the compact replay if the game had meaningful activity (>= 5 frames) and was started
@@ -724,6 +904,18 @@ class GamePlayHandler(
                 checkpoints = gameSession.getReplayCheckpoints(),
                 truncated = gameSession.isReplayTruncated(),
                 canonicalRecords = gameSession.finishCanonicalReplay(),
+                policyFaults = gameSession.getPolicyFaultHistory().map { incident ->
+                    com.wingedsheep.gameserver.replay.PolicyFaultReplayRecord(
+                        incidentId = incident.incidentId,
+                        failingSeatId = incident.failingSeat.value,
+                        code = incident.code,
+                        actionIndex = incident.actionIndex,
+                        detectedAt = incident.detectedAt.toString(),
+                        parentIncidentId = incident.parentIncidentId,
+                        recovery = incident.recovery?.name,
+                    )
+                },
+                strategyEvidenceEligible = !gameSession.hasPolicyFaultConcession(),
             )
             // The archive flag is retained for legacy input records. Canonical v3 reconstructs its
             // authoritative states directly and ReplayService never duplicates them as frames.
@@ -768,6 +960,9 @@ class GamePlayHandler(
                     turnCount = gameSession.getStateForTesting()?.turnNumber ?: 0,
                     startedAt = gameSession.replayStartedAt,
                     endedAt = Instant.now(),
+                    policyFaultIncidentId = policyFaultConcession?.incidentId,
+                    policyFaultCode = policyFaultConcession?.code,
+                    strategyEvidenceEligible = strategyEvidenceEligible,
                     participants = gameSession.getPlayers().map { player ->
                         val identity = sessionRegistry.getIdentityByWsId(player.webSocketSession.id)
                         val isAi = persistenceInfo[player.playerId]?.isAi == true
@@ -799,7 +994,7 @@ class GamePlayHandler(
             // winner earns rating from the loser; a winner-less game (mutual loss / no contest) is a
             // draw. Per-game, so each game of a best-of-N tournament match counts.
             val rankedMode = gameSession.rankedMode
-            if (gameSession.ranked && rankedMode != null) {
+            if (strategyEvidenceEligible && gameSession.ranked && rankedMode != null) {
                 val accounts = gameSession.getPlayers().mapNotNull { player ->
                     val identity = sessionRegistry.getIdentityByWsId(player.webSocketSession.id)
                     val isAi = persistenceInfo[player.playerId]?.isAi == true
@@ -828,7 +1023,7 @@ class GamePlayHandler(
 
         // Notify the dev LLM-tournament orchestrator (no-op for games it doesn't own).
         // Fired before cleanup so it can launch the next bracket game off its own coroutine.
-        llmTournamentGameOverCallback?.let { callback ->
+        llmTournamentGameOverCallback?.takeIf { strategyEvidenceEligible }?.let { callback ->
             val winnerLife = if (winnerId != null) {
                 gameSession.getStateForTesting()?.getEntity(winnerId)
                     ?.get<LifeTotalComponent>()?.life ?: 0
@@ -1189,10 +1384,10 @@ class GamePlayHandler(
                 gameSession = gameSession,
                 aiPlayerId = aiPlayerId,
                 deckList = deckList,
-                onActionReady = { id, action -> handleAiAction(gameSession, id, action) },
-                onMulliganKeep = { id -> handleAiMulliganKeep(gameSession, id) },
-                onMulliganTake = { id -> handleAiMulliganTake(gameSession, id) },
-                onBottomCards = { id, cardIds -> handleAiBottomCards(gameSession, id, cardIds) }
+                onActionReady = { id, action, retryId -> handleAiAction(gameSession, id, action, retryId) },
+                onMulliganKeep = { id, retryId -> handleAiMulliganKeep(gameSession, id, retryId) },
+                onMulliganTake = { id, retryId -> handleAiMulliganTake(gameSession, id, retryId) },
+                onBottomCards = { id, cardIds, retryId -> handleAiBottomCards(gameSession, id, cardIds, retryId) }
             )
 
             val aiIdentity = sessionRegistry.getAllIdentities().firstOrNull { it.playerId == aiPlayerId }
@@ -1259,217 +1454,242 @@ class GamePlayHandler(
     // AI opponent callbacks (invoked async from AiWebSocketSession coroutine)
     // =========================================================================
 
-    fun handleAiAction(gameSession: GameSession, aiPlayerId: EntityId, action: com.wingedsheep.engine.core.GameAction) {
-        try {
-            val result = gameSession.executeAction(aiPlayerId, action)
-            when (result) {
-                is GameSession.ActionResult.Success -> {
+    fun handleAiAction(
+        gameSession: GameSession,
+        aiPlayerId: EntityId,
+        action: com.wingedsheep.engine.core.GameAction,
+        retryIncidentId: String? = null,
+    ): PolicySubmissionAck {
+        // The state transition is the commit boundary.  A later websocket/replay/lobby failure
+        // must not turn an already-applied move into a retryable policy invocation.
+        val result = try {
+            gameSession.executeAction(aiPlayerId, action, policyRetryIncidentId = retryIncidentId)
+        } catch (e: Exception) {
+            logger.error("AI action submission threw before an authoritative result", e)
+            reportUnsafeHostSubmission(gameSession, aiPlayerId, retryIncidentId, "AI_ACTION_SUBMISSION_UNKNOWN", e)
+            return PolicySubmissionAck.UNSAFE_HOST_FAILURE
+        }
+        when (result) {
+            is GameSession.ActionResult.Success -> {
+                val acknowledgement = committedPolicyAcknowledgement(retryIncidentId, result.policyFaultRecovery)
+                runPostCommit("AI action", gameSession) {
                     logger.debug("AI action executed successfully")
                     broadcastStateUpdate(gameSession, result.events)
+                    result.policyFaultRecovery?.let { broadcastPolicyFaultRecovered(gameSession, it) }
                     if (gameSession.isGameOver()) handleGameOver(gameSession, events = result.events)
                 }
-                is GameSession.ActionResult.PausedForDecision -> {
+                return acknowledgement
+            }
+            is GameSession.ActionResult.PausedForDecision -> {
+                val acknowledgement = committedPolicyAcknowledgement(retryIncidentId, result.policyFaultRecovery)
+                runPostCommit("AI action", gameSession) {
                     logger.debug("AI action paused for decision: ${result.decision}")
                     broadcastStateUpdate(gameSession, result.events)
+                    result.policyFaultRecovery?.let { broadcastPolicyFaultRecovered(gameSession, it) }
                 }
-                is GameSession.ActionResult.Failure -> {
-                    if (aiGameManager.usesStrictFailurePolicy(aiPlayerId)) {
-                        aiGameManager.recordStrictFailure(
-                            gameSession,
-                            "SELECTED_ACTION_REJECTED",
-                            result.reason,
-                        )
-                        logger.error(
-                            "Strict AI action rejected in game {} for {}: {} — conceding",
-                            gameSession.sessionId,
-                            aiPlayerId.value,
-                            result.reason,
-                        )
-                        gameSession.playerConcedes(aiPlayerId)
-                        broadcastStateUpdate(gameSession, emptyList())
-                        if (gameSession.isGameOver()) handleGameOver(gameSession, GameOverReason.CONCESSION)
-                        return
-                    }
-                    // The chosen action was rejected (e.g. an illegal block the AI's combat model
-                    // didn't foresee, like Ring-bearer "can't be blocked by greater power"). Try a
-                    // sequence of step-appropriate, always-legal fallbacks so the game can't get
-                    // stuck. During DECLARE_BLOCKERS/DECLARE_ATTACKERS, PassPriority is itself
-                    // illegal ("you must declare blockers before passing priority"), so a do-nothing
-                    // declaration must come first — otherwise the AI re-receives the same state and
-                    // loops forever.
-                    logger.warn("AI action failed: {} — trying safe fallbacks", result.reason)
-                    var recovered = false
-                    for (fallback in safeFallbackActions(gameSession, aiPlayerId)) {
-                        when (val fb = gameSession.executeAction(aiPlayerId, fallback)) {
-                            is GameSession.ActionResult.Success -> {
-                                broadcastStateUpdate(gameSession, fb.events)
-                                if (gameSession.isGameOver()) handleGameOver(gameSession, events = fb.events)
-                                recovered = true
-                            }
-                            is GameSession.ActionResult.PausedForDecision -> {
-                                broadcastStateUpdate(gameSession, fb.events)
-                                recovered = true
-                            }
-                            is GameSession.ActionResult.Failure -> {
-                                logger.warn("AI fallback {} also failed: {}", fallback::class.simpleName, fb.reason)
-                            }
-                        }
-                        if (recovered) break
-                    }
-                    if (!recovered) {
-                        // Last resort: broadcast current state so the AI gets another chance. That
-                        // is a loop with nothing bounding it — the AI is handed the same state, so
-                        // it re-chooses the same rejected action, and nothing was applied for the
-                        // stall guard to notice — so the seat gets a bounded number of chances and
-                        // is then conceded. See [GameStallGuard.onActionRejected].
-                        if (gameSession.noteActionRejected(aiPlayerId)) {
-                            logger.error(
-                                "AI seat {} has had {} actions in a row rejected with no legal " +
-                                    "fallback in game {} — conceding the seat rather than " +
-                                    "re-broadcasting forever",
-                                aiPlayerId.value,
-                                com.wingedsheep.gameserver.session.GameStallGuard.MAX_CONSECUTIVE_REJECTIONS,
-                                gameSession.sessionId,
-                            )
-                            gameSession.playerConcedes(aiPlayerId)
-                            broadcastStateUpdate(gameSession, emptyList())
-                            if (gameSession.isGameOver()) {
-                                handleGameOver(gameSession, GameOverReason.CONCESSION)
-                            }
-                        } else {
-                            broadcastStateUpdate(gameSession, emptyList())
-                        }
-                    }
-                }
+                return acknowledgement
             }
+            is GameSession.ActionResult.Failure -> {
+                if (aiGameManager.usesStrictFailurePolicy(aiPlayerId)) {
+                    aiGameManager.recordStrictFailure(
+                        gameSession,
+                        "SELECTED_ACTION_REJECTED",
+                        result.reason,
+                    )
+                    logger.error(
+                        "Strict AI action rejected in game {} for {}: {} — pausing for explicit recovery",
+                        gameSession.sessionId,
+                        aiPlayerId.value,
+                        result.reason,
+                    )
+                    return PolicySubmissionAck.REJECTED(
+                        handleAiPolicyFault(gameSession, aiPlayerId, "SELECTED_ACTION_REJECTED", result.reason),
+                    )
+                }
+                // A recovery action would be a second, undeclared policy choosing in place of
+                // the responsible controller. Re-present the authoritative state instead; the
+                // existing stall guard bounds repeated invalid policy answers.
+                logger.warn("AI action failed: {} — returning choice to responsible policy", result.reason)
+                if (gameSession.noteActionRejected(aiPlayerId)) {
+                    logger.error(
+                        "AI seat {} has had {} actions in a row rejected in game {} — " +
+                            "pausing for explicit recovery rather than conceding the seat",
+                        aiPlayerId.value,
+                        com.wingedsheep.gameserver.session.GameStallGuard.MAX_CONSECUTIVE_REJECTIONS,
+                        gameSession.sessionId,
+                    )
+                    return PolicySubmissionAck.REJECTED(
+                        handleAiPolicyFault(gameSession, aiPlayerId, "AI_ACTION_REJECTION_STALL", result.reason),
+                    )
+                } else {
+                    runPostCommit("rejected AI action", gameSession) { broadcastStateUpdate(gameSession, emptyList()) }
+                }
+                return rejectedAcknowledgement(gameSession, retryIncidentId)
+            }
+        }
+    }
+
+    fun handleAiMulliganKeep(
+        gameSession: GameSession,
+        aiPlayerId: EntityId,
+        retryIncidentId: String? = null,
+    ): PolicySubmissionAck {
+        val result = try {
+            gameSession.keepHand(aiPlayerId, retryIncidentId)
         } catch (e: Exception) {
-            logger.error("Error handling AI action", e)
+            logger.error("AI mulligan keep submission threw before an authoritative result", e)
+            reportUnsafeHostSubmission(gameSession, aiPlayerId, retryIncidentId, "AI_MULLIGAN_KEEP_SUBMISSION_UNKNOWN", e)
+            return PolicySubmissionAck.UNSAFE_HOST_FAILURE
+        }
+        when (result) {
+            is GameSession.MulliganActionResult.Success -> {
+                val acknowledgement = committedPolicyAcknowledgement(retryIncidentId, result.policyFaultRecovery)
+                runPostCommit("AI mulligan keep", gameSession) {
+                    logger.info("AI kept hand")
+                    checkMulliganPhaseComplete(gameSession)
+                    result.policyFaultRecovery?.let { broadcastPolicyFaultRecovered(gameSession, it) }
+                }
+                return acknowledgement
+            }
+            is GameSession.MulliganActionResult.NeedsBottomCards -> {
+                val acknowledgement = committedPolicyAcknowledgement(retryIncidentId, result.policyFaultRecovery)
+                runPostCommit("AI mulligan keep", gameSession) {
+                    logger.info("AI kept hand, needs to choose bottom cards")
+                    val msg = gameSession.getChooseBottomCardsMessage(aiPlayerId)
+                    if (msg != null) gameSession.getPlayerSession(aiPlayerId)?.let { sender.send(it.webSocketSession, msg) }
+                    result.policyFaultRecovery?.let { broadcastPolicyFaultRecovered(gameSession, it) }
+                }
+                return acknowledgement
+            }
+            is GameSession.MulliganActionResult.Failure -> {
+                logger.warn("AI mulligan keep failed: ${result.reason}")
+                return PolicySubmissionAck.REJECTED(
+                    handleAiPolicyFault(gameSession, aiPlayerId, "SELECTED_MULLIGAN_KEEP_REJECTED", result.reason),
+                )
+            }
+        }
+    }
+
+    fun handleAiMulliganTake(
+        gameSession: GameSession,
+        aiPlayerId: EntityId,
+        retryIncidentId: String? = null,
+    ): PolicySubmissionAck {
+        val result = try {
+            gameSession.takeMulligan(aiPlayerId, retryIncidentId)
+        } catch (e: Exception) {
+            logger.error("AI mulligan take submission threw before an authoritative result", e)
+            reportUnsafeHostSubmission(gameSession, aiPlayerId, retryIncidentId, "AI_MULLIGAN_TAKE_SUBMISSION_UNKNOWN", e)
+            return PolicySubmissionAck.UNSAFE_HOST_FAILURE
+        }
+        when (result) {
+            is GameSession.MulliganActionResult.Success -> {
+                val acknowledgement = committedPolicyAcknowledgement(retryIncidentId, result.policyFaultRecovery)
+                runPostCommit("AI mulligan take", gameSession) {
+                    logger.info("AI took mulligan")
+                    gameSession.getPlayerSession(aiPlayerId)?.let { sendMulliganDecision(gameSession, it) }
+                    result.policyFaultRecovery?.let { broadcastPolicyFaultRecovered(gameSession, it) }
+                }
+                return acknowledgement
+            }
+            is GameSession.MulliganActionResult.NeedsBottomCards -> {
+                val acknowledgement = committedPolicyAcknowledgement(retryIncidentId, result.policyFaultRecovery)
+                runPostCommit("AI mulligan take", gameSession) {
+                    gameSession.getPlayerSession(aiPlayerId)?.let { aiPlayer ->
+                        gameSession.getChooseBottomCardsMessage(aiPlayerId)?.let { sender.send(aiPlayer.webSocketSession, it) }
+                    }
+                    result.policyFaultRecovery?.let { broadcastPolicyFaultRecovered(gameSession, it) }
+                }
+                return acknowledgement
+            }
+            is GameSession.MulliganActionResult.Failure -> {
+                logger.warn("AI mulligan take failed: ${result.reason}")
+                return PolicySubmissionAck.REJECTED(
+                    handleAiPolicyFault(gameSession, aiPlayerId, "SELECTED_MULLIGAN_TAKE_REJECTED", result.reason),
+                )
+            }
+        }
+    }
+
+    fun handleAiBottomCards(
+        gameSession: GameSession,
+        aiPlayerId: EntityId,
+        cardIds: List<EntityId>,
+        retryIncidentId: String? = null,
+    ): PolicySubmissionAck {
+        val result = try {
+            gameSession.chooseBottomCards(aiPlayerId, cardIds, retryIncidentId)
+        } catch (e: Exception) {
+            logger.error("AI bottom-cards submission threw before an authoritative result", e)
+            reportUnsafeHostSubmission(gameSession, aiPlayerId, retryIncidentId, "AI_BOTTOM_CARDS_SUBMISSION_UNKNOWN", e)
+            return PolicySubmissionAck.UNSAFE_HOST_FAILURE
+        }
+        when (result) {
+            is GameSession.MulliganActionResult.Success -> {
+                val acknowledgement = committedPolicyAcknowledgement(retryIncidentId, result.policyFaultRecovery)
+                runPostCommit("AI bottom cards", gameSession) {
+                    logger.info("AI chose bottom cards")
+                    checkMulliganPhaseComplete(gameSession)
+                    result.policyFaultRecovery?.let { broadcastPolicyFaultRecovered(gameSession, it) }
+                }
+                return acknowledgement
+            }
+            is GameSession.MulliganActionResult.NeedsBottomCards -> {
+                logger.warn("AI bottom cards: unexpected NeedsBottomCards")
+                return PolicySubmissionAck.REJECTED(
+                    handleAiPolicyFault(gameSession, aiPlayerId, "SELECTED_BOTTOM_CARDS_REJECTED", "unexpected bottom-card continuation"),
+                )
+            }
+            is GameSession.MulliganActionResult.Failure -> {
+                logger.warn("AI bottom cards failed: ${result.reason}")
+                return PolicySubmissionAck.REJECTED(
+                    handleAiPolicyFault(gameSession, aiPlayerId, "SELECTED_BOTTOM_CARDS_REJECTED", result.reason),
+                )
+            }
         }
     }
 
     /**
-     * Step-appropriate, always-legal recovery actions to try (in order) when an AI's chosen action
-     * is rejected. During the declare steps a "do nothing" declaration (no blockers / no attackers)
-     * is always legal and advances combat; `PassPriority` is NOT legal there, so it can only be the
-     * last resort. Outside combat declaration, passing priority is the safe no-op.
+     * A successful engine result is irrevocable.  The retry acknowledgement is exact for a
+     * recovery invocation; the normal path is simply accepted after its state transition.
      */
-    private fun safeFallbackActions(
+    private fun committedPolicyAcknowledgement(
+        retryIncidentId: String?,
+        recovery: com.wingedsheep.gameserver.session.PolicyFaultIncident?,
+    ): PolicySubmissionAck {
+        if (retryIncidentId != null && recovery?.incidentId != retryIncidentId) {
+            logger.error("Committed AI submission did not recover expected policy incident {}", retryIncidentId)
+            // The engine has committed.  Never replay an already-applied action merely because
+            // metadata is inconsistent; its authoritative state remains the source of truth.
+        }
+        return PolicySubmissionAck.ACCEPTED
+    }
+
+    /** Post-commit delivery failures are host operational faults, never policy retries. */
+    private inline fun runPostCommit(operation: String, gameSession: GameSession, block: () -> Unit) {
+        runCatching(block).onFailure { error ->
+            logger.error("Post-commit host work failed after {} in game {}; state was retained", operation, gameSession.sessionId, error)
+        }
+    }
+
+    private fun rejectedAcknowledgement(gameSession: GameSession, retryIncidentId: String?): PolicySubmissionAck.REJECTED =
+        PolicySubmissionAck.REJECTED(
+            retryIncidentId?.takeIf { gameSession.getPolicyFaultIncident()?.incidentId == it },
+        )
+
+    /**
+     * Submission exceptions have an unknown engine commit point.  They remain visibly paused, but
+     * are consumed as a non-retryable host/software incident rather than replayed as policy work.
+     */
+    private fun reportUnsafeHostSubmission(
         gameSession: GameSession,
-        aiPlayerId: EntityId
-    ): List<com.wingedsheep.engine.core.GameAction> {
-        // A pending decision blocks every priority action (pass included), and a decision
-        // response that was just rejected is deterministic — re-submitting it can't succeed.
-        // Cancelling the decision is the only fallback that can unwedge the game: cancellable
-        // decisions (cast-time mode/target pauses) abort cleanly with no side effects, and
-        // non-cancellable ones reject the cancel without state change, falling through to the
-        // remaining fallbacks. Without this, an AI whose decision answer keeps failing (e.g. a
-        // mid-cast pause whose eventual payment is impossible) loops forever.
-        val pendingDecision = gameSession.getStateForTesting()?.pendingDecision
-        val cancelPending = if (pendingDecision?.playerId == aiPlayerId) {
-            listOf<com.wingedsheep.engine.core.GameAction>(
-                com.wingedsheep.engine.core.SubmitDecision(
-                    aiPlayerId,
-                    com.wingedsheep.engine.core.CancelDecisionResponse(pendingDecision.id)
-                )
-            )
-        } else {
-            emptyList()
-        }
-        val pass = com.wingedsheep.engine.core.PassPriority(aiPlayerId)
-        // If PassPriority is currently a legal action, we're in a priority window (e.g. after
-        // blockers/attackers were already declared), not the actual declare-step decision. In that
-        // case a do-nothing DeclareBlockers/DeclareAttackers can succeed as a no-op and hand
-        // priority straight back to the AI → infinite loop. Pass FIRST so the loop breaks; keep the
-        // do-nothing declaration only as a fallback for the genuine declare-step decision (where
-        // PassPriority is NOT yet legal).
-        val passIsLegal = gameSession.getLegalActions(aiPlayerId).any {
-            it.action is com.wingedsheep.engine.core.PassPriority
-        }
-        return cancelPending + when (gameSession.getStateForTesting()?.step) {
-            com.wingedsheep.sdk.core.Step.DECLARE_BLOCKERS -> {
-                val declare = com.wingedsheep.engine.core.DeclareBlockers(aiPlayerId, emptyMap())
-                if (passIsLegal) listOf(pass, declare) else listOf(declare, pass)
-            }
-            com.wingedsheep.sdk.core.Step.DECLARE_ATTACKERS -> {
-                val declare = com.wingedsheep.engine.core.DeclareAttackers(aiPlayerId, emptyMap())
-                if (passIsLegal) listOf(pass, declare) else listOf(declare, pass)
-            }
-            else -> listOf(pass)
-        }
-    }
-
-    fun handleAiMulliganKeep(gameSession: GameSession, aiPlayerId: EntityId) {
-        try {
-            val result = gameSession.keepHand(aiPlayerId)
-            when (result) {
-                is GameSession.MulliganActionResult.Success -> {
-                    logger.info("AI kept hand")
-                    checkMulliganPhaseComplete(gameSession)
-                }
-                is GameSession.MulliganActionResult.NeedsBottomCards -> {
-                    logger.info("AI kept hand, needs to choose bottom cards")
-                    // The AI will receive the ChooseBottomCards message via its virtual session
-                    val msg = gameSession.getChooseBottomCardsMessage(aiPlayerId)
-                    if (msg != null) {
-                        val aiPlayer = gameSession.getPlayerSession(aiPlayerId)
-                        if (aiPlayer != null) sender.send(aiPlayer.webSocketSession, msg)
-                    }
-                }
-                is GameSession.MulliganActionResult.Failure -> {
-                    logger.warn("AI mulligan keep failed: ${result.reason}")
-                }
-            }
-        } catch (e: Exception) {
-            logger.error("Error handling AI mulligan keep", e)
-        }
-    }
-
-    fun handleAiMulliganTake(gameSession: GameSession, aiPlayerId: EntityId) {
-        try {
-            val result = gameSession.takeMulligan(aiPlayerId)
-            when (result) {
-                is GameSession.MulliganActionResult.Success -> {
-                    logger.info("AI took mulligan")
-                    // Send new mulligan decision to AI
-                    val aiPlayer = gameSession.getPlayerSession(aiPlayerId)
-                    if (aiPlayer != null) {
-                        sendMulliganDecision(gameSession, aiPlayer)
-                    }
-                }
-                is GameSession.MulliganActionResult.NeedsBottomCards -> {
-                    val aiPlayer = gameSession.getPlayerSession(aiPlayerId)
-                    if (aiPlayer != null) {
-                        val msg = gameSession.getChooseBottomCardsMessage(aiPlayerId)
-                        if (msg != null) sender.send(aiPlayer.webSocketSession, msg)
-                    }
-                }
-                is GameSession.MulliganActionResult.Failure -> {
-                    logger.warn("AI mulligan take failed: ${result.reason}")
-                }
-            }
-        } catch (e: Exception) {
-            logger.error("Error handling AI mulligan take", e)
-        }
-    }
-
-    fun handleAiBottomCards(gameSession: GameSession, aiPlayerId: EntityId, cardIds: List<EntityId>) {
-        try {
-            val result = gameSession.chooseBottomCards(aiPlayerId, cardIds)
-            when (result) {
-                is GameSession.MulliganActionResult.Success -> {
-                    logger.info("AI chose bottom cards")
-                    checkMulliganPhaseComplete(gameSession)
-                }
-                is GameSession.MulliganActionResult.NeedsBottomCards -> {
-                    logger.warn("AI bottom cards: unexpected NeedsBottomCards")
-                }
-                is GameSession.MulliganActionResult.Failure -> {
-                    logger.warn("AI bottom cards failed: ${result.reason}")
-                }
-            }
-        } catch (e: Exception) {
-            logger.error("Error handling AI bottom cards", e)
-        }
+        aiPlayerId: EntityId,
+        retryIncidentId: String?,
+        code: String,
+        error: Exception,
+    ) {
+        retryIncidentId?.let { gameSession.cancelPolicyFaultRetry(it) }
+        handleAiPolicyFault(gameSession, aiPlayerId, code, error::class.simpleName ?: "host submission failed")
     }
 
     // Callbacks to avoid circular dependencies with LobbyHandler

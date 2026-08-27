@@ -11,6 +11,7 @@ import {
   createMulliganMessage,
   createChooseBottomCardsMessage,
   createConcedeMessage,
+  createRecoverPolicyFaultMessage,
   createCancelGameMessage,
   createSetFullControlMessage,
   createSetPriorityModeMessage,
@@ -39,6 +40,7 @@ export interface GameplaySliceState {
   waitingForOpponentMulligan: boolean
   eventLog: readonly LogEntry[]
   gameOverState: GameOverState | null
+  policyFaultPause: PolicyFaultPauseState | null
   lastError: ErrorState | null
   fullControl: boolean
   priorityMode: PriorityModeValue
@@ -52,6 +54,16 @@ export interface GameplaySliceState {
   spectatorCount: number
   /** Names of currently-active spectators (for hover display on the badge). */
   spectatorNames: readonly string[]
+}
+
+export interface PolicyFaultPauseState {
+  incidentId: string
+  failingSeatId: EntityId
+  code: string
+  canRetry: boolean
+  canTransferControl: boolean
+  canConcede: boolean
+  recoveryPersistence: 'PROCESS_LIFETIME'
 }
 
 export interface GameplaySliceActions {
@@ -84,6 +96,7 @@ export interface GameplaySliceActions {
   chooseBottomCards: (cardIds: readonly EntityId[]) => void
   toggleMulliganCard: (cardId: EntityId) => void
   concede: () => void
+  recoverPolicyFault: (incidentId: string, recovery: 'RETRY' | 'TRANSFER_CONTROL' | 'CONCEDE') => void
   cancelGame: () => void
   setFullControl: (enabled: boolean) => void
   cyclePriorityMode: () => void
@@ -115,6 +128,7 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
   waitingForOpponentMulligan: false,
   eventLog: [],
   gameOverState: null,
+  policyFaultPause: null,
   lastError: null,
   fullControl: false,
   priorityMode: 'auto' as PriorityModeValue,
@@ -501,6 +515,10 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
     getWebSocket()?.send(createConcedeMessage())
   },
 
+  recoverPolicyFault: (incidentId, recovery) => {
+    getWebSocket()?.send(createRecoverPolicyFaultMessage(incidentId, recovery))
+  },
+
   requestUndo: () => {
     getWebSocket()?.send(createRequestUndoMessage())
   },
@@ -598,6 +616,7 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       opponentDisconnectCountdown: null,
       eventLog: [],
       gameOverState: null,
+      policyFaultPause: null,
       lastError: null,
       spectatorCount: 0,
       spectatorNames: [],

@@ -55,6 +55,23 @@ class MatchResultSinkTest : FunSpec({
         alice.cards.first { it.cardName == "Plains" }.copies shouldBe 10
     }
 
+    test("policy-fault concession provenance remains separate from the ordinary result") {
+        val repo = mockk<MatchResultRepository>(relaxed = true)
+        val saved = slot<MatchResultRow>()
+        every { repo.save(capture(saved)) } answers { saved.captured }
+        JdbcMatchResultSink(repo).record(
+            match(RecordedParticipant(userId = SOME_USER, playerName = "Alice", won = true)).copy(
+                policyFaultIncidentId = "incident-7",
+                policyFaultCode = "RESPONSIBLE_POLICY_UNAVAILABLE",
+                strategyEvidenceEligible = false,
+            )
+        )
+
+        saved.captured.policyFaultIncidentId shouldBe "incident-7"
+        saved.captured.policyFaultCode shouldBe "RESPONSIBLE_POLICY_UNAVAILABLE"
+        saved.captured.strategyEvidenceEligible shouldBe false
+    }
+
     test("guest-only games (no AI, no account) are still recorded for global stats") {
         val repo = mockk<MatchResultRepository>(relaxed = true)
         every { repo.save(any()) } answers { firstArg() }

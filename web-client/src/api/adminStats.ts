@@ -103,6 +103,8 @@ export interface AdminRecentGame {
   readonly winnerName: string | null
   readonly hasReplay: boolean
   readonly tournamentName: string | null
+  readonly strategyEvidenceEligible: boolean
+  readonly policyFaultIncidentId: string | null
 }
 
 /** A page of global games plus the total count (for the pager). */

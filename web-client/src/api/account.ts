@@ -313,6 +313,9 @@ export interface GameHistoryEntry {
   readonly gameId: string
   /** True when a compact replay was stored for this game and can be watched/shared. */
   readonly hasReplay: boolean
+  /** False is a software interruption, not a strategy outcome. */
+  readonly strategyEvidenceEligible: boolean
+  readonly policyFaultIncidentId: string | null
 }
 
 export interface CardStat {
@@ -424,6 +427,8 @@ export interface GameDecks {
   readonly gameId: string
   readonly endedAt: string
   readonly gameMode: string | null
+  readonly strategyEvidenceEligible: boolean
+  readonly policyFaultIncidentId: string | null
   readonly participants: GameDeckParticipant[]
 }
 

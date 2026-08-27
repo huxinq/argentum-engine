@@ -40,7 +40,13 @@ class GameSimulator(
      * `GameSimulator` built anywhere else keeps its historical horizon.
      */
     private val resolveThroughCombatDamage: Boolean = false,
+    /** Maximum actions supplied by this simulator after the caller's submitted action. */
+    private val maxAutomaticTransitions: Int = 100,
 ) {
+    init {
+        require(maxAutomaticTransitions > 0)
+    }
+
     /**
      * Optional resolver for non-trivial decisions encountered during simulation.
      * Set after constructing the [DecisionResponder] to enable full spell resolution
@@ -56,12 +62,11 @@ class GameSimulator(
      *  evaluating alternatives) should NOT re-enter the resolver. */
     private var isResolving = false
     /**
-     * Simulate an action and resolve the stack to completion.
-     *
-     * After executing the action, both players auto-pass priority until
-     * the stack is empty (spells resolve) or a non-trivial decision is needed.
-     * This ensures the evaluator sees the actual effect of casting a spell,
-     * not just "spell on stack, lands tapped".
+     * Apply one submitted action, then use this legacy AI policy to answer validator-proven
+     * singleton decisions and pass priority for both players. It stops when the game ends, another
+     * player choice is required, the declared evaluation boundary is reached, or
+     * [maxAutomaticTransitions] is exhausted. The latter retains an unfinished state as
+     * [SimulationResult.StoppedAtLimit]; it is never a completed evaluation or game outcome.
      */
     fun simulate(state: GameState, action: GameAction): SimulationResult {
         val result = processor.process(state, action).result
@@ -140,19 +145,25 @@ class GameSimulator(
         var current = result
         var allEvents = result.events
         var iterations = 0
-        val maxIterations = 100
 
-        while (iterations < maxIterations) {
+        while (true) {
             val error = current.error
             if (error != null) {
                 return SimulationResult.Illegal(current.state, allEvents, error)
             }
 
+            if (current.state.gameOver) {
+                return SimulationResult.GameEnded(current.state, allEvents)
+            }
+
             // Auto-resolve trivial decisions; use decisionResolver for non-trivial ones
             if (current.isPaused) {
                 val decision = current.pendingDecision!!
-                val trivialResponse = trivialResponseFor(decision)
+                val trivialResponse = trivialResponseFor(current.state, decision)
                 if (trivialResponse != null) {
+                    if (iterations >= maxAutomaticTransitions) {
+                        return stoppedAtLimit(current, allEvents, iterations)
+                    }
                     val submitAction = SubmitDecision(decision.playerId, trivialResponse)
                     current = process(
                         current.state,
@@ -168,6 +179,9 @@ class GameSimulator(
                 // inner simulations from DecisionResponder evaluating alternatives break here)
                 val resolver = decisionResolver
                 if (resolver != null && !isResolving) {
+                    if (iterations >= maxAutomaticTransitions) {
+                        return stoppedAtLimit(current, allEvents, iterations)
+                    }
                     try {
                         isResolving = true
                         val response = resolver(current.state, decision)
@@ -185,7 +199,7 @@ class GameSimulator(
                     }
                     continue
                 }
-                break
+                return SimulationResult.NeedsDecision(current.state, decision, allEvents)
             }
 
             // Stack is non-empty — auto-pass priority for whoever has it
@@ -194,6 +208,9 @@ class GameSimulator(
             val state = current.state
             val priorityPlayerId = state.priorityPlayerId
             if (state.stack.isNotEmpty() && priorityPlayerId != null && !state.gameOver) {
+                if (iterations >= maxAutomaticTransitions) {
+                    return stoppedAtLimit(current, allEvents, iterations)
+                }
                 val passAction = PassPriority(priorityPlayerId)
                 current = process(state, passAction, SimulationActionOrigin.AUTO_PASS, trace)
                 allEvents = allEvents + current.events
@@ -205,7 +222,12 @@ class GameSimulator(
             // blockers already declared it is a *pre-damage* state, and the whole point of the
             // candidate may be the damage; pass priority to advance the step and look again.
             if (resolveThroughCombatDamage && isPreDamageCombatState(state)) {
-                if (priorityPlayerId == null || state.gameOver) break
+                if (priorityPlayerId == null || state.gameOver) {
+                    return SimulationResult.Quiet(state, allEvents)
+                }
+                if (iterations >= maxAutomaticTransitions) {
+                    return stoppedAtLimit(current, allEvents, iterations)
+                }
                 current = process(
                     state,
                     PassPriority(priorityPlayerId),
@@ -217,19 +239,20 @@ class GameSimulator(
                 continue
             }
 
-            break
-        }
-
-        val finalError = current.error
-        return when {
-            finalError != null ->
-                SimulationResult.Illegal(current.state, allEvents, finalError)
-            current.isPaused ->
-                SimulationResult.NeedsDecision(current.state, current.pendingDecision!!, allEvents)
-            else ->
-                SimulationResult.Terminal(current.state, allEvents)
+            return SimulationResult.Quiet(state, allEvents)
         }
     }
+
+    private fun stoppedAtLimit(
+        current: ExecutionResult,
+        events: List<GameEvent>,
+        automaticTransitions: Int,
+    ): SimulationResult.StoppedAtLimit = SimulationResult.StoppedAtLimit(
+        state = current.state,
+        events = events,
+        automaticTransitions = automaticTransitions,
+        limit = maxAutomaticTransitions,
+    )
 
     private fun process(
         state: GameState,
@@ -267,8 +290,8 @@ class GameSimulator(
      * as the simulator does — a playout that diverged here would make rollout scores incomparable
      * with the static ones they replace, for no benefit.
      */
-    private fun trivialResponseFor(decision: PendingDecision): DecisionResponse? =
-        TrivialDecisions.responseFor(decision)
+    private fun trivialResponseFor(state: GameState, decision: PendingDecision): DecisionResponse? =
+        TrivialDecisions.responseFor(state, decision)
 
     /**
      * True while combat damage is still ahead of us and nothing but priority stands in its way.

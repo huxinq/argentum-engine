@@ -74,7 +74,10 @@ data class TournamentMatch(
     var isDraw: Boolean = false,
     var isComplete: Boolean = false,
     var player1GameWins: Int = 0,
-    var player2GameWins: Int = 0
+    var player2GameWins: Int = 0,
+    /** A software-origin no-contest is held, not a draw/result and never affects standings. */
+    var policyFaultIncidentId: String? = null,
+    var policyFaultCode: String? = null,
 ) {
     val isBye: Boolean get() = player2Id == null
 
@@ -242,7 +245,9 @@ class TournamentManager(
             .find { m -> m.gameSessionId == gameSessionId }
             ?: return
 
-        if (match.isComplete) return
+        // A policy-fault table is deliberately held outside the result pipeline. A delayed or
+        // duplicated ordinary callback must not turn that operational incident into standings.
+        if (match.isComplete || match.policyFaultIncidentId != null) return
 
         match.isComplete = true
 
@@ -280,13 +285,32 @@ class TournamentManager(
     }
 
     /**
+     * Mark only the affected launched table as held.  In particular, do not complete the match,
+     * increment win/loss/draw/game counters, or consult standings/tiebreakers.  The game-session
+     * binding and incident identity make retries of the host callback harmless.
+     */
+    fun holdPolicyFaultNoContest(gameSessionId: String, incidentId: String, code: String): Boolean {
+        val match = rounds.asSequence().flatMap { it.matches.asSequence() }
+            .find { it.gameSessionId == gameSessionId } ?: return false
+        if (match.policyFaultIncidentId == incidentId) return true
+        if (match.isComplete || match.policyFaultIncidentId != null) return false
+        match.policyFaultIncidentId = incidentId
+        match.policyFaultCode = code
+        logger.warn("Held tournament match {} as policy-fault no-contest {}", gameSessionId, incidentId)
+        return true
+    }
+
+    /**
      * Record an auto-loss for a player who abandoned the tournament.
      */
     fun recordAbandon(playerId: EntityId) {
         // Record losses for all remaining matches
         for (round in rounds) {
             for (match in round.matches) {
-                if (match.isComplete) continue
+                // Leaving the lobby is not an implicit recovery decision for a software-held
+                // table. Preserve that no-contest while still forfeiting the player's other
+                // unplayed matches.
+                if (match.isComplete || match.policyFaultIncidentId != null) continue
                 if (match.player1Id == playerId || match.player2Id == playerId) {
                     match.isComplete = true
                     val opponentId = if (match.player1Id == playerId) match.player2Id else match.player1Id
@@ -532,7 +556,8 @@ class TournamentManager(
                 player2Id = match.player2Id?.value,
                 winnerId = match.winnerId?.value,
                 isDraw = match.isDraw,
-                isBye = match.isBye
+                isBye = match.isBye,
+                policyFaultIncidentId = match.policyFaultIncidentId,
             )
         }
     }
@@ -666,7 +691,8 @@ class TournamentManager(
                 player2Id = match.player2Id?.value,
                 winnerId = match.winnerId?.value,
                 isDraw = match.isDraw,
-                isBye = match.isBye
+                isBye = match.isBye,
+                policyFaultIncidentId = match.policyFaultIncidentId,
             )
         }
     }

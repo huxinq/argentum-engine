@@ -186,6 +186,42 @@ sealed interface ServerMessage {
     ) : ServerMessage
 
     /**
+     * Host-level interruption, not a Magic result. The engine state remains authoritative and
+     * unchanged until an explicit incident-id-bound recovery command succeeds.
+     */
+    @Serializable
+    @SerialName("policyFaultPaused")
+    data class PolicyFaultPaused(
+        val gameId: String,
+        val incidentId: String,
+        val failingSeatId: EntityId,
+        val code: String,
+        val canRetry: Boolean,
+        val canTransferControl: Boolean,
+        val canConcede: Boolean,
+        /** Process-lifetime only; a restart cannot safely recover this pause yet. */
+        val recoveryPersistence: String = "PROCESS_LIFETIME",
+    ) : ServerMessage
+
+    @Serializable
+    @SerialName("policyFaultRecovered")
+    data class PolicyFaultRecovered(
+        val gameId: String,
+        val incidentId: String,
+        val recovery: String,
+    ) : ServerMessage
+
+    /** A policy-fault concession ended a hosted game but is held outside standings and placements. */
+    @Serializable
+    @SerialName("policyFaultNoContest")
+    data class PolicyFaultNoContest(
+        val lobbyId: String,
+        val gameId: String,
+        val incidentId: String,
+        val code: String,
+    ) : ServerMessage
+
+    /**
      * Game has ended.
      */
     @Serializable
@@ -735,7 +771,9 @@ sealed interface ServerMessage {
         val player2Id: String?,
         val winnerId: String?,
         val isDraw: Boolean = false,
-        val isBye: Boolean = false
+        val isBye: Boolean = false,
+        /** Not a draw: software-origin result held outside all standings mutations. */
+        val policyFaultIncidentId: String? = null,
     )
 
     /**

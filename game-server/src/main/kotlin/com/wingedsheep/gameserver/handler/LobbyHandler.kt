@@ -182,12 +182,24 @@ class LobbyHandler(
         }
     }
 
-    fun handleMatchResult(lobbyId: String, gameSessionId: String, winnerId: EntityId?, winnerLifeRemaining: Int) {
+    fun handleMatchResult(lobbyId: String, gameSessionId: String, outcome: LobbyGameOutcome) {
         val lobby = lobbyRepository.findLobbyById(lobbyId)
         if (lobby?.isFreeForAll == true) {
-            freeForAllHandler.handleGameComplete(lobbyId, gameSessionId, winnerId)
+            when (outcome) {
+                is LobbyGameOutcome.Result -> freeForAllHandler.handleGameComplete(lobbyId, gameSessionId, outcome.winnerId)
+                is LobbyGameOutcome.PolicyFaultNoContest -> freeForAllHandler.handlePolicyFaultNoContest(
+                    lobbyId, gameSessionId, outcome.incidentId, outcome.code,
+                )
+            }
         } else {
-            tournamentMatchHandler.handleMatchResult(lobbyId, gameSessionId, winnerId, winnerLifeRemaining)
+            when (outcome) {
+                is LobbyGameOutcome.Result -> tournamentMatchHandler.handleMatchResult(
+                    lobbyId, gameSessionId, outcome.winnerId, outcome.winnerLifeRemaining,
+                )
+                is LobbyGameOutcome.PolicyFaultNoContest -> tournamentMatchHandler.handlePolicyFaultNoContest(
+                    lobbyId, gameSessionId, outcome.incidentId, outcome.code,
+                )
+            }
         }
     }
 

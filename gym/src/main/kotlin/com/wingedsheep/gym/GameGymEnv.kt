@@ -26,7 +26,7 @@ class GameGymEnv(
     val environment: GameEnvironment,
     private var perspectivePlayerIndex: Int,
     private var defaultRevealAll: Boolean,
-    private val observationBuilder: ObservationBuilder = ObservationBuilder(),
+    private val observationBuilder: ObservationBuilder = ObservationBuilder(environment.cardRegistry),
     private var perspectiveMode: ObservationPerspective = ObservationPerspective.ACTING_PLAYER,
 ) : GymEnv {
 

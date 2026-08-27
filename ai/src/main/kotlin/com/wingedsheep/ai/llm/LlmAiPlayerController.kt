@@ -2,6 +2,7 @@ package com.wingedsheep.ai.llm
 
 import com.wingedsheep.ai.ActionResponse
 import com.wingedsheep.ai.AiPlayerController
+import com.wingedsheep.ai.ResponsiblePolicyUnavailableException
 import com.wingedsheep.ai.llm.decision.AiDecisionHandlerRegistry
 import com.wingedsheep.engine.view.ClientGameState
 import com.wingedsheep.engine.view.LegalActionInfo
@@ -82,40 +83,30 @@ class LlmAiPlayerController(
         pendingDecision: PendingDecision?,
         recentGameLog: List<String>
     ): ActionResponse {
-        // Shortcut: only one legal action (usually PassPriority)
-        // Exception: DeclareAttackers/DeclareBlockers come as the only action but need
-        // their attacker/blocker maps filled in — don't auto-submit with empty maps.
+        // The authoritative list independently proves a lone PassPriority response is forced.
+        // Other singleton action templates may still contain targets, modes, or payments.
         if (legalActions.size == 1 && pendingDecision == null) {
             val onlyAction = legalActions[0]
-            if (onlyAction.actionType != "DeclareAttackers" && onlyAction.actionType != "DeclareBlockers") {
-                logger.info("AI auto-selecting only legal action: {}", onlyAction.actionType)
+            if (onlyAction.actionType == "PassPriority") {
+                logger.info("AI auto-selecting rules-singleton PassPriority")
                 return ActionResponse.SubmitAction(onlyAction.action)
             }
         }
 
-        // Shortcut: pending decision with auto-resolve via handler
-        if (pendingDecision != null) {
-            val handler = decisionRegistry.getHandler(pendingDecision)
-            if (handler != null) {
-                if (handler.canAutoResolve(pendingDecision)) {
-                    logger.info("AI auto-resolved decision: {}", pendingDecision::class.simpleName)
-                    return ActionResponse.SubmitDecision(playerId, handler.autoResolve(pendingDecision))
-                }
-            }
-        }
-
         // Shortcut: handle combat declarations heuristically (LLM can't build attacker/blocker maps)
-        val combatAction = tryCombatAction(state, legalActions)
+        val combatAction = tryCombatAction(state, legalActions, recentGameLog)
         if (combatAction != null) return combatAction
 
         // Filter out mana abilities — the engine auto-pays mana when casting spells,
         // so manually tapping lands is never useful and wastes resources.
         val filteredActions = legalActions.filter { !it.isManaAbility }
 
-        // If filtering removed everything except pass, just pass
-        if (filteredActions.size == 1 && filteredActions[0].actionType == "PassPriority") {
-            logger.info("AI auto-passing: only non-mana action is PassPriority")
-            return ActionResponse.SubmitAction(filteredActions[0].action)
+        if (filteredActions.isEmpty()) {
+            return fallback?.chooseAction(state, legalActions, pendingDecision, recentGameLog)
+                ?: throw ResponsiblePolicyUnavailableException(
+                    pendingDecision?.let { it::class.simpleName } ?: "ACTION",
+                    "no policy-visible legal action",
+                )
         }
 
         // Format state and query LLM
@@ -167,11 +158,10 @@ class LlmAiPlayerController(
             return fallback.chooseAction(state, legalActions, pendingDecision, recentGameLog)
         }
 
-        // Last-resort: no fallback configured, just pass
-        logger.warn("AI no fallback configured, passing priority")
-        val passAction = legalActions.find { it.actionType == "PassPriority" }
-        if (passAction != null) return ActionResponse.SubmitAction(passAction.action)
-        return ActionResponse.SubmitAction(legalActions.first().action)
+        throw ResponsiblePolicyUnavailableException(
+            pendingDecision?.let { it::class.simpleName } ?: "ACTION",
+            "LLM produced no parseable response and no fallback policy is configured",
+        )
     }
 
     /**
@@ -193,12 +183,6 @@ class LlmAiPlayerController(
         }
         val prompt = formatter.formatMulligan(cardDisplays, mulliganMessage.mulliganCount, mulliganMessage.isOnThePlay)
 
-        // Shortcut: always keep if mulliganCount >= 3 (5 or fewer cards)
-        if (mulliganMessage.mulliganCount >= 3) {
-            logger.info("AI keeping hand after ${mulliganMessage.mulliganCount} mulligans (auto-keep)")
-            return true
-        }
-
         logger.info("AI mulligan prompt ({} chars):\n{}", prompt.length, prompt)
         val response = queryLlmEphemeral(prompt)
         if (response != null) {
@@ -216,10 +200,10 @@ class LlmAiPlayerController(
             return fallback.decideMulligan(mulliganMessage)
         }
 
-        // Last-resort: keep if mulliganCount >= 2
-        val keep = mulliganMessage.mulliganCount >= 2
-        logger.info("AI mulligan last-resort: ${if (keep) "keep" else "mulligan"}")
-        return keep
+        throw ResponsiblePolicyUnavailableException(
+            "MULLIGAN",
+            "LLM produced no parseable response and no fallback policy is configured",
+        )
     }
 
     /**
@@ -263,8 +247,10 @@ class LlmAiPlayerController(
             return fallback.chooseBottomCards(message)
         }
 
-        // Last-resort: bottom the last N cards
-        return hand.takeLast(cardCount)
+        throw ResponsiblePolicyUnavailableException(
+            "BOTTOM_CARDS",
+            "LLM produced no valid bottom-card selection and no fallback policy is configured",
+        )
     }
 
     // =========================================================================
@@ -324,7 +310,7 @@ class LlmAiPlayerController(
 
         val index = parser.parseActionChoice(cleaned, legalActions.size - 1) ?: return null
         val chosen = legalActions[index]
-        val action = maybeAddTargets(chosen, state)
+        val action = maybeAddTargets(chosen, state) ?: return null
         return ActionResponse.SubmitAction(action)
     }
 
@@ -378,10 +364,9 @@ class LlmAiPlayerController(
     }
 
     /**
-     * If a legal action requires targets, auto-select the first valid target for each requirement
-     * and return the action with targets filled in.
+     * Fill targets only when the authoritative presentation proves one complete response.
      */
-    private fun maybeAddTargets(legalAction: LegalActionInfo, state: ClientGameState? = null): GameAction {
+    private fun maybeAddTargets(legalAction: LegalActionInfo, state: ClientGameState? = null): GameAction? {
         if (!legalAction.requiresTargets) return legalAction.action
 
         val playerIds = state?.players?.map { it.playerId }?.toSet() ?: emptySet()
@@ -391,109 +376,36 @@ class LlmAiPlayerController(
         val laValidTargets = legalAction.validTargets
         if (!laTargetReqs.isNullOrEmpty()) {
             for (req in laTargetReqs) {
-                val validTargets = req.validTargets
-                if (validTargets.isEmpty()) continue
-                val targetId = pickBestTarget(validTargets, legalAction, state)
-                val target = resolveTargetType(targetId, req.targetZone, playerIds)
-                targets.add(target)
-                logger.info("AI auto-targeting req {}: {} -> {} ({})", req.index, req.description, targetId.value, target::class.simpleName)
+                val validTargets = req.validTargets.distinct()
+                if (validTargets.isEmpty() || validTargets.size != req.minTargets ||
+                    validTargets.size != req.maxTargets || req.xConstrainsManaValue ||
+                    req.xConstrainsManaValueExactly || req.xConstrainsPower || req.xConstrainsCount
+                ) return null
+                validTargets.forEach { targetId ->
+                    targets += resolveTargetType(targetId, req.targetZone, playerIds, state)
+                }
             }
         } else if (!laValidTargets.isNullOrEmpty()) {
-            val targetId = pickBestTarget(laValidTargets, legalAction, state)
-            val target = resolveTargetType(targetId, null, playerIds, state)
-            targets.add(target)
-            logger.info("AI auto-targeting (single): {} -> {} ({})",
-                legalAction.targetDescription ?: legalAction.description, targetId.value, target::class.simpleName)
+            val validTargets = laValidTargets.distinct()
+            if (validTargets.isEmpty() || validTargets.size != legalAction.minTargets ||
+                validTargets.size != legalAction.targetCount ||
+                legalAction.xConstrainsTargetManaValue ||
+                legalAction.xConstrainsTargetManaValueExactly ||
+                legalAction.xConstrainsTargetPower || legalAction.xConstrainsTargetCount
+            ) return null
+            validTargets.forEach { targetId ->
+                targets += resolveTargetType(targetId, null, playerIds, state)
+            }
+        } else {
+            return null
         }
-
-        if (targets.isEmpty()) {
-            logger.warn("AI maybeAddTargets: requiresTargets=true but no valid targets found for {}",
-                legalAction.description)
-            return legalAction.action
-        }
-
-        logger.info("AI targeting: {} targets for {}", targets.size, legalAction.description)
 
         return when (val action = legalAction.action) {
             is CastSpell -> action.copy(targets = targets)
             is ActivateAbility -> action.copy(targets = targets)
-            else -> action
+            else -> null
         }
     }
-
-    /**
-     * Heuristic target selection when the LLM didn't specify a target.
-     *
-     * For harmful effects (destroy, damage, exile, -X/-X, etc.) → prefer opponent's creatures.
-     * For beneficial effects (pump, prevent, protect, etc.) → prefer own creatures.
-     * Falls back to first valid target if we can't determine the effect type.
-     */
-    private fun pickBestTarget(
-        validTargets: List<EntityId>,
-        legalAction: LegalActionInfo,
-        state: ClientGameState?
-    ): EntityId {
-        if (validTargets.size == 1 || state == null) return validTargets.first()
-
-        val description = legalAction.description.lowercase() +
-            " " + (legalAction.targetDescription?.lowercase() ?: "")
-
-        // Also check the oracle text of the card being cast for effect classification
-        val oracleText = legalAction.action.let { action ->
-            if (action is CastSpell) {
-                state.cards[action.cardId]?.oracleText?.lowercase() ?: ""
-            } else ""
-        }
-        val fullText = "$description $oracleText"
-
-        val isHarmful = fullText.containsAny(
-            "destroy", "damage", "exile", "sacrifice", "return to",
-            "-1/-1", "-2/-2", "-3/-3", "-4/-4", "-5/-5",
-            "debilitating", "murder", "kill", "burn", "remove",
-            "loses", "can't attack", "can't block", "tap target"
-        )
-        val isBeneficial = fullText.containsAny(
-            "prevent", "protect", "regenerate", "+1/+1", "+2/+2", "+3/+3",
-            "+1/+0", "+2/+0", "+3/+0", "+0/+1", "+0/+2", "+0/+3",
-            "pump", "buff", "indestructible", "hexproof", "counter on",
-            "equip", "enchant", "attach", "gets +", "gains ",
-            "first strike", "haste", "flying", "trample", "lifelink",
-            "vigilance", "deathtouch", "double strike", "unblockable"
-        )
-
-        val myId = state.viewingPlayerId
-
-        // Separate targets into own vs opponent's
-        val opponentTargets = validTargets.filter { tid ->
-            val card = state.cards[tid]
-            card != null && card.controllerId != myId
-        }
-        val ownTargets = validTargets.filter { tid ->
-            val card = state.cards[tid]
-            card != null && card.controllerId == myId
-        }
-
-        val preferred = when {
-            isBeneficial && ownTargets.isNotEmpty() -> ownTargets
-            isHarmful && opponentTargets.isNotEmpty() -> opponentTargets
-            // Default: for spells WE cast, assume harmful → target opponent
-            !isBeneficial && opponentTargets.isNotEmpty() -> opponentTargets
-            else -> validTargets
-        }
-
-        // Among preferred targets, pick the biggest threat (highest power)
-        val best = preferred.maxByOrNull { tid ->
-            state.cards[tid]?.power ?: 0
-        } ?: preferred.first()
-
-        logger.info("AI pickBestTarget: harmful={}, beneficial={}, chose {} from {} valid targets",
-            isHarmful, isBeneficial, state.cards[best]?.name ?: best.value, validTargets.size)
-
-        return best
-    }
-
-    private fun String.containsAny(vararg keywords: String): Boolean =
-        keywords.any { this.contains(it) }
 
     private fun extractAnswer(response: String): String? {
         val match = Regex("""<answer>(.*?)</answer>""", RegexOption.DOT_MATCHES_ALL).find(response)
@@ -541,12 +453,13 @@ class LlmAiPlayerController(
     }
 
     /**
-     * Handle combat declarations by asking the LLM which creatures to attack/block with.
-     * Falls back to heuristics if parsing fails.
+     * Handle combat declarations by asking the responsible policy which creatures act.
+     * An unparseable answer routes to the configured policy fallback or fails visibly.
      */
     private fun tryCombatAction(
         state: ClientGameState,
-        legalActions: List<LegalActionInfo>
+        legalActions: List<LegalActionInfo>,
+        recentGameLog: List<String>,
     ): ActionResponse? {
         val declareAttackers = legalActions.find { it.actionType == "DeclareAttackers" }
         if (declareAttackers != null) {
@@ -557,7 +470,9 @@ class LlmAiPlayerController(
             }
 
             val opponentId = state.players.find { it.playerId != state.viewingPlayerId }?.playerId
-                ?: return ActionResponse.SubmitAction(declareAttackers.action)
+                ?: return combatFallbackOrFail(
+                    state, legalActions, recentGameLog, "attacking player has no opponent",
+                )
 
             // Build attack target list: opponent player + any planeswalkers that can be attacked
             val validAttackTargets = declareAttackers.validAttackTargets ?: emptyList()
@@ -628,49 +543,55 @@ class LlmAiPlayerController(
             }
 
             logger.info("AI attack prompt ({} chars):\n{}", prompt.length, prompt)
-            val response = queryLlmEphemeral(prompt)
+            val response = queryLlmEphemeral(prompt) ?: return combatFallbackOrFail(
+                state,
+                legalActions,
+                recentGameLog,
+                "LLM did not answer attacker declaration",
+            )
             val attackerMap = mutableMapOf<EntityId, EntityId>()
 
-            if (response != null) {
-                logger.info("AI combat LLM response: {}", response)
-                val answerText = extractAnswer(response) ?: response
-                val upper = answerText.trim().uppercase()
-                if (upper != "NONE" && upper != "PASS" && upper != "NO") {
-                    // Parse attacker assignments, supporting "A, B->1, C" format
-                    val assignmentPattern = Regex("""([A-Z])\s*(?:->|→)\s*(\d+)""", RegexOption.IGNORE_CASE)
-                    val assignmentMatches = assignmentPattern.findAll(answerText).associate { m ->
-                        val attackerIdx = GameStateFormatter.letterToIndex(m.groupValues[1])
-                        val pwNum = m.groupValues[2].toIntOrNull()?.minus(1)
-                        attackerIdx to pwNum
-                    }
-
-                    val indices = parser.parseMultipleSelections(answerText, validAttackers.size - 1)
-                    if (indices != null) {
-                        for (idx in indices) {
-                            if (idx < validAttackers.size) {
-                                // Check if this attacker has a planeswalker assignment
-                                val pwIdx = assignmentMatches[idx]
-                                val targetId = if (pwIdx != null && pwIdx in planeswalkerTargets.indices) {
-                                    planeswalkerTargets[pwIdx].first
-                                } else {
-                                    opponentId
-                                }
-                                attackerMap[validAttackers[idx]] = targetId
-                            }
-                        }
-                    } else {
-                        logger.info("AI combat: failed to parse attacker selection, attacking with all")
-                        for (attackerId in validAttackers) {
-                            val card = state.cards[attackerId] ?: continue
-                            if ((card.power ?: 0) > 0) attackerMap[attackerId] = opponentId
-                        }
-                    }
+            logger.info("AI combat LLM response: {}", response)
+            val answerText = extractAnswer(response) ?: response
+            val upper = answerText.trim().uppercase()
+            if (upper != "NONE" && upper != "PASS" && upper != "NO") {
+                val assignmentPattern = Regex("""([A-Z])\s*(?:->|→)\s*(\d+)""", RegexOption.IGNORE_CASE)
+                val assignmentMatches = assignmentPattern.findAll(answerText).associate { match ->
+                    GameStateFormatter.letterToIndex(match.groupValues[1]) to
+                        match.groupValues[2].toIntOrNull()?.minus(1)
                 }
-            } else {
-                logger.info("AI combat: LLM failed, attacking with all")
-                for (attackerId in validAttackers) {
-                    val card = state.cards[attackerId] ?: continue
-                    if ((card.power ?: 0) > 0) attackerMap[attackerId] = opponentId
+                val indices = parser.parseMultipleSelections(answerText, validAttackers.size - 1)
+                    ?: return combatFallbackOrFail(
+                        state, legalActions, recentGameLog, "unparseable attacker declaration",
+                    )
+                for (index in indices) {
+                    if (index !in validAttackers.indices) {
+                        return combatFallbackOrFail(
+                            state, legalActions, recentGameLog, "invalid attacker index",
+                        )
+                    }
+                    val planeswalkerIndex = assignmentMatches[index]
+                    if (planeswalkerTargets.isNotEmpty() && planeswalkerIndex == null) {
+                        return combatFallbackOrFail(
+                            state,
+                            legalActions,
+                            recentGameLog,
+                            "attacker target omitted while multiple defenders were available",
+                        )
+                    }
+                    if (planeswalkerIndex != null && planeswalkerIndex !in planeswalkerTargets.indices) {
+                        return combatFallbackOrFail(
+                            state, legalActions, recentGameLog, "invalid attacker target",
+                        )
+                    }
+                    val targetId = if (planeswalkerIndex != null &&
+                        planeswalkerIndex in planeswalkerTargets.indices
+                    ) {
+                        planeswalkerTargets[planeswalkerIndex].first
+                    } else {
+                        opponentId
+                    }
+                    attackerMap[validAttackers[index]] = targetId
                 }
             }
 
@@ -740,45 +661,48 @@ class LlmAiPlayerController(
             }
 
             logger.info("AI block prompt ({} chars):\n{}", prompt.length, prompt)
-            val response = queryLlmEphemeral(prompt)
+            val response = queryLlmEphemeral(prompt) ?: return combatFallbackOrFail(
+                state,
+                legalActions,
+                recentGameLog,
+                "LLM did not answer blocker declaration",
+            )
             val blockerMap = mutableMapOf<EntityId, List<EntityId>>()
 
-            if (response != null) {
-                logger.info("AI combat LLM response: {}", response)
-                val answerText = extractAnswer(response) ?: response
-                val upper = answerText.trim().uppercase()
-                if (upper != "NONE" && upper != "PASS" && upper != "NO") {
-                    val blockPattern = Regex("""([A-Z])\s*(?:blocks?|->|→|:)\s*(\d+)""", RegexOption.IGNORE_CASE)
-                    val matches = blockPattern.findAll(answerText).toList()
-                    // Group by blocker — each blocker blocks one attacker (the blockerMap key is blocker, value is list of attackers)
-                    for (m in matches) {
-                        val blockerIdx = GameStateFormatter.letterToIndex(m.groupValues[1])
-                        val attackerNum = m.groupValues[2].toIntOrNull()?.minus(1)
-                        if (blockerIdx != null && blockerIdx < validBlockers.size &&
-                            attackerNum != null && attackerNum < combat.attackers.size) {
-                            val blockerId = validBlockers[blockerIdx]
-                            val attackerId = combat.attackers[attackerNum].creatureId
-                            blockerMap[blockerId] = listOf(attackerId)
-                            logger.info("AI combat: {} blocks {}",
-                                state.cards[blockerId]?.name, state.cards[attackerId]?.name)
-                        }
+            logger.info("AI combat LLM response: {}", response)
+            val answerText = extractAnswer(response) ?: response
+            val upper = answerText.trim().uppercase()
+            if (upper != "NONE" && upper != "PASS" && upper != "NO") {
+                val blockPattern = Regex("""([A-Z])\s*(?:blocks?|->|→|:)\s*(\d+)""", RegexOption.IGNORE_CASE)
+                val matches = blockPattern.findAll(answerText).toList()
+                if (matches.isEmpty()) {
+                    return combatFallbackOrFail(
+                        state, legalActions, recentGameLog, "unparseable blocker declaration",
+                    )
+                }
+                for (match in matches) {
+                    val blockerIndex = GameStateFormatter.letterToIndex(match.groupValues[1])
+                    val attackerIndex = match.groupValues[2].toIntOrNull()?.minus(1)
+                    if (blockerIndex == null || blockerIndex !in validBlockers.indices ||
+                        attackerIndex == null || attackerIndex !in combat.attackers.indices
+                    ) {
+                        return combatFallbackOrFail(
+                            state, legalActions, recentGameLog, "invalid blocker assignment",
+                        )
                     }
-                    if (matches.isEmpty()) {
-                        val indices = parser.parseMultipleSelections(answerText, validBlockers.size - 1)
-                        if (indices != null && combat.attackers.isNotEmpty()) {
-                            val firstAttacker = combat.attackers.first().creatureId
-                            for (idx in indices) {
-                                if (idx < validBlockers.size) {
-                                    blockerMap[validBlockers[idx]] = listOf(firstAttacker)
-                                }
-                            }
-                        }
-                    }
+                    val blockerId = validBlockers[blockerIndex]
+                    val attackerId = combat.attackers[attackerIndex].creatureId
+                    blockerMap[blockerId] = listOf(attackerId)
+                    logger.info(
+                        "AI combat: {} blocks {}",
+                        state.cards[blockerId]?.name,
+                        state.cards[attackerId]?.name,
+                    )
                 }
             }
 
             if (blockerMap.isEmpty()) {
-                logger.info("AI combat: no blocks declared")
+                logger.info("AI combat: responsible policy declared no blocks")
             }
 
             return ActionResponse.SubmitAction(DeclareBlockers(playerId, blockerMap))
@@ -786,6 +710,14 @@ class LlmAiPlayerController(
 
         return null
     }
+
+    private fun combatFallbackOrFail(
+        state: ClientGameState,
+        legalActions: List<LegalActionInfo>,
+        recentGameLog: List<String>,
+        diagnostic: String,
+    ): ActionResponse = fallback?.chooseAction(state, legalActions, null, recentGameLog)
+        ?: throw ResponsiblePolicyUnavailableException("COMBAT_DECLARATION", diagnostic)
 
     // =========================================================================
     // Draft Picking (LLM)

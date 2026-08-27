@@ -10,7 +10,9 @@ import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.engine.support.GameTestDriver
 import com.wingedsheep.engine.support.TestCards
 import com.wingedsheep.mtg.sets.MtgSetCatalog
+import com.wingedsheep.sdk.core.Color
 import com.wingedsheep.sdk.core.Phase
+import com.wingedsheep.sdk.core.Step
 import com.wingedsheep.sdk.dsl.Costs
 import com.wingedsheep.sdk.dsl.Effects
 import com.wingedsheep.sdk.dsl.Targets
@@ -18,6 +20,7 @@ import com.wingedsheep.sdk.dsl.card
 import com.wingedsheep.sdk.model.Deck
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.comparables.shouldBeGreaterThan
 import io.kotest.matchers.ints.shouldBeGreaterThan
@@ -127,11 +130,51 @@ class AIPlayerTest : FunSpec({
         for (action in actions.filter { it.affordable }) {
             val result = simulator.simulate(state, action.action)
             when (result) {
-                is SimulationResult.Terminal -> result.state.shouldNotBeNull()
+                is SimulationResult.GameEnded -> result.state.shouldNotBeNull()
+                is SimulationResult.Quiet -> result.state.shouldNotBeNull()
                 is SimulationResult.NeedsDecision -> result.decision.shouldNotBeNull()
                 is SimulationResult.Illegal -> {}
+                is SimulationResult.StoppedAtLimit -> result.state.shouldNotBeNull()
             }
         }
+    }
+
+    test("simulator distinguishes quiet game-ended and transition-limit outcomes") {
+        val registry = CardRegistry().apply { register(TestCards.all) }
+        val driver = GameTestDriver().apply {
+            registerCards(TestCards.all)
+            initMirrorMatch(Deck.of("Mountain" to 20), startingLife = 20)
+            passPriorityUntil(Step.PRECOMBAT_MAIN)
+        }
+        val caster = driver.player1
+        val opponent = driver.player2
+        val bolt = driver.putCardInHand(caster, "Lightning Bolt")
+        driver.giveMana(caster, Color.RED, 1)
+        val cast = CastSpell(
+            playerId = caster,
+            cardId = bolt,
+            targets = listOf(ChosenTarget.Player(opponent)),
+            paymentStrategy = PaymentStrategy.FromPool,
+        )
+
+        val stopped = GameSimulator(registry, maxAutomaticTransitions = 1)
+            .simulate(driver.state, cast)
+            .shouldBeInstanceOf<SimulationResult.StoppedAtLimit>()
+        stopped.automaticTransitions shouldBe 1
+        stopped.limit shouldBe 1
+        stopped.state.stack.shouldNotBeEmpty()
+        stopped.state.gameOver.shouldBeFalse()
+
+        val quiet = GameSimulator(registry).simulate(driver.state, cast)
+            .shouldBeInstanceOf<SimulationResult.Quiet>()
+        quiet.state.stack.isEmpty().shouldBeTrue()
+        quiet.state.gameOver.shouldBeFalse()
+
+        driver.setLifeTotal(opponent, 3)
+        val ended = GameSimulator(registry).simulate(driver.state, cast)
+            .shouldBeInstanceOf<SimulationResult.GameEnded>()
+        ended.state.gameOver.shouldBeTrue()
+        ended.state.winnerId shouldBe caster
     }
 
     test("two AI players can play a full game") {
@@ -293,9 +336,12 @@ class AIPlayerTest : FunSpec({
                     val result = simulator.simulate(state, a.action)
                     val score = evaluator.evaluate(result.state, result.state.projectedState, p1)
                     val resultType = when (result) {
-                        is SimulationResult.Terminal -> "Terminal(stack=${result.state.stack.size})"
+                        is SimulationResult.GameEnded -> "GameEnded(stack=${result.state.stack.size})"
+                        is SimulationResult.Quiet -> "Quiet(stack=${result.state.stack.size})"
                         is SimulationResult.NeedsDecision -> "NeedsDecision(${result.decision::class.simpleName})"
                         is SimulationResult.Illegal -> "Illegal(${result.reason})"
+                        is SimulationResult.StoppedAtLimit ->
+                            "StoppedAtLimit(stack=${result.state.stack.size}, limit=${result.limit})"
                     }
                     println("  ${a.actionType}(${a.description}): score=$score, result=$resultType")
                 }

@@ -69,6 +69,7 @@ export function DeckViewModal({
           <div style={styles.columnsWrap}>
             <GameDeckColumns
               participants={decks.participants}
+              strategyEvidenceEligible={decks.strategyEvidenceEligible}
               renderActions={(p) => <SaveGameDeckButton participant={p} endedAt={decks.endedAt} />}
             />
           </div>

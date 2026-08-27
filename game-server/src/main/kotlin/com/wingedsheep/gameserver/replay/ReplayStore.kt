@@ -56,6 +56,8 @@ data class ReplaySummary(
     val frameCount: Int,
     val tournamentName: String? = null,
     val tournamentRound: Int? = null,
+    val strategyEvidenceEligible: Boolean = true,
+    val policyFaultIncidentId: String? = null,
 )
 
 /**
@@ -249,6 +251,7 @@ class JdbcReplayStore(
 
     override fun findRecentForPlayer(playerId: String, limit: Int): List<ReplaySummary> =
         replays.findRecentForPlayer(playerId, limit).map { row ->
+            val replay = requireNotNull(row.toStored()).replay
             ReplaySummary(
                 gameId = row.gameId,
                 playerNames = row.playerNames.split(", ").filter { it.isNotBlank() },
@@ -258,6 +261,8 @@ class JdbcReplayStore(
                 frameCount = row.frameCount,
                 tournamentName = row.tournamentName,
                 tournamentRound = row.tournamentRound,
+                strategyEvidenceEligible = replay.strategyEvidenceEligible,
+                policyFaultIncidentId = replay.policyFaults.lastOrNull { it.recovery == "CONCEDE" }?.incidentId,
             )
         }
 
@@ -424,4 +429,6 @@ private fun CompactReplay.toSummary() = ReplaySummary(
     frameCount = frameCount,
     tournamentName = tournamentName,
     tournamentRound = tournamentRound,
+    strategyEvidenceEligible = strategyEvidenceEligible,
+    policyFaultIncidentId = policyFaults.lastOrNull { it.recovery == "CONCEDE" }?.incidentId,
 )

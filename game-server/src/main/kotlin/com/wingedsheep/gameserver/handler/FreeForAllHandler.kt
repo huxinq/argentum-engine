@@ -47,6 +47,7 @@ class FreeForAllHandler(
      */
     fun maybeStartGame(lobby: TournamentLobby): Boolean {
         if (!lobby.isFreeForAll) return false
+        if (lobby.ffaHeldNoContestIncidentId != null) return false
         if (lobby.ffaGameSessionId != null) return false
         if (lobby.playerCount < 2) return false
         // Two-Headed Giant needs a full pod — exactly four players for two teams of two (CR 810).
@@ -228,17 +229,17 @@ class FreeForAllHandler(
                 gameSession = gameSession,
                 aiPlayerId = playerId,
                 deckList = lobby.getSubmittedDeck(playerId),
-                onActionReady = { aiPlayerId, action ->
-                    gamePlayHandler.handleAiAction(gameSession, aiPlayerId, action)
+                onActionReady = { aiPlayerId, action, retryId ->
+                    gamePlayHandler.handleAiAction(gameSession, aiPlayerId, action, retryId)
                 },
-                onMulliganKeep = { aiPlayerId ->
-                    gamePlayHandler.handleAiMulliganKeep(gameSession, aiPlayerId)
+                onMulliganKeep = { aiPlayerId, retryId ->
+                    gamePlayHandler.handleAiMulliganKeep(gameSession, aiPlayerId, retryId)
                 },
-                onMulliganTake = { aiPlayerId ->
-                    gamePlayHandler.handleAiMulliganTake(gameSession, aiPlayerId)
+                onMulliganTake = { aiPlayerId, retryId ->
+                    gamePlayHandler.handleAiMulliganTake(gameSession, aiPlayerId, retryId)
                 },
-                onBottomCards = { aiPlayerId, cardIds ->
-                    gamePlayHandler.handleAiBottomCards(gameSession, aiPlayerId, cardIds)
+                onBottomCards = { aiPlayerId, cardIds, retryId ->
+                    gamePlayHandler.handleAiBottomCards(gameSession, aiPlayerId, cardIds, retryId)
                 },
             )
 
@@ -309,6 +310,29 @@ class FreeForAllHandler(
     }
 
     /**
+     * Holds a policy-fault no-contest without assigning FFA placements, advancing the game count,
+     * changing the last standings, or auto-readying seats.  The incident ID makes duplicate host
+     * delivery idempotent and leaves a durable operator-visible reason for the held pod.
+     */
+    fun handlePolicyFaultNoContest(lobbyId: String, gameSessionId: String, incidentId: String, code: String) {
+        val lock = ctx.roundLocks.computeIfAbsent(lobbyId) { Any() }
+        synchronized(lock) {
+            val lobby = ctx.lobbyRepository.findLobbyById(lobbyId) ?: return
+            if (lobby.ffaHeldNoContestIncidentId == incidentId) return
+            if (lobby.ffaGameSessionId != gameSessionId) return
+
+            lobby.ffaGameSessionId = null
+            lobby.ffaHeldNoContestIncidentId = incidentId
+            lobby.ffaHeldNoContestCode = code
+            lobby.clearReadyState()
+            ctx.lobbyRepository.saveLobby(lobby)
+
+            logger.warn("FFA game {} in lobby {} held as policy-fault no-contest {}", gameSessionId, lobbyId, incidentId)
+            broadcastToLobby(lobby, ServerMessage.PolicyFaultNoContest(lobbyId, gameSessionId, incidentId, code))
+        }
+    }
+
+    /**
      * "Play again": mark the player ready; when every connected player is ready (and all decks
      * are still submitted) a new game starts with the same pod.
      */
@@ -319,6 +343,10 @@ class FreeForAllHandler(
         }
         val lock = ctx.roundLocks.computeIfAbsent(lobby.lobbyId) { Any() }
         synchronized(lock) {
+            if (lobby.ffaHeldNoContestIncidentId != null) {
+                ctx.sender.sendError(session, ErrorCode.INVALID_ACTION, "FFA pod is held for policy-fault review")
+                return
+            }
             if (lobby.ffaGameSessionId != null) {
                 ctx.sender.sendError(session, ErrorCode.INVALID_ACTION, "A game is already in progress")
                 return

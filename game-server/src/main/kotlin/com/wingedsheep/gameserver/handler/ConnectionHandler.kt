@@ -483,6 +483,10 @@ class ConnectionHandler(
         gameSession: com.wingedsheep.gameserver.session.GameSession,
         playerId: EntityId,
     ) {
+        if (gameSession.isPolicyFaultPaused()) {
+            logger.info("Disconnect/timeout forfeit deferred while game {} is policy-paused", gameSession.sessionId)
+            return
+        }
         gameSession.playerConcedes(playerId)
         if (gameSession.isGameOver()) {
             handleGameOverCallback?.invoke(gameSession, GameOverReason.DISCONNECTION)

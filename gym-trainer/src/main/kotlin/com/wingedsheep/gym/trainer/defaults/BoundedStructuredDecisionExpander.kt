@@ -108,7 +108,7 @@ class BoundedStructuredDecisionExpander(
             estimatedResponseCount = when {
                 complete -> validList.size.toLong()
                 source.estimatedCount != null -> source.estimatedCount
-                validList.size > maxResponses -> validList.size.toLong()
+                source.estimateFromValidatedPrefix && validList.size > maxResponses -> validList.size.toLong()
                 else -> null
             },
         )
@@ -118,6 +118,12 @@ class BoundedStructuredDecisionExpander(
         val responses: Sequence<DecisionResponse>,
         val completeWhenExhausted: Boolean = true,
         val estimatedCount: Long? = null,
+        val estimateFromValidatedPrefix: Boolean = true,
+    )
+
+    private data class CombatOrderOverrides(
+        val orderedBlockers: Map<EntityId, List<EntityId>> = emptyMap(),
+        val orderedAttackers: Map<EntityId, List<EntityId>> = emptyMap(),
     )
 
     private fun candidates(d: PendingDecision): CandidateSource = when (d) {
@@ -241,36 +247,90 @@ class BoundedStructuredDecisionExpander(
 
     private fun combatResolution(d: CombatResolutionDecision): CandidateSource {
         val editable = d.edges.filter { it.editableBy == d.playerId }
-        val defaultResponse = CombatResolutionResponse(
-            d.id,
-            editable.map { DamageEdgeAmount(it.id, it.amount) },
-        )
+        val defaultEdges = editable.map { DamageEdgeAmount(it.id, it.amount) }
+        val defaultResponse = CombatResolutionResponse(d.id, defaultEdges)
+        val orderings = combatOrderings(d)
         val responseSequence = sequence {
+            // Preserve the engine-supplied response as the stable first anchor.
             yield(defaultResponse)
-            val values = editable.map { edge -> boundaryFirst(0..edge.maximum).take(maxAttempts).toList() }
-            for (amounts in cartesianProduct(values)) {
-                yield(CombatResolutionResponse(d.id, editable.indices.map { DamageEdgeAmount(editable[it].id, amounts[it]) }))
-            }
-            for (attacker in d.attackers) {
-                for (order in permutations(attacker.blockedByIds).drop(1)) {
-                    yield(defaultResponse.copy(orderedBlockers = mapOf(attacker.id to order)))
+
+            // Cross every non-default damage assignment with every simultaneous ordering choice.
+            // Damage is outermost so the default and first boundary assignment retain their
+            // historical ordering, while a changed order + changed assignment appears immediately
+            // after that assignment instead of being omitted from a separate order-only pass.
+            val damageValues = editable.map { edge -> boundaryFirst(0..edge.maximum) }
+            for (amounts in lazyCartesianProduct(damageValues)) {
+                val edges = editable.indices.map { DamageEdgeAmount(editable[it].id, amounts[it]) }
+                if (edges == defaultEdges) continue
+                for (ordering in orderings) {
+                    yield(
+                        CombatResolutionResponse(
+                            decisionId = d.id,
+                            edges = edges,
+                            orderedBlockers = ordering.orderedBlockers,
+                            orderedAttackers = ordering.orderedAttackers,
+                        )
+                    )
                 }
             }
-            for (blocker in d.blockers) {
-                for (order in permutations(blocker.blockedAttackerIds).drop(1)) {
-                    yield(defaultResponse.copy(orderedAttackers = mapOf(blocker.id to order)))
-                }
+
+            // The default assignment must also be crossed with every non-default ordering.
+            for (ordering in orderings.drop(1)) {
+                yield(
+                    defaultResponse.copy(
+                        orderedBlockers = ordering.orderedBlockers,
+                        orderedAttackers = ordering.orderedAttackers,
+                    )
+                )
             }
         }
-        val independentOrderChoiceGroups = d.attackers.count { it.blockedByIds.size > 1 } +
-            d.blockers.count { it.blockedAttackerIds.size > 1 }
         return CandidateSource(
             responses = responseSequence,
-            // The generator enumerates every permutation when there is at most one ordering
-            // group. With two or more groups it varies one group at a time rather than taking
-            // their Cartesian product, so completeness must continue to fail closed.
-            completeWhenExhausted = independentOrderChoiceGroups <= 1,
+            // If maxAttempts stops the lazy product, the validated prefix is only a lower bound,
+            // not an estimate of the full legal response count. Report null in that case.
+            estimateFromValidatedPrefix = false,
         )
+    }
+
+    /**
+     * Every simultaneous attacker/blocker ordering configuration. An empty map preserves the
+     * decision's current order, keeping existing response payloads stable; other entries contain
+     * only the rows whose order changed.
+     */
+    private fun combatOrderings(d: CombatResolutionDecision): Sequence<CombatOrderOverrides> {
+        val dimensions = buildList<Sequence<CombatOrderOverrides>> {
+            for (attacker in d.attackers) {
+                if (attacker.blockedByIds.size <= 1) continue
+                add(sequence {
+                    yield(CombatOrderOverrides())
+                    for (order in permutations(attacker.blockedByIds).drop(1)) {
+                        yield(CombatOrderOverrides(orderedBlockers = mapOf(attacker.id to order)))
+                    }
+                })
+            }
+            for (blocker in d.blockers) {
+                if (blocker.blockedAttackerIds.size <= 1) continue
+                val currentOrder = blocker.orderedAttackers.takeIf { order ->
+                    order.size == blocker.blockedAttackerIds.size &&
+                        order.toSet() == blocker.blockedAttackerIds.toSet()
+                } ?: blocker.blockedAttackerIds
+                add(sequence {
+                    yield(CombatOrderOverrides())
+                    for (order in permutations(currentOrder).drop(1)) {
+                        yield(CombatOrderOverrides(orderedAttackers = mapOf(blocker.id to order)))
+                    }
+                })
+            }
+        }
+
+        return lazyCartesianProduct(dimensions).map { choices ->
+            choices.fold(CombatOrderOverrides()) { combined, choice ->
+                CombatOrderOverrides(
+                    orderedBlockers = combined.orderedBlockers + choice.orderedBlockers,
+                    orderedAttackers = combined.orderedAttackers + choice.orderedAttackers,
+                )
+            }
+        }
     }
 
     private fun manaSources(d: SelectManaSourcesDecision): Sequence<DecisionResponse> = sequence {
@@ -392,6 +452,18 @@ class BoundedStructuredDecisionExpander(
             for (value in dimensions[index]) walk(index + 1, prefix + value)
         }
         if (dimensions.none { it.isEmpty() }) walk(0, emptyList())
+    }
+
+    /** Cartesian traversal without materializing any dimension or the resulting product. */
+    private fun <T> lazyCartesianProduct(dimensions: List<Sequence<T>>): Sequence<List<T>> = sequence {
+        suspend fun SequenceScope<List<T>>.walk(index: Int, prefix: List<T>) {
+            if (index == dimensions.size) {
+                yield(prefix)
+                return
+            }
+            for (value in dimensions[index]) walk(index + 1, prefix + value)
+        }
+        walk(0, emptyList())
     }
 
     private fun integerVectors(size: Int, total: Int): Sequence<List<Int>> = sequence {

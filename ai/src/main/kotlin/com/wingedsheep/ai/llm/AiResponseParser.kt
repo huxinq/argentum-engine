@@ -167,7 +167,7 @@ class AiResponseParser {
         if (lower.contains("keep") || lower == "a" || lower == "[a]") return true
         if (lower.contains("mulligan") || lower == "b" || lower == "[b]") return false
 
-        return parseYesNo(response)?.let { true } // "yes" = keep
+        return parseYesNo(response) // "yes" = keep, "no" = mulligan
     }
 
     /**

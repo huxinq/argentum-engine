@@ -134,10 +134,10 @@ class ScenarioSessionFactory(
                     gameSession = gameSession,
                     aiPlayerId = aiSeatId,
                     playerName = aiSeatName,
-                    onActionReady = { id, action -> gamePlayHandler.handleAiAction(gameSession, id, action) },
-                    onMulliganKeep = { id -> gamePlayHandler.handleAiMulliganKeep(gameSession, id) },
-                    onMulliganTake = { id -> gamePlayHandler.handleAiMulliganTake(gameSession, id) },
-                    onBottomCards = { id, cardIds -> gamePlayHandler.handleAiBottomCards(gameSession, id, cardIds) }
+                    onActionReady = { id, action, retryId -> gamePlayHandler.handleAiAction(gameSession, id, action, retryId) },
+                    onMulliganKeep = { id, retryId -> gamePlayHandler.handleAiMulliganKeep(gameSession, id, retryId) },
+                    onMulliganTake = { id, retryId -> gamePlayHandler.handleAiMulliganTake(gameSession, id, retryId) },
+                    onBottomCards = { id, cardIds, retryId -> gamePlayHandler.handleAiBottomCards(gameSession, id, cardIds, retryId) }
                 )
                 // Kick off the AI if it holds priority in the injected state.
                 gamePlayHandler.broadcastStateUpdate(gameSession, emptyList())

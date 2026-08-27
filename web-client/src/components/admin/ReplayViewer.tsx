@@ -27,6 +27,8 @@ export interface GameSummary {
   snapshotCount: number
   tournamentName: string | null
   tournamentRound: number | null
+  strategyEvidenceEligible: boolean
+  policyFaultIncidentId: string | null
 }
 
 
@@ -221,7 +223,9 @@ function GameTable({
               {game.player1Name} vs {game.player2Name}
             </td>
             <td style={styles.td}>{formatDate(game.endedAt)}</td>
-            <td style={styles.td}>{game.winnerName ?? 'Draw'}</td>
+            <td style={styles.td} title={game.policyFaultIncidentId ?? undefined}>
+              {game.strategyEvidenceEligible ? (game.winnerName ?? 'Draw') : 'Software interruption'}
+            </td>
             <td style={styles.td}>{game.snapshotCount}</td>
             <td style={styles.td}>
               <button onClick={() => onReplay(game.gameId)} style={styles.replayButton}>

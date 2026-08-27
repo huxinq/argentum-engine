@@ -1,6 +1,7 @@
 package com.wingedsheep.gym
 
 import com.wingedsheep.ai.engine.buildHeuristicSealedDeck
+import com.wingedsheep.ai.engine.SimulationActionOrigin
 import com.wingedsheep.engine.core.*
 import com.wingedsheep.engine.registry.CardRegistry
 import com.wingedsheep.mtg.sets.definitions.blb.BloomburrowSet
@@ -99,6 +100,33 @@ class GameEnvironmentTest : FunSpec({
 
         env.stepCount shouldBe initialStep + 1
         result.state.shouldNotBeNull()
+    }
+
+    test("raw traced step records only the submitted player action") {
+        val env = GameEnvironment.create(createRegistry())
+        env.reset(
+            GameConfig(
+                players = listOf(
+                    PlayerConfig("Alice", simpleDeck()),
+                    PlayerConfig("Bob", simpleDeck())
+                ),
+                skipMulligans = true,
+                startingPlayerIndex = 0
+            )
+        )
+        val before = env.state
+        val pass = env.legalActions().single { it.action is PassPriority }.action
+
+        env.stepRawTraced(pass)
+
+        env.lastStepTrace.size shouldBe 1
+        env.lastStepTrace.single().let { trace ->
+            trace.origin shouldBe SimulationActionOrigin.SUBMITTED
+            trace.action shouldBe pass
+            trace.beforeState shouldBe before
+            trace.afterState shouldBe env.state
+            trace.accepted.shouldBeTrue()
+        }
     }
 
     test("fork creates an independent copy") {

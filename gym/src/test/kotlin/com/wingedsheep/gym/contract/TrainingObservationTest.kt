@@ -4,6 +4,7 @@ import com.wingedsheep.engine.core.GameConfig
 import com.wingedsheep.engine.core.ChooseNumberDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.PassPriority
+import com.wingedsheep.engine.core.PlayLand
 import com.wingedsheep.engine.core.PlayerConfig
 import com.wingedsheep.engine.core.ReorderLibraryDecision
 import com.wingedsheep.engine.core.SearchCardInfo
@@ -11,15 +12,24 @@ import com.wingedsheep.engine.core.SearchLibraryDecision
 import com.wingedsheep.engine.core.YesNoDecision
 import com.wingedsheep.gym.GameEnvironment
 import com.wingedsheep.engine.registry.CardRegistry
+import com.wingedsheep.engine.legalactions.LegalAction
 import com.wingedsheep.engine.state.ZoneKey
+import com.wingedsheep.engine.state.GameState
+import com.wingedsheep.engine.state.components.identity.CommanderComponent
+import com.wingedsheep.engine.state.components.identity.FaceDownComponent
+import com.wingedsheep.engine.state.components.identity.RevealedToComponent
 import com.wingedsheep.mtg.sets.definitions.por.PortalSet
+import com.wingedsheep.mtg.sets.definitions.ons.cards.FutureSight
 import com.wingedsheep.sdk.core.Zone
+import com.wingedsheep.sdk.core.Format
+import com.wingedsheep.sdk.core.Step
 import com.wingedsheep.sdk.model.Deck
 import com.wingedsheep.sdk.model.EntityId
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.collections.shouldNotBeEmpty
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -34,6 +44,7 @@ class TrainingObservationTest : FunSpec({
         val registry = CardRegistry()
         registry.register(PortalSet.cards)
         registry.register(PortalSet.basicLands)
+        registry.register(FutureSight)
         return registry
     }
 
@@ -54,6 +65,22 @@ class TrainingObservationTest : FunSpec({
         return env
     }
 
+    fun move(state: GameState, entityId: EntityId, destination: ZoneKey): GameState {
+        val source = state.zones.entries.single { (_, ids) -> entityId in ids }.key
+        return state.removeFromZone(source, entityId).addToZone(destination, entityId)
+    }
+
+    fun advanceToPrecombatMain(env: GameEnvironment) {
+        repeat(32) {
+            if (env.state.step == Step.PRECOMBAT_MAIN && env.state.priorityPlayerId == env.playerIds[0]) {
+                return
+            }
+            val pass = env.legalActions().first { it.action is PassPriority }
+            env.stepRaw(pass.action)
+        }
+        error("Did not reach the starting player's precombat main phase")
+    }
+
     val json = Json { prettyPrint = false; ignoreUnknownKeys = true }
 
     test("observation includes all basic state fields and round-trips through JSON") {
@@ -70,8 +97,8 @@ class TrainingObservationTest : FunSpec({
         obs.stateDigest shouldMatch Regex("[0-9a-f]{64}")
         obs.legalActions.shouldNotBeEmpty()
 
-        // Hand + library + graveyard + exile + battlefield for each player.
-        obs.zones.size shouldBe 2 * 5
+        // Hand + library + graveyard + exile + battlefield + command for each player.
+        obs.zones.size shouldBe 2 * 6
 
         val encoded = json.encodeToString(TrainingObservation.serializer(), obs)
         val decoded = json.decodeFromString(TrainingObservation.serializer(), encoded)
@@ -118,6 +145,118 @@ class TrainingObservationTest : FunSpec({
         val theirHandRevealed = revealed.zones.single { it.ownerId == opponent && it.zoneType == Zone.HAND }
         theirHandRevealed.hidden.shouldBeFalse()
         theirHandRevealed.cards.size shouldBe theirHandRevealed.size
+    }
+
+    test("one typed visibility decision admits a playable top-library source and keeps its zone hidden") {
+        val registry = createRegistry()
+        val env = GameEnvironment.create(registry)
+        env.reset(
+            GameConfig(
+                players = listOf(
+                    PlayerConfig("Alice", Deck.of("Future Sight" to 1, "Mountain" to 19)),
+                    PlayerConfig("Bob", simpleDeck()),
+                ),
+                seed = 902L,
+                skipMulligans = true,
+                startingPlayerIndex = 0,
+            )
+        )
+        advanceToPrecombatMain(env)
+        val viewer = env.playerIds[0]
+        val futureSight = env.state.entities.entries.single { (_, container) ->
+            container.get<com.wingedsheep.engine.state.components.identity.CardComponent>()?.name ==
+                "Future Sight"
+        }.key
+        var state = move(env.state, futureSight, ZoneKey(viewer, Zone.BATTLEFIELD))
+        val top = state.getLibrary(viewer).first()
+        env.restore(state, env.playerIds)
+        val legalActions = env.legalActions()
+
+        val observation = ObservationBuilder(registry).build(state, viewer, legalActions).observation
+            as TrainingObservation
+        val library = observation.zones.single { it.ownerId == viewer && it.zoneType == Zone.LIBRARY }
+
+        library.hidden.shouldBeTrue()
+        library.cards.map { it.entityId } shouldBe listOf(top)
+        legalActions.any { it.action.sourceEntityIdOrNull() == top }.shouldBeTrue()
+        observation.legalActions.any { it.sourceEntityId == top }.shouldBeTrue()
+    }
+
+    test("command-zone cards and their real engine action sources share visibility admission") {
+        val registry = createRegistry()
+        val env = newEnv()
+        advanceToPrecombatMain(env)
+        val viewer = env.playerIds[0]
+        val commander = (env.state.getHand(viewer) + env.state.getLibrary(viewer)).first { id ->
+            env.state.getEntity(id)
+                ?.get<com.wingedsheep.engine.state.components.identity.CardComponent>()?.name ==
+                "Raging Goblin"
+        }
+        val mountain = (env.state.getHand(viewer) + env.state.getLibrary(viewer)).first { id ->
+            env.state.getEntity(id)
+                ?.get<com.wingedsheep.engine.state.components.identity.CardComponent>()?.name ==
+                "Mountain"
+        }
+        var state = move(env.state, commander, ZoneKey(viewer, Zone.COMMAND))
+            .updateEntity(commander) { it.with(CommanderComponent(viewer)) }
+        state = move(state, mountain, ZoneKey(viewer, Zone.BATTLEFIELD))
+            .copy(format = Format.Commander())
+        env.restore(state, env.playerIds)
+        val legalActions = env.legalActions()
+        val observation = ObservationBuilder(registry).build(state, viewer, legalActions).observation
+            as TrainingObservation
+        val command = observation.zones.single { it.ownerId == viewer && it.zoneType == Zone.COMMAND }
+
+        command.hidden.shouldBeFalse()
+        command.cards.map { it.entityId } shouldContain commander
+        legalActions.any { it.action.sourceEntityIdOrNull() == commander }.shouldBeTrue()
+        observation.legalActions.any { it.sourceEntityId == commander }.shouldBeTrue()
+    }
+
+    test("face-down and selectively revealed objects are admitted without leaking other hidden cards") {
+        val registry = createRegistry()
+        val env = newEnv()
+        val viewer = env.playerIds[0]
+        val opponent = env.playerIds[1]
+        val faceDown = env.state.getHand(opponent).first()
+        val selectivelyRevealed = env.state.getHand(opponent)[1]
+        val underlyingName = env.state.getEntity(faceDown)!!
+            .get<com.wingedsheep.engine.state.components.identity.CardComponent>()!!.name
+        var state = move(env.state, faceDown, ZoneKey(opponent, Zone.BATTLEFIELD))
+            .updateEntity(faceDown) { it.with(FaceDownComponent) }
+            .updateEntity(selectivelyRevealed) { it.with(RevealedToComponent.to(viewer)) }
+
+        val observation = ObservationBuilder(registry).build(state, viewer, emptyList()).observation
+            as TrainingObservation
+        val battlefieldCard = observation.zones.single {
+            it.ownerId == opponent && it.zoneType == Zone.BATTLEFIELD
+        }.cards.single { it.entityId == faceDown }
+        val opponentHand = observation.zones.single {
+            it.ownerId == opponent && it.zoneType == Zone.HAND
+        }
+
+        battlefieldCard.faceDown.shouldBeTrue()
+        battlefieldCard.name shouldBe "Face-down creature"
+        battlefieldCard.cardDefinitionId shouldBe null
+        battlefieldCard.name shouldNotBe underlyingName
+        opponentHand.hidden.shouldBeTrue()
+        opponentHand.cards.map { it.entityId } shouldBe listOf(selectivelyRevealed)
+    }
+
+    test("legal action with an unadmitted source is filtered before registry and observation") {
+        val env = newEnv()
+        val viewer = env.playerIds[0]
+        val hiddenSource = env.state.getHand(env.playerIds[1]).first()
+        val malicious = LegalAction(
+            action = PlayLand(viewer, hiddenSource),
+            actionType = "PlayLand",
+            description = "Play hidden source",
+        )
+
+        val result = ObservationBuilder(createRegistry()).build(env.state, viewer, listOf(malicious))
+
+        result.observation.legalActions shouldBe emptyList()
+        result.registry.resolve(0) shouldBe ResolvedAction.Unknown
     }
 
     test("oracle text is serialized for cards in visible zones") {

@@ -53,6 +53,9 @@ data class GameHistoryEntry(
     val gameId: String,
     /** True when a compact replay was stored for this game and can be watched/shared. */
     val hasReplay: Boolean,
+    /** False marks an explicit software-fault concession, not an unqualified gameplay result. */
+    val strategyEvidenceEligible: Boolean = true,
+    val policyFaultIncidentId: String? = null,
 )
 
 /** One card line in a stored deck (for the recent-games deck viewer). */
@@ -99,6 +102,8 @@ data class GameDecks(
     val gameId: String,
     val endedAt: String,
     val gameMode: String?,
+    val strategyEvidenceEligible: Boolean = true,
+    val policyFaultIncidentId: String? = null,
     val participants: List<GameDeckParticipant>,
 )
 
@@ -259,6 +264,9 @@ data class AdminRecentGame(
     val winnerName: String?,
     val hasReplay: Boolean,
     val tournamentName: String?,
+    /** Raw history remains visible, explicitly labelled when outcome was software-interrupted. */
+    val strategyEvidenceEligible: Boolean = true,
+    val policyFaultIncidentId: String? = null,
 )
 
 /**
@@ -325,7 +333,7 @@ class StatsQueryService(
         SELECT COALESCE(r.game_mode, 'UNKNOWN') || '~' || COALESCE(r.format, '') AS label, count(*) AS n
         FROM match_participants p
         JOIN match_results r ON r.id = p.match_id
-        WHERE p.user_id = ?
+        WHERE p.user_id = ? AND r.strategy_evidence_eligible = true
         GROUP BY COALESCE(r.game_mode, 'UNKNOWN') || '~' || COALESCE(r.format, '')
         ORDER BY n DESC
         """.trimIndent(),
@@ -346,9 +354,10 @@ class StatsQueryService(
                SUM(CASE WHEN me.won THEN 1 ELSE 0 END) AS wins,
                SUM(CASE WHEN me.won THEN 0 ELSE 1 END) AS losses
         FROM match_participants me
+        JOIN match_results r ON r.id = me.match_id
         JOIN match_participants opp ON opp.match_id = me.match_id AND opp.id <> me.id
         LEFT JOIN users u ON u.id = opp.user_id
-        WHERE me.user_id = ? AND opp.is_ai = false
+        WHERE me.user_id = ? AND opp.is_ai = false AND r.strategy_evidence_eligible = true
         GROUP BY COALESCE(u.display_name, opp.player_name), opp.user_id
         ORDER BY count(*) DESC, opponent ASC
         """.trimIndent(),
@@ -388,6 +397,8 @@ class StatsQueryService(
             """
             SELECT me.id AS pid, me.match_id AS mid, r.ended_at AS ended_at, r.game_mode AS game_mode,
                    r.format AS format, me.won AS won, me.colors AS colors, r.game_id AS game_id,
+                   r.strategy_evidence_eligible AS strategy_evidence_eligible,
+                   r.policy_fault_incident_id AS policy_fault_incident_id,
                    (gr.id IS NOT NULL) AS has_replay
             FROM match_participants me
             JOIN match_results r ON r.id = me.match_id
@@ -414,6 +425,8 @@ class StatsQueryService(
                         ratingDelta = null,
                         gameId = rs.getString("game_id"),
                         hasReplay = rs.getBoolean("has_replay"),
+                        strategyEvidenceEligible = rs.getBoolean("strategy_evidence_eligible"),
+                        policyFaultIncidentId = rs.getString("policy_fault_incident_id"),
                     ),
                 )
             },
@@ -509,15 +522,28 @@ class StatsQueryService(
      */
     fun decksForGame(userId: UUID, gameId: String): GameDecks? {
         data class Seat(val pid: Long, val name: String, val isAi: Boolean, val isSelf: Boolean, val won: Boolean)
+        data class Header(
+            val endedAt: String,
+            val gameMode: String?,
+            val strategyEvidenceEligible: Boolean,
+            val policyFaultIncidentId: String?,
+        )
         val header = jdbc.query(
             """
-            SELECT r.ended_at AS ended_at, r.game_mode AS game_mode
+            SELECT r.ended_at AS ended_at, r.game_mode AS game_mode,
+                   r.strategy_evidence_eligible AS strategy_evidence_eligible,
+                   r.policy_fault_incident_id AS policy_fault_incident_id
             FROM match_results r
             JOIN match_participants me ON me.match_id = r.id AND me.user_id = ?
             WHERE r.game_id = ?
             LIMIT 1
             """.trimIndent(),
-            { rs, _ -> rs.getTimestamp("ended_at").toInstant().toString() to rs.getString("game_mode") },
+            { rs, _ -> Header(
+                rs.getTimestamp("ended_at").toInstant().toString(),
+                rs.getString("game_mode"),
+                rs.getBoolean("strategy_evidence_eligible"),
+                rs.getString("policy_fault_incident_id"),
+            ) },
             userId, gameId,
         ).firstOrNull() ?: return null
         val seats = jdbc.query(
@@ -538,8 +564,10 @@ class StatsQueryService(
         val cardsByPid = cardsForParticipants(seats.map { it.pid })
         return GameDecks(
             gameId = gameId,
-            endedAt = header.first,
-            gameMode = header.second,
+            endedAt = header.endedAt,
+            gameMode = header.gameMode,
+            strategyEvidenceEligible = header.strategyEvidenceEligible,
+            policyFaultIncidentId = header.policyFaultIncidentId,
             participants = seats.map { seat ->
                 val cards = cardsByPid[seat.pid].orEmpty()
                 GameDeckParticipant(
@@ -860,8 +888,8 @@ class StatsQueryService(
         """
         SELECT u.id AS id, u.email AS email, u.display_name AS display_name, u.is_admin AS is_admin,
                u.created_at AS created_at,
-               count(p.id) AS games,
-               count(p.id) FILTER (WHERE p.won) AS wins,
+               count(p.id) FILTER (WHERE r.strategy_evidence_eligible = true) AS games,
+               count(p.id) FILTER (WHERE p.won AND r.strategy_evidence_eligible = true) AS wins,
                max(r.ended_at) AS last_played
         FROM users u
         LEFT JOIN match_participants p ON p.user_id = u.id
@@ -1045,6 +1073,8 @@ class StatsQueryService(
                count(*) FILTER (WHERE p.won) AS wins
         FROM match_participant_cards c
         JOIN match_participants p ON p.id = c.participant_id
+        JOIN match_results r ON r.id = p.match_id
+        WHERE r.strategy_evidence_eligible = true
         GROUP BY c.card_name
         HAVING count(*) >= ?
         ORDER BY (count(*) FILTER (WHERE p.won))::float / count(*) DESC, decks DESC
@@ -1101,11 +1131,15 @@ class StatsQueryService(
             val format: String?,
             val lobbyId: String?,
             val hasReplay: Boolean,
+            val strategyEvidenceEligible: Boolean,
+            val policyFaultIncidentId: String?,
         )
         val rows = jdbc.query(
             """
             SELECT r.id AS mid, r.game_id AS game_id, r.ended_at AS ended_at, r.game_mode AS game_mode,
-                   r.format AS format, r.lobby_id AS lobby_id, (gr.id IS NOT NULL) AS has_replay
+                   r.format AS format, r.lobby_id AS lobby_id, (gr.id IS NOT NULL) AS has_replay,
+                   r.strategy_evidence_eligible AS strategy_evidence_eligible,
+                   r.policy_fault_incident_id AS policy_fault_incident_id
             FROM match_results r
             LEFT JOIN game_replays gr ON gr.game_id = r.game_id
             ORDER BY r.ended_at DESC
@@ -1120,6 +1154,8 @@ class StatsQueryService(
                     format = rs.getString("format"),
                     lobbyId = rs.getString("lobby_id"),
                     hasReplay = rs.getBoolean("has_replay"),
+                    strategyEvidenceEligible = rs.getBoolean("strategy_evidence_eligible"),
+                    policyFaultIncidentId = rs.getString("policy_fault_incident_id"),
                 )
             },
             limit, offset,
@@ -1138,6 +1174,8 @@ class StatsQueryService(
                 winnerName = players.firstOrNull { it.won }?.name,
                 hasReplay = row.hasReplay,
                 tournamentName = row.lobbyId?.let { tournamentNames[it] },
+                strategyEvidenceEligible = row.strategyEvidenceEligible,
+                policyFaultIncidentId = row.policyFaultIncidentId,
             )
         }
     }

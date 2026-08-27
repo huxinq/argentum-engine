@@ -27,6 +27,11 @@ data class RecordedMatch(
     val turnCount: Int,
     val startedAt: Instant?,
     val endedAt: Instant,
+    /** Software-fault incident that caused an explicit concession, kept separate from winner/loss. */
+    val policyFaultIncidentId: String? = null,
+    val policyFaultCode: String? = null,
+    /** False means the normal result is not valid strategy/training evidence. */
+    val strategyEvidenceEligible: Boolean = true,
     val participants: List<RecordedParticipant>,
 )
 
@@ -88,6 +93,9 @@ class JdbcMatchResultSink(private val matchResults: MatchResultRepository) : Mat
                 turnCount = match.turnCount,
                 startedAt = match.startedAt,
                 endedAt = match.endedAt,
+                policyFaultIncidentId = match.policyFaultIncidentId,
+                policyFaultCode = match.policyFaultCode,
+                strategyEvidenceEligible = match.strategyEvidenceEligible,
                 participants = match.participants.map {
                     MatchParticipantRow(
                         userId = it.userId,

@@ -348,6 +348,16 @@ data class ExecutionResult(
 )
 ```
 
+`ActionProcessor` is also the transaction boundary for this contract. A handler or resumed
+continuation may construct several immutable intermediate states while doing its work, but if the
+final result contains an error the processor returns the exact input `GameState` and discards every
+event, pending decision, and trigger-processing marker produced by the rejected operation. Callers
+therefore never observe or replay a prefix of an action that the engine reported as rejected.
+`ActionProcessorAtomicityTest` also compares the production registries with all 22 sealed action
+types and all 164 sealed continuation types, then challenges this shared normalization for 188
+action/response/automatic route entries. That is a topology and common-boundary invariant; it does
+not claim to naturally induce a failure inside every concrete handler.
+
 The `PausedForDecision` case is central to how the engine handles player input mid-resolution — when a
 spell requires a choice (e.g., "search your library for a card"), the engine doesn't block. It returns a
 paused result with a `PendingDecision` describing what input is needed and a `ContinuationFrame` on the

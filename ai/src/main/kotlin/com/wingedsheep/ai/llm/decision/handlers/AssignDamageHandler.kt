@@ -1,7 +1,6 @@
 package com.wingedsheep.ai.llm.decision.handlers
 
 import com.wingedsheep.engine.core.AssignDamageDecision
-import com.wingedsheep.engine.core.DamageAssignmentResponse
 import com.wingedsheep.engine.core.DecisionResponse
 import com.wingedsheep.ai.llm.AiResponseParser
 import com.wingedsheep.ai.llm.GameStateFormatter
@@ -13,11 +12,8 @@ import kotlin.reflect.KClass
 class AssignDamageHandler : AiDecisionHandler<AssignDamageDecision> {
     override val decisionType: KClass<AssignDamageDecision> = AssignDamageDecision::class
 
-    override fun canAutoResolve(decision: AssignDamageDecision): Boolean = true
-
-    override fun autoResolve(decision: AssignDamageDecision): DecisionResponse {
-        return DamageAssignmentResponse(decisionId = decision.id, assignments = decision.defaultAssignments)
-    }
+    override fun autoResolve(decision: AssignDamageDecision): DecisionResponse =
+        error("Damage assignment is a responsible-player choice")
 
     override fun format(
         sb: StringBuilder,
@@ -41,8 +37,6 @@ class AssignDamageHandler : AiDecisionHandler<AssignDamageDecision> {
         decision: AssignDamageDecision,
         state: ClientGameState,
         parser: AiResponseParser
-    ): DecisionResponse {
-        return DamageAssignmentResponse(decisionId = decision.id, assignments = decision.defaultAssignments)
-    }
+    ): DecisionResponse? = null
 
 }

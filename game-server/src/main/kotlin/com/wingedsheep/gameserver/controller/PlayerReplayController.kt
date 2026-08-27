@@ -107,7 +107,9 @@ data class GameSummary(
     val winnerName: String?,
     val snapshotCount: Int,
     val tournamentName: String? = null,
-    val tournamentRound: Int? = null
+    val tournamentRound: Int? = null,
+    val strategyEvidenceEligible: Boolean = true,
+    val policyFaultIncidentId: String? = null,
 )
 
 fun ReplaySummary.toGameSummary() = GameSummary(
@@ -119,5 +121,7 @@ fun ReplaySummary.toGameSummary() = GameSummary(
     winnerName = winnerName,
     snapshotCount = frameCount,
     tournamentName = tournamentName,
-    tournamentRound = tournamentRound
+    tournamentRound = tournamentRound,
+    strategyEvidenceEligible = strategyEvidenceEligible,
+    policyFaultIncidentId = policyFaultIncidentId,
 )

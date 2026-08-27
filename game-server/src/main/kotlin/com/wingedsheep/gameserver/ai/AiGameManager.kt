@@ -38,6 +38,11 @@ class AiGameManager(
     private val aiInsightService: AiInsightService,
     private val controllerProviders: List<AiControllerProvider>,
 ) {
+    /** Installed by the host. A policy fault is not a game action or an engine outcome. */
+    var policyFaultCallback: ((GameSession, EntityId, String, String) -> String?)? = null
+    /** Installed by the host to release a retry gate if the virtual-session job is cancelled. */
+    var policyRetryDispatchAbandonedCallback: ((GameSession, EntityId, String, String) -> Unit)? = null
+
     /**
      * The live AI sessions of each game, keyed game → AI player. A multiplayer pod seats more than
      * one AI (an FFA table, a Two-Headed Giant team), so this is per *seat* and not per game: keyed
@@ -221,10 +226,10 @@ class AiGameManager(
         aiPlayerId: EntityId,
         controller: AiPlayerController,
         gameSession: GameSession?,
-        onActionReady: (EntityId, GameAction) -> Unit = { _, _ -> },
-        onMulliganKeep: (EntityId) -> Unit = { _ -> },
-        onMulliganTake: (EntityId) -> Unit = { _ -> },
-        onBottomCards: (EntityId, List<EntityId>) -> Unit = { _, _ -> },
+        onActionReady: (EntityId, GameAction, String?) -> PolicySubmissionAck = { _, _, _ -> PolicySubmissionAck.ACCEPTED },
+        onMulliganKeep: (EntityId, String?) -> PolicySubmissionAck = { _, _ -> PolicySubmissionAck.ACCEPTED },
+        onMulliganTake: (EntityId, String?) -> PolicySubmissionAck = { _, _ -> PolicySubmissionAck.ACCEPTED },
+        onBottomCards: (EntityId, List<EntityId>, String?) -> PolicySubmissionAck = { _, _, _ -> PolicySubmissionAck.ACCEPTED },
     ): AiWebSocketSession = AiWebSocketSession(
         aiPlayerId = aiPlayerId,
         controller = controller,
@@ -233,6 +238,12 @@ class AiGameManager(
         onMulliganKeep = onMulliganKeep,
         onMulliganTake = onMulliganTake,
         onBottomCards = onBottomCards,
+        onPolicyFailure = { seat, code, diagnostic ->
+            gameSession?.let { policyFaultCallback?.invoke(it, seat, code, diagnostic) }
+        },
+        onRetryDispatchAbandoned = { seat, incidentId, token ->
+            gameSession?.let { policyRetryDispatchAbandonedCallback?.invoke(it, seat, incidentId, token) }
+        },
         actionGate = if (gameProperties.ai.isSearchTeacherMode) null
             else gameSession?.let { aiInsightService.gateFor(it.sessionId) },
     )
@@ -251,10 +262,10 @@ class AiGameManager(
         playerName: String,
         controller: AiPlayerController,
         modelOverride: String? = null,
-        onActionReady: (EntityId, GameAction) -> Unit,
-        onMulliganKeep: (EntityId) -> Unit,
-        onMulliganTake: (EntityId) -> Unit,
-        onBottomCards: (EntityId, List<EntityId>) -> Unit,
+        onActionReady: (EntityId, GameAction, String?) -> PolicySubmissionAck,
+        onMulliganKeep: (EntityId, String?) -> PolicySubmissionAck,
+        onMulliganTake: (EntityId, String?) -> PolicySubmissionAck,
+        onBottomCards: (EntityId, List<EntityId>, String?) -> PolicySubmissionAck,
     ): Pair<PlayerSession, PlayerIdentity> {
         val aiSession = buildAiSession(
             aiPlayerId = aiPlayerId,
@@ -302,10 +313,10 @@ class AiGameManager(
     fun createAiOpponent(
         gameSession: GameSession,
         setCode: String? = null,
-        onActionReady: (EntityId, GameAction) -> Unit,
-        onMulliganKeep: (EntityId) -> Unit,
-        onMulliganTake: (EntityId) -> Unit,
-        onBottomCards: (EntityId, List<EntityId>) -> Unit,
+        onActionReady: (EntityId, GameAction, String?) -> PolicySubmissionAck,
+        onMulliganKeep: (EntityId, String?) -> PolicySubmissionAck,
+        onMulliganTake: (EntityId, String?) -> PolicySubmissionAck,
+        onBottomCards: (EntityId, List<EntityId>, String?) -> PolicySubmissionAck,
         /**
          * Fixed deck (card name → count) the AI must play instead of a generated sealed pool. Used
          * by deckless formats such as Momir Basic, where every seat plays the same 60 basics.
@@ -368,10 +379,10 @@ class AiGameManager(
         gameSession: GameSession,
         aiPlayerId: EntityId,
         playerName: String,
-        onActionReady: (EntityId, GameAction) -> Unit,
-        onMulliganKeep: (EntityId) -> Unit,
-        onMulliganTake: (EntityId) -> Unit,
-        onBottomCards: (EntityId, List<EntityId>) -> Unit
+        onActionReady: (EntityId, GameAction, String?) -> PolicySubmissionAck,
+        onMulliganKeep: (EntityId, String?) -> PolicySubmissionAck,
+        onMulliganTake: (EntityId, String?) -> PolicySubmissionAck,
+        onBottomCards: (EntityId, List<EntityId>, String?) -> PolicySubmissionAck,
     ): PlayerSession {
         // Only check the master toggle — engine AI doesn't need the LLM API key that
         // [isEnabled] also gates on, so dev scenarios run even when the server is
@@ -509,10 +520,10 @@ class AiGameManager(
         gameSession: GameSession,
         aiPlayerId: EntityId,
         deckList: Map<String, Int>?,
-        onActionReady: (EntityId, GameAction) -> Unit,
-        onMulliganKeep: (EntityId) -> Unit,
-        onMulliganTake: (EntityId) -> Unit,
-        onBottomCards: (EntityId, List<EntityId>) -> Unit
+        onActionReady: (EntityId, GameAction, String?) -> PolicySubmissionAck,
+        onMulliganKeep: (EntityId, String?) -> PolicySubmissionAck,
+        onMulliganTake: (EntityId, String?) -> PolicySubmissionAck,
+        onBottomCards: (EntityId, List<EntityId>, String?) -> PolicySubmissionAck
     ) {
         require(!gameProperties.ai.isSearchTeacherMode) {
             "Search Teacher v1 supports only freshly created locked quick games"
@@ -578,7 +589,13 @@ class AiGameManager(
      */
     fun isAiPlayer(playerId: EntityId): Boolean = playerId in aiPlayerIds
 
-    /** Search correctness failures concede instead of entering the engine AI's recovery policy. */
+    fun canRetryPolicyFailure(gameSessionId: String, playerId: EntityId, incidentId: String): Boolean =
+        activeSessions[gameSessionId]?.get(playerId)?.hasRetryablePolicyFailure(incidentId) == true
+
+    fun retryPolicyFailure(gameSessionId: String, playerId: EntityId, incidentId: String): Boolean =
+        activeSessions[gameSessionId]?.get(playerId)?.retryLastPolicyFailure(incidentId) == true
+
+    /** Search correctness failures are host policy incidents, never a fallback game action. */
     fun usesStrictFailurePolicy(playerId: EntityId): Boolean = playerId in strictFailureSeats
 
     fun recordStrictFailure(gameSession: GameSession, code: String, diagnostic: String) {

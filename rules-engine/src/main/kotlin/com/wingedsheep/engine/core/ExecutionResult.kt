@@ -9,7 +9,11 @@ import kotlinx.serialization.Serializable
  * The engine operates as a reentrant state machine. Every operation returns one of:
  * - **Success**: error == null && pendingDecision == null
  * - **PausedForDecision**: pendingDecision != null (needs player input)
- * - **Error**: error != null (action was invalid, state unchanged)
+ * - **Error**: error != null (action was rejected, state unchanged)
+ *
+ * [ActionProcessor] enforces the error invariant at its outer boundary: an error from any
+ * nested action handler or continuation is normalized to the exact input state with no events,
+ * pending decision, or processed-trigger marker.
  *
  * Game-over is signaled via `state.gameOver` + a [GameEndedEvent] in `events`.
  */

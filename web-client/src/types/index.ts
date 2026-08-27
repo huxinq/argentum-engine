@@ -168,6 +168,9 @@ export type {
   MulliganDecisionMessage,
   ChooseBottomCardsMessage,
   MulliganCompleteMessage,
+  PolicyFaultPausedMessage,
+  PolicyFaultRecoveredMessage,
+  PolicyFaultNoContestMessage,
   GameOverMessage,
   ErrorMessage,
   ClientMessage,
@@ -181,6 +184,7 @@ export type {
   MulliganMessage,
   ClientChooseBottomCardsMessage,
   ConcedeMessage,
+  RecoverPolicyFaultMessage,
   CancelGameMessage,
   GameCancelledMessage,
   // Pending Decision types
@@ -359,6 +363,7 @@ export {
   createMulliganMessage,
   createChooseBottomCardsMessage,
   createConcedeMessage,
+  createRecoverPolicyFaultMessage,
   createCancelGameMessage,
   // Sealed Draft message factories
   createCreateSealedGameMessage,

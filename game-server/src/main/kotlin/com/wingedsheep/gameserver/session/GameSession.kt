@@ -90,6 +90,14 @@ class GameSession(
         }
 
     /**
+     * Host-only pause, never an engine terminal state. Access is always through [stateLock].
+     * Policy incidents are intentionally process-lifetime until durable session recovery learns
+     * how to restore this sidecar without inventing a game outcome.
+     */
+    private var activePolicyFault: PolicyFaultIncident? = null
+    private val policyFaultHistory = mutableListOf<PolicyFaultIncident>()
+
+    /**
      * Players in the order they lost the game (first eliminated first). Maintained by the
      * [gameState] setter — the single chokepoint every state mutation flows through — by diffing
      * the engine's `PlayerLostComponent` markers against what's already recorded. Drives
@@ -115,6 +123,169 @@ class GameSession(
         players.keys.mapNotNull { playerId ->
             playerId.takeUnless { state.getEntity(it)?.has<PlayerLostComponent>() == true }
         }
+    }
+
+    fun isPolicyFaultPaused(): Boolean = synchronized(stateLock) { activePolicyFault != null }
+
+    fun getPolicyFaultIncident(): PolicyFaultIncident? = synchronized(stateLock) { activePolicyFault }
+
+    fun getPolicyFaultHistory(): List<PolicyFaultIncident> = synchronized(stateLock) {
+        policyFaultHistory.toList()
+    }
+
+    fun hasPolicyFaultConcession(): Boolean = synchronized(stateLock) {
+        policyFaultHistory.any { it.recovery == PolicyFaultRecovery.CONCEDE }
+    }
+
+    /**
+     * Idempotently stop host input after a typed policy failure. This does not change [gameState],
+     * append a [GameAction], create a winner, or enter normal game-over handling.
+     */
+    fun reportPolicyFault(
+        failingSeat: EntityId,
+        code: String,
+        diagnostic: String,
+    ): PolicyFaultReport = synchronized(stateLock) {
+        val state = gameState ?: return@synchronized PolicyFaultReport.GameAlreadyOver
+        if (state.gameOver) return@synchronized PolicyFaultReport.GameAlreadyOver
+        activePolicyFault?.let { active ->
+            if (active.retryInProgress && active.failingSeat == failingSeat) {
+                val retryFailure = PolicyFaultIncident(
+                    incidentId = UUID.randomUUID().toString(),
+                    failingSeat = failingSeat,
+                    code = code.take(96),
+                    diagnostic = diagnostic.take(500),
+                    actionIndex = recordedActions.size,
+                    detectedAt = Instant.now(),
+                    parentIncidentId = active.incidentId,
+                )
+                activePolicyFault = retryFailure
+                policyFaultHistory += retryFailure
+                recordCanonicalMutation(
+                    ReplaySystemMutationKind.OTHER,
+                    actorId = failingSeat,
+                    detail = buildJsonObject {
+                        put("kind", "POLICY_FAULT_RETRY_FAILED")
+                        put("incidentId", retryFailure.incidentId)
+                        put("parentIncidentId", active.incidentId)
+                        put("code", retryFailure.code)
+                    },
+                )
+                return@synchronized PolicyFaultReport.Paused(retryFailure)
+            }
+            return@synchronized PolicyFaultReport.AlreadyPaused(active)
+        }
+
+        val incident = PolicyFaultIncident(
+            incidentId = UUID.randomUUID().toString(),
+            failingSeat = failingSeat,
+            code = code.take(96),
+            diagnostic = diagnostic.take(500),
+            actionIndex = recordedActions.size,
+            detectedAt = Instant.now(),
+        )
+        activePolicyFault = incident
+        policyFaultHistory += incident
+        recordCanonicalMutation(
+            ReplaySystemMutationKind.OTHER,
+            actorId = failingSeat,
+            detail = buildJsonObject {
+                put("kind", "POLICY_FAULT_PAUSED")
+                put("incidentId", incident.incidentId)
+                put("code", incident.code)
+                put("actionIndex", incident.actionIndex)
+            },
+        )
+        PolicyFaultReport.Paused(incident)
+    }
+
+    /** Begin one retained retry while keeping the policy-fault input gate closed. */
+    fun beginPolicyFaultRetry(incidentId: String): PolicyFaultRetryStart = synchronized(stateLock) {
+        val active = activePolicyFault ?: return@synchronized PolicyFaultRetryStart.NoActiveIncident
+        if (active.incidentId != incidentId) return@synchronized PolicyFaultRetryStart.StaleIncident
+        if (active.retryInProgress) return@synchronized PolicyFaultRetryStart.AlreadyRecovering
+        val retrying = active.copy(retryInProgress = true)
+        activePolicyFault = retrying
+        policyFaultHistory[policyFaultHistory.lastIndex] = retrying
+        PolicyFaultRetryStart.Started(retrying)
+    }
+
+    /** Re-close a failed dispatch without interpreting it as a game result. */
+    fun cancelPolicyFaultRetry(incidentId: String) = synchronized(stateLock) {
+        val active = activePolicyFault
+        if (active?.incidentId == incidentId && active.retryInProgress) {
+            val paused = active.copy(retryInProgress = false)
+            activePolicyFault = paused
+            policyFaultHistory[policyFaultHistory.lastIndex] = paused
+        }
+    }
+
+    private fun retryingPolicyFaultFor(playerId: EntityId, incidentId: String? = null): PolicyFaultIncident? =
+        activePolicyFault?.takeIf {
+            it.retryInProgress && it.failingSeat == playerId && incidentId != null && it.incidentId == incidentId
+        }
+
+    private fun rejectPolicyFaultRetry(retrying: PolicyFaultIncident, error: String, actorId: EntityId) {
+        val paused = retrying.copy(retryInProgress = false)
+        activePolicyFault = paused
+        policyFaultHistory[policyFaultHistory.lastIndex] = paused
+        recordCanonicalMutation(
+            ReplaySystemMutationKind.OTHER,
+            actorId = actorId,
+            accepted = false,
+            rejectionReason = error,
+            detail = buildJsonObject {
+                put("kind", "POLICY_FAULT_RETRY_ACTION_REJECTED")
+                put("incidentId", paused.incidentId)
+            },
+        )
+    }
+
+    private fun completePolicyFaultRetry(retrying: PolicyFaultIncident): PolicyFaultIncident {
+        val recovered = retrying.copy(recovery = PolicyFaultRecovery.RETRY, retryInProgress = false)
+        activePolicyFault = null
+        policyFaultHistory[policyFaultHistory.lastIndex] = recovered
+        recordCanonicalMutation(
+            ReplaySystemMutationKind.OTHER,
+            actorId = retrying.failingSeat,
+            detail = buildJsonObject {
+                put("kind", "POLICY_FAULT_RECOVERY")
+                put("incidentId", retrying.incidentId)
+                put("recovery", PolicyFaultRecovery.RETRY.name)
+            },
+        )
+        return recovered
+    }
+
+    /**
+     * The sole terminal route while a policy incident is active. It binds the incident ID, marks
+     * its explicit concession, and applies the actual concession under one [stateLock] hold.
+     */
+    fun concedePolicyFault(incidentId: String): PolicyFaultConcession = synchronized(stateLock) {
+        val active = activePolicyFault ?: return@synchronized PolicyFaultConcession.NoActiveIncident
+        if (active.incidentId != incidentId || active.retryInProgress) {
+            return@synchronized PolicyFaultConcession.StaleIncident
+        }
+        val state = gameState ?: return@synchronized PolicyFaultConcession.NoActiveIncident
+        val action = Concede(active.failingSeat)
+        val result = actionProcessor.process(state, action).result
+        if (result.error != null) return@synchronized PolicyFaultConcession.NoActiveIncident
+
+        gameState = result.state
+        recordAction(action, state, result)
+        val resolved = active.copy(recovery = PolicyFaultRecovery.CONCEDE)
+        activePolicyFault = null
+        policyFaultHistory[policyFaultHistory.lastIndex] = resolved
+        recordCanonicalMutation(
+            ReplaySystemMutationKind.OTHER,
+            actorId = active.failingSeat,
+            detail = buildJsonObject {
+                put("kind", "POLICY_FAULT_RECOVERY")
+                put("incidentId", active.incidentId)
+                put("recovery", PolicyFaultRecovery.CONCEDE.name)
+            },
+        )
+        PolicyFaultConcession.Conceded(resolved)
     }
 
     /**
@@ -670,8 +841,10 @@ class GameSession(
      * Routes through the engine's action processor.
      * Synchronized to prevent lost updates when multiple players act simultaneously.
      */
-    fun keepHand(playerId: EntityId): MulliganActionResult = synchronized(stateLock) {
+    fun keepHand(playerId: EntityId, policyRetryIncidentId: String? = null): MulliganActionResult = synchronized(stateLock) {
         val state = gameState ?: return MulliganActionResult.Failure("Game not started")
+        val retrying = retryingPolicyFaultFor(playerId, policyRetryIncidentId)
+        if (activePolicyFault != null && retrying == null) return MulliganActionResult.Failure("Game is paused for policy recovery")
 
         val action = KeepHand(playerId)
         val result = actionProcessor.process(state, action).result
@@ -679,15 +852,17 @@ class GameSession(
         val error = result.error
         if (error != null) {
             recordRejectedAction(action, result)
+            retrying?.let { rejectPolicyFaultRetry(it, error, playerId) }
             MulliganActionResult.Failure(error)
         } else {
             gameState = result.state
             recordAction(action, state, result)
+            val recovered = retrying?.let(::completePolicyFaultRetry)
             val mullState = result.state.getEntity(playerId)?.get<MulliganStateComponent>()
             if (mullState?.cardsToBottom ?: 0 > 0) {
-                MulliganActionResult.NeedsBottomCards(mullState!!.cardsToBottom)
+                MulliganActionResult.NeedsBottomCards(mullState!!.cardsToBottom, recovered)
             } else {
-                MulliganActionResult.Success
+                MulliganActionResult.Success(recovered)
             }
         }
     }
@@ -697,8 +872,10 @@ class GameSession(
      * Routes through the engine's action processor.
      * Synchronized to prevent lost updates when multiple players act simultaneously.
      */
-    fun takeMulligan(playerId: EntityId): MulliganActionResult = synchronized(stateLock) {
+    fun takeMulligan(playerId: EntityId, policyRetryIncidentId: String? = null): MulliganActionResult = synchronized(stateLock) {
         val state = gameState ?: return MulliganActionResult.Failure("Game not started")
+        val retrying = retryingPolicyFaultFor(playerId, policyRetryIncidentId)
+        if (activePolicyFault != null && retrying == null) return MulliganActionResult.Failure("Game is paused for policy recovery")
 
         val action = TakeMulligan(playerId)
         val result = actionProcessor.process(state, action).result
@@ -706,11 +883,12 @@ class GameSession(
         val error = result.error
         if (error != null) {
             recordRejectedAction(action, result)
+            retrying?.let { rejectPolicyFaultRetry(it, error, playerId) }
             MulliganActionResult.Failure(error)
         } else {
             gameState = result.state
             recordAction(action, state, result)
-            MulliganActionResult.Success
+            MulliganActionResult.Success(retrying?.let(::completePolicyFaultRetry))
         }
     }
 
@@ -719,8 +897,14 @@ class GameSession(
      * Routes through the engine's action processor.
      * Synchronized to prevent lost updates when multiple players act simultaneously.
      */
-    fun chooseBottomCards(playerId: EntityId, cardIds: List<EntityId>): MulliganActionResult = synchronized(stateLock) {
+    fun chooseBottomCards(
+        playerId: EntityId,
+        cardIds: List<EntityId>,
+        policyRetryIncidentId: String? = null,
+    ): MulliganActionResult = synchronized(stateLock) {
         val state = gameState ?: return MulliganActionResult.Failure("Game not started")
+        val retrying = retryingPolicyFaultFor(playerId, policyRetryIncidentId)
+        if (activePolicyFault != null && retrying == null) return MulliganActionResult.Failure("Game is paused for policy recovery")
 
         val action = BottomCards(playerId, cardIds)
         val result = actionProcessor.process(state, action).result
@@ -728,11 +912,12 @@ class GameSession(
         val error = result.error
         if (error != null) {
             recordRejectedAction(action, result)
+            retrying?.let { rejectPolicyFaultRetry(it, error, playerId) }
             MulliganActionResult.Failure(error)
         } else {
             gameState = result.state
             recordAction(action, state, result)
-            MulliganActionResult.Success
+            MulliganActionResult.Success(retrying?.let(::completePolicyFaultRetry))
         }
     }
 
@@ -807,8 +992,8 @@ class GameSession(
     }
 
     sealed interface MulliganActionResult {
-        data object Success : MulliganActionResult
-        data class NeedsBottomCards(val count: Int) : MulliganActionResult
+        data class Success(val policyFaultRecovery: PolicyFaultIncident? = null) : MulliganActionResult
+        data class NeedsBottomCards(val count: Int, val policyFaultRecovery: PolicyFaultIncident? = null) : MulliganActionResult
         data class Failure(val reason: String) : MulliganActionResult
     }
 
@@ -821,8 +1006,17 @@ class GameSession(
      * Undo checkpoint management follows the engine's [UndoCheckpointAction] policy —
      * the engine decides what to do with checkpoints, the server just executes it.
      */
-    fun executeAction(playerId: EntityId, action: GameAction, messageId: String? = null): ActionResult = synchronized(stateLock) {
+    fun executeAction(
+        playerId: EntityId,
+        action: GameAction,
+        messageId: String? = null,
+        policyRetryIncidentId: String? = null,
+    ): ActionResult = synchronized(stateLock) {
         val state = gameState ?: return ActionResult.Failure("Game not started")
+        val retryingPolicyFault = retryingPolicyFaultFor(playerId, policyRetryIncidentId)
+        if (activePolicyFault != null && retryingPolicyFault == null) {
+            return ActionResult.Failure("Game is paused for policy recovery")
+        }
 
         // Seat authorization: a seat may submit actions tagged with its own playerId, or
         // act on behalf of a player whose turn it currently controls (Mindslaver-style).
@@ -861,6 +1055,21 @@ class GameSession(
         val error = result.error
         if (error != null) {
             recordRejectedAction(action, result, submitterId = playerId)
+            if (retryingPolicyFault != null) {
+                val paused = retryingPolicyFault.copy(retryInProgress = false)
+                activePolicyFault = paused
+                policyFaultHistory[policyFaultHistory.lastIndex] = paused
+                recordCanonicalMutation(
+                    ReplaySystemMutationKind.OTHER,
+                    actorId = playerId,
+                    accepted = false,
+                    rejectionReason = error,
+                    detail = buildJsonObject {
+                        put("kind", "POLICY_FAULT_RETRY_ACTION_REJECTED")
+                        put("incidentId", paused.incidentId)
+                    },
+                )
+            }
             return ActionResult.Failure(error)
         }
 
@@ -870,11 +1079,26 @@ class GameSession(
         gameState = result.state
         recordAction(action, state, result, submitterId = playerId)
         if (messageId != null) lastProcessedMessageId[playerId] = messageId
+        val recoveredFault = retryingPolicyFault?.let { retryFault ->
+            val recovered = retryFault.copy(recovery = PolicyFaultRecovery.RETRY, retryInProgress = false)
+            activePolicyFault = null
+            policyFaultHistory[policyFaultHistory.lastIndex] = recovered
+            recordCanonicalMutation(
+                ReplaySystemMutationKind.OTHER,
+                actorId = retryFault.failingSeat,
+                detail = buildJsonObject {
+                    put("kind", "POLICY_FAULT_RECOVERY")
+                    put("incidentId", retryFault.incidentId)
+                    put("recovery", PolicyFaultRecovery.RETRY.name)
+                },
+            )
+            recovered
+        }
         val pendingDecision = result.pendingDecision
         return if (pendingDecision != null) {
-            ActionResult.PausedForDecision(result.state, pendingDecision, result.events)
+            ActionResult.PausedForDecision(result.state, pendingDecision, result.events, recoveredFault)
         } else {
-            ActionResult.Success(result.state, result.events)
+            ActionResult.Success(result.state, result.events, recoveredFault)
         }
     }
 
@@ -884,6 +1108,10 @@ class GameSession(
      */
     fun playerConcedes(playerId: EntityId): GameState? = synchronized(stateLock) {
         val state = gameState ?: return null
+        // Disconnect, lobby leave, timeout, and ordinary client-concede paths all flow here.
+        // None may turn a host policy pause into a game result; [concedePolicyFault] is the only
+        // incident-id-bound terminal route.
+        if (activePolicyFault != null) return state
         val action = Concede(playerId)
         val result = actionProcessor.process(state, action).result
 
@@ -1135,6 +1363,7 @@ class GameSession(
      */
     fun getAutoPassPlayer(): EntityId? = synchronized(stateLock) {
         val state = gameState ?: return null
+        if (activePolicyFault != null) return null
 
         // Can't auto-pass if game is over
         if (state.gameOver) return null
@@ -1207,6 +1436,7 @@ class GameSession(
      * Only the player who took the undoable action can undo.
      */
     fun executeUndo(playerId: EntityId): ActionResult = synchronized(stateLock) {
+        if (activePolicyFault != null) return ActionResult.Failure("Game is paused for policy recovery")
         val checkpoint = undoCheckpoint ?: run {
             recordCanonicalMutation(
                 ReplaySystemMutationKind.UNDO,
@@ -1312,6 +1542,7 @@ class GameSession(
      */
     fun executeAutoPass(playerId: EntityId): ActionResult = synchronized(stateLock) {
         val state = gameState ?: return ActionResult.Failure("Game not started")
+        if (activePolicyFault != null) return ActionResult.Failure("Game is paused for policy recovery")
 
         // Verify this player has priority
         if (state.priorityPlayerId != playerId) {
@@ -1415,7 +1646,8 @@ class GameSession(
     sealed interface ActionResult {
         data class Success(
             val state: GameState,
-            val events: List<GameEvent>
+            val events: List<GameEvent>,
+            val policyFaultRecovery: PolicyFaultIncident? = null,
         ) : ActionResult
 
         data class Failure(val reason: String) : ActionResult
@@ -1423,7 +1655,8 @@ class GameSession(
         data class PausedForDecision(
             val state: GameState,
             val decision: PendingDecision,
-            val events: List<GameEvent>
+            val events: List<GameEvent>,
+            val policyFaultRecovery: PolicyFaultIncident? = null,
         ) : ActionResult
     }
 

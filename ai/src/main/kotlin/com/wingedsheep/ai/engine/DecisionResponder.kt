@@ -745,6 +745,7 @@ class DecisionResponder(
     // ═════════════════════════════════════════════════════════════════════
 
     private fun evaluateResult(result: SimulationResult, playerId: EntityId): Double {
+        result.requireNoAutomaticResolutionStop("Decision-response evaluation")
         return evaluator.evaluate(result.state, result.state.projectedState, playerId)
     }
 

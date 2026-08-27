@@ -1,5 +1,6 @@
 package com.wingedsheep.ai.training
 
+import com.wingedsheep.ai.engine.SimulationResult
 import com.wingedsheep.engine.core.GameConfig
 import com.wingedsheep.engine.core.GameInitializer
 import com.wingedsheep.engine.core.PlayerConfig
@@ -69,5 +70,16 @@ class DecisionTrainingRecordTest : FunSpec({
         a.others.single().visibleHand shouldHaveSize 0
         b.others.single().visibleHand shouldHaveSize 0
         a.others.single().handSize shouldBe b.others.single().handSize
+    }
+
+    test("training candidate consumer refuses a transition-limit stop") {
+        val stopped = SimulationResult.StoppedAtLimit(
+            state = root(2),
+            events = emptyList(),
+            automaticTransitions = 100,
+            limit = 100,
+        )
+
+        completedEvaluationState(stopped) shouldBe null
     }
 })

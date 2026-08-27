@@ -104,4 +104,10 @@ class ContinuationResumerRegistry {
      * Returns the number of registered resumers.
      */
     fun resumerCount(): Int = resumers.size
+
+    /** Exact response-driven continuation topology used by invariant tests and diagnostics. */
+    internal fun registeredResponseTypes(): Set<KClass<out ContinuationFrame>> = resumers.keys.toSet()
+
+    /** Exact automatic continuation topology used by invariant tests and diagnostics. */
+    internal fun registeredAutomaticTypes(): Set<KClass<out ContinuationFrame>> = autoResumers.keys.toSet()
 }

@@ -2,6 +2,7 @@ package com.wingedsheep.ai.engine
 
 import com.wingedsheep.ai.ActionResponse
 import com.wingedsheep.ai.AiPlayerController
+import com.wingedsheep.ai.ResponsiblePolicyUnavailableException
 import com.wingedsheep.ai.insight.AiInsightSink
 import com.wingedsheep.ai.llm.BottomCardsInfo
 import com.wingedsheep.ai.llm.CardSummary
@@ -71,8 +72,11 @@ class EngineAiPlayerController(
     ): ActionResponse {
         val gameState = gameStateProvider()
         if (gameState == null) {
-            logger.warn("Engine AI: no game state available, passing priority")
-            return ActionResponse.SubmitAction(PassPriority(playerId))
+            throw ResponsiblePolicyUnavailableException(
+                choiceKind = "PRIORITY_ACTION",
+                diagnostic = "authoritative game state unavailable; the engine policy cannot " +
+                    "validate the complete response set or choose for the responsible player",
+            )
         }
 
         // Handle pending decisions using the engine AI's responder

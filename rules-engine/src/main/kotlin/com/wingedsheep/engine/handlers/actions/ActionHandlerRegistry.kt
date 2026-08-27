@@ -75,4 +75,7 @@ class ActionHandlerRegistry {
      * Useful for testing and diagnostics.
      */
     fun handlerCount(): Int = handlers.size
+
+    /** Exact registered action topology used by invariant tests and diagnostics. */
+    internal fun registeredActionTypes(): Set<KClass<out GameAction>> = handlers.keys.toSet()
 }

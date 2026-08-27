@@ -16,6 +16,7 @@ import { DraggedCardOverlay } from './DraggedCardOverlay'
 import { GameLog } from './GameLog'
 import { ActiveYieldsPanel } from './ActiveYieldsPanel'
 import { AiInsightPanel } from './AiInsightPanel'
+import { PolicyFaultPauseOverlay } from './PolicyFaultPauseOverlay'
 import { DrawAnimations } from '../animations/DrawAnimations'
 import { DamageAnimations } from '../animations/DamageAnimations'
 import { RevealAnimations } from '../animations/RevealAnimations'
@@ -2000,6 +2001,7 @@ export function GameBoard({ spectatorMode = false, topOffset = 0 }: GameBoardPro
           bottom-left corner, directly on top of the hand, and the expanded panel
           is a 520px table that a phone can't show. */}
       {!spectatorMode && !responsive.isMobile && <AiInsightPanel />}
+      {!spectatorMode && <PolicyFaultPauseOverlay />}
 
       {/* Draw animations */}
       <DrawAnimations />

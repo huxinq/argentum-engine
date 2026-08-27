@@ -908,6 +908,7 @@ export type GameStore = {
   waitingForOpponentMulligan: boolean
   eventLog: readonly LogEntry[]
   gameOverState: GameOverState | null
+  policyFaultPause: import('./gameplaySlice').PolicyFaultPauseState | null
   lastError: ErrorState | null
   fullControl: boolean
   priorityMode: import('../../types').PriorityModeValue
@@ -952,6 +953,7 @@ export type GameStore = {
   chooseBottomCards: (cardIds: readonly EntityId[]) => void
   toggleMulliganCard: (cardId: EntityId) => void
   concede: () => void
+  recoverPolicyFault: (incidentId: string, recovery: 'RETRY' | 'TRANSFER_CONTROL' | 'CONCEDE') => void
   requestUndo: () => void
   toggleAutoTap: () => void
   cancelGame: () => void
