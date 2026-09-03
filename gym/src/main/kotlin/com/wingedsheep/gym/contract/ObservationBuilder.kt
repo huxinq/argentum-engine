@@ -366,8 +366,8 @@ class ObservationBuilder(
             revealAll || visibility.isCardIdentityVisibleTo(state, it, perspectivePlayerId)
         } ?: true
         // An ability's entity holds only its stack component — `StackResolver` builds it from that
-        // alone, with no CardComponent — so the source name and description are the only identity
-        // an agent can read for it.
+        // alone, with no CardComponent — so its source identity needs an explicit visibility
+        // answer. Its effect text remains public stack decision information.
         val name = card?.name ?: triggered?.sourceName ?: activated?.sourceName ?: ""
         val text = card?.oracleText
             ?: triggered?.let { it.descriptionOverride ?: it.description }
@@ -401,7 +401,10 @@ class ObservationBuilder(
                 else "$FACE_DOWN_DISPLAY_NAME ${kind.name.lowercase().replace('_', ' ')}"
             } else name,
             kind = kind,
-            oracleText = if (identityHidden) "" else text,
+            // A face-down permanent can still contribute a ward ability from the face-down
+            // characteristic-defining rule or an external grant. Its actual stack effect is public
+            // decision information; only the source card's identity is hidden.
+            oracleText = text,
             targets = container?.get<TargetsComponent>()?.targets.orEmpty().map(::targetEntityId)
         )
     }
