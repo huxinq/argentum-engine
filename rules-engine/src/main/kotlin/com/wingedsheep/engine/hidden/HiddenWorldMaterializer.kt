@@ -1,6 +1,8 @@
 package com.wingedsheep.engine.hidden
 
 import com.wingedsheep.engine.core.CardEntityFactory
+import com.wingedsheep.engine.core.InFlightEntityReferences
+import com.wingedsheep.engine.core.InFlightReferenceProjector
 import com.wingedsheep.engine.registry.CardRegistry
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.identity.CardComponent
@@ -30,7 +32,7 @@ enum class UnsupportedHiddenWorldKind {
     /** The request names a missing entity, an unknown source definition, or a non-hand/library slot. */
     INVALID_ASSIGNMENT,
 
-    /** A stack target, pending decision, or continuation frame depends on the identity being replaced. */
+    /** A stack target or conservative paused-execution pin blocks identity replacement. */
     IN_FLIGHT_REFERENCES,
 
     /** The hidden object carries state beyond its printed-definition-derived components. */
@@ -79,9 +81,24 @@ sealed interface HiddenWorldMaterializationResult {
  * stream unless the caller explicitly asks for that exact generator. Search callers that require
  * information separation must derive this generator from caller-owned randomness, not [GameState.rng].
  */
-class HiddenWorldMaterializer(
-    private val cardRegistry: CardRegistry,
-) {
+class HiddenWorldMaterializer {
+    private val cardRegistry: CardRegistry
+    private val inFlightReferenceProjector: InFlightReferenceProjector
+
+    constructor(cardRegistry: CardRegistry) {
+        this.cardRegistry = cardRegistry
+        inFlightReferenceProjector = InFlightEntityReferences
+    }
+
+    /** Test-only seam for proving that an incomplete paused-state projection fails closed. */
+    internal constructor(
+        cardRegistry: CardRegistry,
+        inFlightReferenceProjector: InFlightReferenceProjector,
+    ) {
+        this.cardRegistry = cardRegistry
+        this.inFlightReferenceProjector = inFlightReferenceProjector
+    }
+
     /**
      * A request is answered as a whole: either every named slot is installed, or nothing is and the
      * first obstruction is reported. Partial worlds are not a useful answer to "is this hypothesis
@@ -92,12 +109,17 @@ class HiddenWorldMaterializer(
         state: GameState,
         request: HiddenWorldMaterializationRequest,
     ): HiddenWorldMaterializationResult {
-        // Gated whether or not the request names slots: an empty assignment still installs
-        // `futureRng`, and rewriting the future random stream of a state that is mid-decision is
-        // the same hazard as rewriting a card in it.
-        unsupportedInFlightState(state)?.let { return it }
-
-        val stackReferenced = HiddenSlotRewrite.stackReferencedEntities(state)
+        val inFlightPins = when (
+            val pins = HiddenSlotRewrite.identitySensitiveInFlightPins(state, inFlightReferenceProjector)
+        ) {
+            is HiddenSlotRewrite.IdentitySensitiveInFlightPins.Complete -> pins
+            is HiddenSlotRewrite.IdentitySensitiveInFlightPins.Incomplete -> {
+                return unsupported(
+                    UnsupportedHiddenWorldKind.IN_FLIGHT_REFERENCES,
+                    details = pins.details,
+                )
+            }
+        }
         var materialized = state
 
         // Slots are independent, so the order only decides *which* obstruction is reported when a
@@ -109,11 +131,11 @@ class HiddenWorldMaterializer(
                     entityId,
                     listOf("entity does not exist"),
                 )
-            if (entityId in stackReferenced) {
+            if (entityId in inFlightPins.entityIds) {
                 return unsupported(
                     UnsupportedHiddenWorldKind.IN_FLIGHT_REFERENCES,
                     entityId,
-                    listOf("slot is the chosen target of a stack object"),
+                    listOf("slot is conservatively pinned by in-flight execution"),
                 )
             }
             val zones = state.zones.filterValues { entityId in it }
@@ -190,22 +212,6 @@ class HiddenWorldMaterializer(
         return HiddenWorldMaterializationResult.Materialized(
             materialized.copy(rng = request.futureRng)
         )
-    }
-
-    /**
-     * Continuation frames and pending decisions carry entity references in per-effect shapes with
-     * no common visitor, so neither can be audited slot by slot the way stack targets can. Both are
-     * therefore whole-state refusals: a search root taken at a quiet priority point has neither.
-     */
-    private fun unsupportedInFlightState(state: GameState): HiddenWorldMaterializationResult.Unsupported? {
-        val details = buildList {
-            state.pendingDecision?.let { add(it::class.simpleName ?: "PendingDecision") }
-            if (state.continuationStack.isNotEmpty()) {
-                add("continuationDepth=${state.continuationStack.size}")
-            }
-        }
-        if (details.isEmpty()) return null
-        return unsupported(UnsupportedHiddenWorldKind.IN_FLIGHT_REFERENCES, details = details)
     }
 
     /**
