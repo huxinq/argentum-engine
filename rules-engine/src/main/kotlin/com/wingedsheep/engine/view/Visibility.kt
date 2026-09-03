@@ -43,6 +43,28 @@ class Visibility(
 ) {
     private val conditionEvaluator = ConditionEvaluator()
 
+    /**
+     * Whether [viewingPlayerId] may know the identity of [entityId] where it currently is.
+     *
+     * This is the source-oriented form of [isCardIdentityVisibleTo]. Stack abilities carry a
+     * source entity rather than a card of their own, and their presentation must not reconstruct
+     * a zone from controller, owner, or stack metadata. Keeping that lookup here makes the same
+     * identity authority answer for card views, ability views, Gym observations, and any later
+     * presentation consumer.
+     *
+     * An entity no longer in a visible game zone has already left the face-down zone that hid it;
+     * [faceDownDisplayName] consequently has no mask for it, so its identity is public here too.
+     */
+    fun isCardIdentityVisibleTo(
+        state: GameState,
+        entityId: EntityId,
+        viewingPlayerId: EntityId,
+        isSpectator: Boolean = false,
+    ): Boolean {
+        val zoneKey = currentZoneKeyOf(state, entityId) ?: return true
+        return isCardIdentityVisibleTo(state, zoneKey, entityId, viewingPlayerId, isSpectator)
+    }
+
     fun isZoneVisibleTo(
         state: GameState,
         zoneKey: ZoneKey,
@@ -192,6 +214,18 @@ class Visibility(
         return keyedByController
             ?: container.get<CardComponent>()?.ownerId
             ?: container.get<OwnerComponent>()?.playerId
+    }
+
+    /**
+     * The actual zone key for an entity the caller holds, including the stack which deliberately
+     * lives outside [GameState.zones]. This is private because callers should ask the visibility
+     * question, not derive their own zone identity approximation.
+     */
+    private fun currentZoneKeyOf(state: GameState, entityId: EntityId): ZoneKey? {
+        if (entityId in state.stack) {
+            return ZoneKey(zoneOwnerOf(state, entityId, Zone.STACK) ?: return null, Zone.STACK)
+        }
+        return state.zones.entries.firstOrNull { entityId in it.value }?.key
     }
 
     // The ingredients below are deliberately private. This class exists because four subsystems

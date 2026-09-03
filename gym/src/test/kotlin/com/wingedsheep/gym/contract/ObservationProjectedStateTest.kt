@@ -221,6 +221,51 @@ class ObservationProjectedStateTest : ScenarioTestBase() {
             }
             observe(state, game.player2Id).stack.single().name shouldBe "Hill Giant"
         }
+
+        test("an ability on the stack inherits its face-down source visibility") {
+            val game = scenario()
+                .withPlayers()
+                .withCardOnBattlefield(2, "Hill Giant")
+                .build()
+            val source = permanentNamed(game.state, "Hill Giant")
+            val activated = EntityId.of("face-down-activated-source")
+            val triggered = EntityId.of("face-down-triggered-source")
+            val state = game.state
+                .updateEntity(source) { it.with(FaceDownComponent) }
+                .withEntity(
+                    activated,
+                    ComponentContainer.of(
+                        ActivatedAbilityOnStackComponent(
+                            sourceId = source,
+                            sourceName = "Hill Giant",
+                            controllerId = game.player2Id,
+                            effect = Effects.DrawCards(1),
+                        ),
+                    ),
+                )
+                .withEntity(
+                    triggered,
+                    ComponentContainer.of(
+                        TriggeredAbilityOnStackComponent(
+                            sourceId = source,
+                            sourceName = "Hill Giant",
+                            controllerId = game.player2Id,
+                            effect = Effects.DrawCards(1),
+                            description = "Draw a card.",
+                        ),
+                    ),
+                )
+                .copy(stack = listOf(activated, triggered))
+
+            observe(state, game.player1Id).stack.map { it.name } shouldBe listOf(
+                "Face-down creature activated ability",
+                "Face-down creature triggered ability",
+            )
+            observe(state, game.player2Id).stack.map { it.name } shouldBe listOf(
+                "Hill Giant",
+                "Hill Giant",
+            )
+        }
     }
 
     private fun observe(state: GameState, viewer: EntityId): TrainingObservation =
