@@ -466,9 +466,17 @@ class ClientStateTransformer(
         // Check for activated ability
         val activatedAbility = container.get<ActivatedAbilityOnStackComponent>()
         if (activatedAbility != null) {
-            // Get the source card's info to display
-            val sourceCard = state.getEntity(activatedAbility.sourceId)?.get<CardComponent>()
-            val cardDef = cardRegistry.getCard(activatedAbility.sourceName)
+            val sourceIdentityVisible = visibility.isCardIdentityVisibleTo(
+                state, activatedAbility.sourceId, viewingPlayerId, isSpectator,
+            )
+            // The stack object has no CardComponent. Its source does, but its name, colours, art,
+            // and definition-scoped ability id are presentation data only when this viewer may
+            // know that source's identity. Keep the source id itself for engine semantics.
+            val sourceCard = state.getEntity(activatedAbility.sourceId)
+                ?.get<CardComponent>()
+                ?.takeIf { sourceIdentityVisible }
+            val sourceName = if (sourceIdentityVisible) activatedAbility.sourceName else FACE_DOWN_DISPLAY_NAME
+            val cardDef = sourceCard?.let { cardRegistry.getCard(it.cardDefinitionId) }
 
             // Get targets for this ability
             val targetsComponent = container.get<TargetsComponent>()
@@ -476,7 +484,7 @@ class ClientStateTransformer(
 
             return ClientCard(
                 id = entityId,
-                name = "${activatedAbility.sourceName} ability",
+                name = "$sourceName ability",
                 manaCost = "",
                 manaValue = 0,
                 typeLine = "Ability",
@@ -510,7 +518,7 @@ class ClientStateTransformer(
                 targets = targets,
                 imageUri = sourceCard?.imageUri ?: cardDef?.metadata?.imageUri,
                 chosenX = activatedAbility.xValue,
-                abilityIdentity = activatedAbility.abilityIdentity?.let {
+                abilityIdentity = activatedAbility.abilityIdentity?.takeIf { sourceIdentityVisible }?.let {
                     ClientAbilityIdentity(it.cardDefinitionId, it.abilityId.value)
                 }
             )
@@ -519,8 +527,14 @@ class ClientStateTransformer(
         // Check for triggered ability
         val triggeredAbility = container.get<TriggeredAbilityOnStackComponent>()
         if (triggeredAbility != null) {
-            val sourceCard = state.getEntity(triggeredAbility.sourceId)?.get<CardComponent>()
-            val cardDef = cardRegistry.getCard(triggeredAbility.sourceName)
+            val sourceIdentityVisible = visibility.isCardIdentityVisibleTo(
+                state, triggeredAbility.sourceId, viewingPlayerId, isSpectator,
+            )
+            val sourceCard = state.getEntity(triggeredAbility.sourceId)
+                ?.get<CardComponent>()
+                ?.takeIf { sourceIdentityVisible }
+            val sourceName = if (sourceIdentityVisible) triggeredAbility.sourceName else FACE_DOWN_DISPLAY_NAME
+            val cardDef = sourceCard?.let { cardRegistry.getCard(it.cardDefinitionId) }
 
             val targetsComponent = container.get<TargetsComponent>()
             val targets = transformTargets(targetsComponent)
@@ -564,7 +578,7 @@ class ClientStateTransformer(
 
             return ClientCard(
                 id = entityId,
-                name = "${triggeredAbility.sourceName} trigger",
+                name = "$sourceName trigger",
                 manaCost = "",
                 manaValue = 0,
                 typeLine = "Triggered Ability",
@@ -600,7 +614,7 @@ class ClientStateTransformer(
                 imageUri = sourceCard?.imageUri ?: cardDef?.metadata?.imageUri,
                 sourceZone = sourceZone,
                 chosenX = triggeredAbility.xValue,
-                abilityIdentity = triggeredAbility.abilityIdentity?.let {
+                abilityIdentity = triggeredAbility.abilityIdentity?.takeIf { sourceIdentityVisible }?.let {
                     ClientAbilityIdentity(it.cardDefinitionId, it.abilityId.value)
                 },
                 copyIndex = triggeredAbility.copyIndex,

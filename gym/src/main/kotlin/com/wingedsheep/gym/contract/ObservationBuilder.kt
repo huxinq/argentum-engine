@@ -31,6 +31,7 @@ import com.wingedsheep.engine.core.YesNoResponse
 import com.wingedsheep.engine.legalactions.LegalAction
 import com.wingedsheep.engine.registry.CardRegistry
 import com.wingedsheep.engine.state.ComponentContainer
+import com.wingedsheep.engine.state.FACE_DOWN_DISPLAY_NAME
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.ZoneKey
 import com.wingedsheep.engine.state.components.battlefield.AttachedToComponent
@@ -349,6 +350,10 @@ class ObservationBuilder(
             card != null -> StackItemKind.SPELL
             else -> StackItemKind.OTHER
         }
+        val sourceId = triggered?.sourceId ?: activated?.sourceId ?: legacyAbility?.sourceId
+        val sourceIdentityVisible = sourceId?.let {
+            revealAll || visibility.isCardIdentityVisibleTo(state, it, perspectivePlayerId)
+        } ?: true
         // An ability's entity holds only its stack component — `StackResolver` builds it from that
         // alone, with no CardComponent — so the source name and description are the only identity
         // an agent can read for it.
@@ -360,12 +365,16 @@ class ObservationBuilder(
         // A spell cast face down is one its opponents may not read either (CR 708.4/708.5). The
         // stack is not part of `state.zones`, so there is no key to pass — the visibility authority
         // derives one from the spell's caster rather than us inventing an owner.
-        val identityHidden = !revealAll && !visibility.isCardIdentityVisibleTo(
-            state,
-            Zone.STACK,
-            entityId,
-            perspectivePlayerId,
-        )
+        val identityHidden = when {
+            revealAll -> false
+            card != null -> !visibility.isCardIdentityVisibleTo(
+                state,
+                Zone.STACK,
+                entityId,
+                perspectivePlayerId,
+            )
+            else -> !sourceIdentityVisible
+        }
         return StackItemView(
             entityId = entityId,
             // A stack object never gets a Layer-4 projection entry, so `projectedState` has no
@@ -376,7 +385,10 @@ class ObservationBuilder(
                 ?: legacyAbility?.controllerId
                 ?: container?.get<ControllerComponent>()?.playerId
                 ?: container?.get<SpellOnStackComponent>()?.casterId,
-            name = if (identityHidden) nameVisibleToAll(state, entityId, name) else name,
+            name = if (identityHidden) {
+                if (card != null) nameVisibleToAll(state, entityId, name)
+                else "$FACE_DOWN_DISPLAY_NAME ${kind.name.lowercase().replace('_', ' ')}"
+            } else name,
             kind = kind,
             oracleText = if (identityHidden) "" else text,
             targets = container?.get<TargetsComponent>()?.targets.orEmpty().map(::targetEntityId)
