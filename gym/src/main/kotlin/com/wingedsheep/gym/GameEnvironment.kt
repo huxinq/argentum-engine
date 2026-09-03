@@ -297,6 +297,7 @@ class GameEnvironment private constructor(
         this.playerIds = playerIds
         this.events = emptyList()
         this.lastStepEvents = emptyList()
+        this.lastRejection = null
         this.stepCount = stepCount
     }
 
