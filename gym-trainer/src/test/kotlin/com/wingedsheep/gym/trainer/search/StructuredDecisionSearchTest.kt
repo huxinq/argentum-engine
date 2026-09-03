@@ -2,9 +2,13 @@ package com.wingedsheep.gym.trainer.search
 
 import com.wingedsheep.engine.core.CardsSelectedResponse
 import com.wingedsheep.engine.core.ChooseTargetsDecision
+import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionResponse
 import com.wingedsheep.engine.core.GameAction
 import com.wingedsheep.engine.core.ManaSourcesSelectedResponse
+import com.wingedsheep.engine.core.MoveCollectionOrderContinuation
+import com.wingedsheep.engine.core.OrderedResponse
+import com.wingedsheep.engine.core.ReorderLibraryDecision
 import com.wingedsheep.engine.core.SelectCardsDecision
 import com.wingedsheep.engine.core.SelectManaSourcesDecision
 import com.wingedsheep.engine.core.SubmitDecision
@@ -28,6 +32,7 @@ import com.wingedsheep.gym.trainer.spi.TrainerContext
 import com.wingedsheep.mtg.sets.tokens.PredefinedTokens
 import com.wingedsheep.sdk.core.Color
 import com.wingedsheep.sdk.core.Step
+import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.model.Deck
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.assertions.throwables.shouldThrow
@@ -146,6 +151,68 @@ class StructuredDecisionSearchTest : FunSpec({
         }
         responsesByTarget.getValue(ownCreature).child!!.state shouldNotBe
             responsesByTarget.getValue(opposingCreature).child!!.state
+    }
+
+    test("default MCTS exposes and executes every small library ordering") {
+        val driver = newDriver("Mountain")
+        val player = driver.activePlayer!!
+        val cards = driver.state.getLibrary(player).take(2)
+        val decision = ReorderLibraryDecision(
+            id = "search-ordering",
+            playerId = player,
+            prompt = "Put them back in any order",
+            context = DecisionContext(),
+            cards = cards,
+            cardInfo = emptyMap(),
+        )
+        val rootState = driver.state
+            .withPendingDecision(decision)
+            .pushContinuation(
+                MoveCollectionOrderContinuation(
+                    decisionId = decision.id,
+                    playerId = player,
+                    sourceId = null,
+                    sourceName = "Search ordering probe",
+                    cards = cards,
+                    destinationZone = Zone.LIBRARY,
+                    destinationPlayerId = player,
+                )
+            )
+        val env = GameEnvironment.create(driver.cardRegistry).also {
+            it.restore(rootState, listOf(driver.player1, driver.player2))
+        }
+
+        val result = AlphaZeroSearch(
+            env = env,
+            featurizer = stateFeaturizer,
+            actionFeaturizer = sharedSlotFeaturizer,
+            evaluator = uniformEvaluator,
+            structuredResolver = StructuredDecisionResolver { _, pending ->
+                error("exact expansion unexpectedly fell back for ${pending::class.simpleName}")
+            },
+            dirichletAlpha = null,
+        ).run(simulations = 2)
+
+        result.root.edges.size shouldBe 2
+        result.visits.toList().shouldContainExactly(1, 1)
+        val responses = result.root.edges.map { edge ->
+            (edge.action as SubmitDecision).response.shouldBeInstanceOf<OrderedResponse>()
+        }
+        responses.map { it.orderedObjects }.toSet() shouldBe setOf(
+            cards,
+            cards.reversed(),
+        )
+
+        result.root.edges.zip(responses).forEach { (edge, response) ->
+            val branch = GameEnvironment.create(driver.cardRegistry).also {
+                it.restore(rootState, listOf(driver.player1, driver.player2))
+            }
+            branch.step(edge.action)
+
+            branch.lastRejection shouldBe null
+            branch.state.getLibrary(player).take(2) shouldBe response.orderedObjects
+        }
+        result.root.edges[0].child!!.state shouldNotBe result.root.edges[1].child!!.state
     }
 
     test("existing yes-no folding remains a complete two-edge decision") {

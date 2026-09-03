@@ -92,7 +92,9 @@ import java.util.Random as JavaRandom
  * @param dirichletWeight `(1-w) * prior + w * dirichlet` mix weight
  * @param rng seed for noise sampling
  * @param structuredExpander policy-free source of complete structured
- *        response sets; defaults to exact required-single-target expansion
+ *        response sets; defaults to exact required/optional single targets and unique orderings
+ *        or library reorders through four objects (24 responses). This is a capability ceiling,
+ *        not an engine legality rule: larger or duplicate shapes are Unsupported, never partial.
  */
 class AlphaZeroSearch<T>(
     private val env: GameEnvironment,

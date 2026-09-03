@@ -4,6 +4,9 @@ import com.wingedsheep.engine.core.CancelDecisionResponse
 import com.wingedsheep.engine.core.ChooseTargetsDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.OrderObjectsDecision
+import com.wingedsheep.engine.core.OrderedResponse
+import com.wingedsheep.engine.core.ReorderLibraryDecision
+import com.wingedsheep.engine.core.SplitPilesDecision
 import com.wingedsheep.engine.core.TargetRequirementInfo
 import com.wingedsheep.engine.core.TargetsResponse
 import com.wingedsheep.engine.handlers.actions.decision.DecisionValidators
@@ -22,6 +25,8 @@ class ExactStructuredDecisionExpanderTest : FunSpec({
     val first = EntityId.of("first")
     val second = EntityId.of("second")
     val third = EntityId.of("third")
+    val fourth = EntityId.of("fourth")
+    val fifth = EntityId.of("fifth")
     val state = GameState(turnOrder = listOf(playerId))
 
     fun targetDecision(
@@ -137,13 +142,139 @@ class ExactStructuredDecisionExpanderTest : FunSpec({
             StructuredDecisionExpansion.Unsupported
     }
 
-    test("unsupported family returns unsupported") {
+    test("small object ordering expands every validator-accepted permutation deterministically") {
         val decision = OrderObjectsDecision(
             id = "order",
             playerId = playerId,
             prompt = "Order objects",
             context = DecisionContext(),
-            objects = listOf(first, second)
+            objects = listOf(first, second, third)
+        )
+
+        val expansion = ExactStructuredDecisionExpander.expand(state, decision)
+            .shouldBeInstanceOf<StructuredDecisionExpansion.Complete>()
+
+        expansion.responses.shouldContainExactly(
+            OrderedResponse("order", listOf(first, second, third)),
+            OrderedResponse("order", listOf(first, third, second)),
+            OrderedResponse("order", listOf(second, first, third)),
+            OrderedResponse("order", listOf(second, third, first)),
+            OrderedResponse("order", listOf(third, first, second)),
+            OrderedResponse("order", listOf(third, second, first))
+        )
+        expansion.responses.forEach { response ->
+            response.asClue {
+                DecisionValidators.validate(decision, response, state) shouldBe null
+            }
+        }
+    }
+
+    test("small library reorder expands every validator-accepted permutation") {
+        val decision = ReorderLibraryDecision(
+            id = "reorder",
+            playerId = playerId,
+            prompt = "Reorder library",
+            context = DecisionContext(),
+            cards = listOf(first, second),
+            cardInfo = emptyMap()
+        )
+
+        val expansion = ExactStructuredDecisionExpander.expand(state, decision)
+            .shouldBeInstanceOf<StructuredDecisionExpansion.Complete>()
+
+        expansion.responses.shouldContainExactly(
+            OrderedResponse("reorder", listOf(first, second)),
+            OrderedResponse("reorder", listOf(second, first))
+        )
+        expansion.responses.forEach { response ->
+            response.asClue {
+                DecisionValidators.validate(decision, response, state) shouldBe null
+            }
+        }
+    }
+
+    test("ordering materializes exactly through the response ceiling and not beyond it") {
+        val atCeiling = OrderObjectsDecision(
+            id = "four-objects",
+            playerId = playerId,
+            prompt = "Order objects",
+            context = DecisionContext(),
+            objects = listOf(first, second, third, fourth)
+        )
+        val overCeiling = ReorderLibraryDecision(
+            id = "five-cards",
+            playerId = playerId,
+            prompt = "Reorder library",
+            context = DecisionContext(),
+            cards = listOf(first, second, third, fourth, fifth),
+            cardInfo = emptyMap()
+        )
+
+        val expansion = ExactStructuredDecisionExpander.expand(state, atCeiling)
+            .shouldBeInstanceOf<StructuredDecisionExpansion.Complete>()
+        expansion.responses.size shouldBe 24
+        expansion.responses.toSet().size shouldBe 24
+        expansion.responses.forEach { response ->
+            DecisionValidators.validate(atCeiling, response, state) shouldBe null
+        }
+        ExactStructuredDecisionExpander.expand(state, overCeiling) shouldBe
+            StructuredDecisionExpansion.Unsupported
+    }
+
+    test("duplicate ordering IDs are unsupported rather than conflated into fewer permutations") {
+        val duplicateObjects = OrderObjectsDecision(
+            id = "duplicate-objects",
+            playerId = playerId,
+            prompt = "Order objects",
+            context = DecisionContext(),
+            objects = listOf(first, second, first)
+        )
+        val duplicateCards = ReorderLibraryDecision(
+            id = "duplicate-cards",
+            playerId = playerId,
+            prompt = "Reorder library",
+            context = DecisionContext(),
+            cards = listOf(first, second, first),
+            cardInfo = emptyMap()
+        )
+
+        ExactStructuredDecisionExpander.expand(state, duplicateObjects) shouldBe
+            StructuredDecisionExpansion.Unsupported
+        ExactStructuredDecisionExpander.expand(state, duplicateCards) shouldBe
+            StructuredDecisionExpansion.Unsupported
+    }
+
+    test("degenerate unique orderings retain their single validator-approved response") {
+        val emptyObjects = OrderObjectsDecision(
+            id = "empty-order",
+            playerId = playerId,
+            prompt = "Order objects",
+            context = DecisionContext(),
+            objects = emptyList()
+        )
+        val oneCard = ReorderLibraryDecision(
+            id = "one-card",
+            playerId = playerId,
+            prompt = "Reorder library",
+            context = DecisionContext(),
+            cards = listOf(first),
+            cardInfo = emptyMap()
+        )
+
+        ExactStructuredDecisionExpander.expand(state, emptyObjects) shouldBe
+            StructuredDecisionExpansion.Complete(listOf(OrderedResponse("empty-order", emptyList())))
+        ExactStructuredDecisionExpander.expand(state, oneCard) shouldBe
+            StructuredDecisionExpansion.Complete(listOf(OrderedResponse("one-card", listOf(first))))
+    }
+
+    test("unrelated structured family remains unsupported") {
+        val decision = SplitPilesDecision(
+            id = "piles",
+            playerId = playerId,
+            prompt = "Split piles",
+            context = DecisionContext(),
+            cards = listOf(first, second),
+            numberOfPiles = 2
         )
 
         ExactStructuredDecisionExpander.expand(state, decision) shouldBe
