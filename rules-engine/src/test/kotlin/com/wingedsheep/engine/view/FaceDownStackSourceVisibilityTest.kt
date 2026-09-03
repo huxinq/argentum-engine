@@ -66,6 +66,7 @@ class FaceDownStackSourceVisibilityTest : FunSpec({
                         sourceName = secretSource.name,
                         controllerId = controller,
                         effect = Effects.DrawCards(1),
+                        descriptionOverride = "Draw a card.",
                         abilityIdentity = AbilityIdentity(secretSource.name, AbilityId("secret_activated")),
                     ),
                 ),
@@ -79,6 +80,7 @@ class FaceDownStackSourceVisibilityTest : FunSpec({
         opponentView.colors.shouldBeEmpty()
         opponentView.imageUri.shouldBeNull()
         opponentView.abilityIdentity.shouldBeNull()
+        opponentView.oracleText shouldBe "Draw a card."
 
         val controllerView = ClientStateTransformer(driver.cardRegistry)
             .transform(driver.state, controller)
@@ -103,6 +105,7 @@ class FaceDownStackSourceVisibilityTest : FunSpec({
                         controllerId = controller,
                         effect = Effects.DrawCards(1),
                         description = "Draw a card.",
+                        descriptionOverride = "Draw a card.",
                         abilityIdentity = AbilityIdentity(secretSource.name, AbilityId("secret_triggered")),
                     ),
                 ),
@@ -116,6 +119,7 @@ class FaceDownStackSourceVisibilityTest : FunSpec({
         opponentView.colors.shouldBeEmpty()
         opponentView.imageUri.shouldBeNull()
         opponentView.abilityIdentity.shouldBeNull()
+        opponentView.oracleText shouldBe "Draw a card."
 
         val controllerView = ClientStateTransformer(driver.cardRegistry)
             .transform(driver.state, controller)

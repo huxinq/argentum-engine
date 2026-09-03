@@ -222,7 +222,7 @@ class ObservationProjectedStateTest : ScenarioTestBase() {
             observe(state, game.player2Id).stack.single().name shouldBe "Hill Giant"
         }
 
-        test("an ability on the stack inherits its face-down source visibility") {
+        test("an ability on the stack hides its face-down source but keeps its public effect text") {
             val game = scenario()
                 .withPlayers()
                 .withCardOnBattlefield(2, "Hill Giant")
@@ -240,6 +240,7 @@ class ObservationProjectedStateTest : ScenarioTestBase() {
                             sourceName = "Hill Giant",
                             controllerId = game.player2Id,
                             effect = Effects.DrawCards(1),
+                            descriptionOverride = "Draw a card.",
                         ),
                     ),
                 )
@@ -260,6 +261,10 @@ class ObservationProjectedStateTest : ScenarioTestBase() {
             observe(state, game.player1Id).stack.map { it.name } shouldBe listOf(
                 "Face-down creature activated ability",
                 "Face-down creature triggered ability",
+            )
+            observe(state, game.player1Id).stack.map { it.oracleText } shouldBe listOf(
+                "Draw a card.",
+                "Draw a card.",
             )
             observe(state, game.player2Id).stack.map { it.name } shouldBe listOf(
                 "Hill Giant",
