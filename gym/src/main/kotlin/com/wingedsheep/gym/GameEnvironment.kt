@@ -198,6 +198,36 @@ class GameEnvironment private constructor(
     }
 
     /**
+     * Submit exactly one [action] through [ActionProcessor] and install its direct result.
+     *
+     * Unlike [step], this does not run simulator-driven automatic resolution: it never
+     * synthesizes an additional [GameAction], decision response, or priority pass. The submitted
+     * action may itself legitimately resolve the stack or advance the game (for example,
+     * [PassPriority]). [ActionProcessor] remains the authoritative action boundary: it performs
+     * the submitted action atomically and any resulting [PendingDecision] remains for the caller.
+     * A rejected action is returned as [ExactOneSubmissionResult.Rejected], rather than being
+     * represented as a game reward or outcome.
+     */
+    fun stepExactlyOne(action: GameAction): ExactOneSubmissionResult {
+        check(playerIds.isNotEmpty()) { "Call reset() before stepExactlyOne()" }
+
+        val result = processor.process(state, action).result
+        stepCount++
+        val rejection = result.error
+        if (rejection != null) {
+            lastStepEvents = result.events
+            lastRejection = rejection
+            return ExactOneSubmissionResult.Rejected(action, rejection)
+        }
+
+        state = result.state
+        events = events + result.events
+        lastStepEvents = result.events
+        lastRejection = null
+        return ExactOneSubmissionResult.Applied(buildStepResult(result.events))
+    }
+
+    /**
      * Enumerate all legal actions for the player who needs to act.
      *
      * Uses [EnumerationMode.ACTIONS_ONLY] to skip expensive auto-tap preview
