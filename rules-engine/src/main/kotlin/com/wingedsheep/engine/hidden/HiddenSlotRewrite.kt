@@ -1,12 +1,12 @@
 package com.wingedsheep.engine.hidden
 
 import com.wingedsheep.engine.core.CardEntityFactory
+import com.wingedsheep.engine.core.InFlightEntityReferences
+import com.wingedsheep.engine.core.InFlightReferenceProjector
 import com.wingedsheep.engine.state.ComponentContainer
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.engine.state.components.identity.ControllerComponent
-import com.wingedsheep.engine.state.components.stack.ChosenTarget
-import com.wingedsheep.engine.state.components.stack.TargetsComponent
 import com.wingedsheep.sdk.model.CardDefinition
 import com.wingedsheep.sdk.model.EntityId
 
@@ -14,14 +14,77 @@ import com.wingedsheep.sdk.model.EntityId
  * Swapping the card identity occupying a hidden zone slot, without disturbing anything else.
  *
  * Both hidden-information callers need the same three answers — is this slot safe to rewrite,
- * which slots are pinned by in-flight stack references, and how is the rewrite applied — while
- * differing entirely in *policy*: [com.wingedsheep.engine.hidden.HiddenWorldMaterializer] installs
- * a caller-supplied assignment and refuses anything it cannot install, whereas the AI's
+ * which slots are conservatively pinned by in-flight execution, and how is the rewrite applied —
+ * while differing entirely in *policy*: [com.wingedsheep.engine.hidden.HiddenWorldMaterializer]
+ * installs a caller-supplied assignment and refuses anything it cannot install, whereas the AI's
  * `Determinizer` samples an assignment from a visibility model and silently pins whatever it
  * cannot rewrite. Keeping the mechanics here means those two policies cannot drift into two
  * different notions of "safe".
  */
 object HiddenSlotRewrite {
+
+    /**
+     * The complete state-level answer to which hidden slots cannot have their identities replaced
+     * while execution is in flight.
+     *
+     * Live stack objects, pending decisions, and continuation frames contribute every typed
+     * [EntityId] their serializable graphs contain. That is a conservative superset, because not
+     * every typed occurrence intrinsically depends on a card's current identity. Callers that apply
+     * different policies (rejecting an explicit assignment or silently pinning a sampled slot) must
+     * consume this one answer rather than independently approximating only part of the state.
+     */
+    sealed interface IdentitySensitiveInFlightPins {
+        data class Complete(val entityIds: Set<EntityId>) : IdentitySensitiveInFlightPins
+
+        /** The graph is incomplete; no candidate may be rewritten, so callers reject or pin by policy. */
+        data class Incomplete(val details: List<String>) : IdentitySensitiveInFlightPins
+    }
+
+    fun identitySensitiveInFlightPins(state: GameState): IdentitySensitiveInFlightPins =
+        identitySensitiveInFlightPins(state, InFlightEntityReferences)
+
+    /** Test-only seam for consumers that need to prove their fail-closed policy. */
+    internal fun identitySensitiveInFlightPins(
+        state: GameState,
+        inFlightReferenceProjector: InFlightReferenceProjector,
+    ): IdentitySensitiveInFlightPins {
+        val referenced = mutableSetOf<EntityId>()
+        state.stack.forEachIndexed { index, stackId ->
+            val stackObject = state.getEntity(stackId)
+                ?: return IdentitySensitiveInFlightPins.Incomplete(
+                    listOf("could not traverse stack[$index] $stackId: missing entity"),
+                )
+            when (val projection = inFlightReferenceProjector.project(stackObject)) {
+                is InFlightEntityReferences.Projection.Complete -> referenced += projection.entityIds
+                is InFlightEntityReferences.Projection.Incomplete -> {
+                    return IdentitySensitiveInFlightPins.Incomplete(
+                        listOf("could not traverse stack[$index] ${projection.rootType}: ${projection.failure}"),
+                    )
+                }
+            }
+        }
+        state.pendingDecision?.let { decision ->
+            when (val projection = inFlightReferenceProjector.project(decision)) {
+                is InFlightEntityReferences.Projection.Complete -> referenced += projection.entityIds
+                is InFlightEntityReferences.Projection.Incomplete -> {
+                    return IdentitySensitiveInFlightPins.Incomplete(
+                        listOf("could not traverse pending decision ${projection.rootType}: ${projection.failure}"),
+                    )
+                }
+            }
+        }
+        state.continuationStack.forEachIndexed { index, frame ->
+            when (val projection = inFlightReferenceProjector.project(frame)) {
+                is InFlightEntityReferences.Projection.Complete -> referenced += projection.entityIds
+                is InFlightEntityReferences.Projection.Incomplete -> {
+                    return IdentitySensitiveInFlightPins.Incomplete(
+                        listOf("could not traverse continuation[$index] ${projection.rootType}: ${projection.failure}"),
+                    )
+                }
+            }
+        }
+        return IdentitySensitiveInFlightPins.Complete(referenced)
+    }
 
     /**
      * The components on [container] that block rewriting the slot to a different card identity,
@@ -56,27 +119,6 @@ object HiddenSlotRewrite {
             .map { component -> component::class.simpleName ?: component::class.java.name }
             .sorted()
     }
-
-    /**
-     * Every entity id a stack object's chosen targets point at.
-     *
-     * A stack object records the object it targets, so rewriting that object's identity underneath
-     * it produces a spell aimed at a card that was never there. Targets are the one in-flight
-     * reference shape with a uniform representation ([TargetsComponent]); continuation frames and
-     * pending decisions carry entity references in per-effect shapes with no common visitor, so
-     * callers gate on those wholesale rather than per slot.
-     */
-    fun stackReferencedEntities(state: GameState): Set<EntityId> =
-        state.stack.flatMapTo(mutableSetOf()) { stackId ->
-            state.getEntity(stackId)?.get<TargetsComponent>()?.targets.orEmpty().mapNotNull {
-                when (it) {
-                    is ChosenTarget.Card -> it.cardId
-                    is ChosenTarget.Permanent -> it.entityId
-                    is ChosenTarget.Spell -> it.spellEntityId
-                    is ChosenTarget.Player -> null
-                }
-            }
-        }
 
     /**
      * Rebuild [entityId] as [definition], keeping the slot itself intact.

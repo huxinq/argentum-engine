@@ -1,13 +1,22 @@
 package com.wingedsheep.ai.engine.hidden
 
+import com.wingedsheep.engine.core.CastSpell
+import com.wingedsheep.engine.core.SelectCardsDecision
+import com.wingedsheep.engine.hidden.HiddenSlotRewrite
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.engine.state.components.identity.RevealedToComponent
+import com.wingedsheep.engine.state.components.stack.ChosenTarget
 import com.wingedsheep.engine.support.ScenarioTestBase
+import com.wingedsheep.sdk.core.Phase
+import com.wingedsheep.sdk.core.Step
 import com.wingedsheep.engine.view.ClientStateTransformer
+import com.wingedsheep.engine.view.Visibility
 import com.wingedsheep.sdk.model.GameRng
+import com.wingedsheep.sdk.scripting.AdditionalCostPayment
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.types.shouldBeInstanceOf
 
 class DeterminizerInvariantsTest : ScenarioTestBase() {
 
@@ -139,6 +148,131 @@ class DeterminizerInvariantsTest : ScenarioTestBase() {
 
             sampled.getLibrary(game.player2Id).first() shouldBe topId
             sampled.getEntity(topId)!!.require<CardComponent>() shouldBe topCard
+        }
+
+        test("a Mind Rot pause pins referenced hidden hand slots while unrelated library slots remain sampleable") {
+            val game = scenario()
+                .withPlayers()
+                .withCardInHand(1, "Mind Rot")
+                .withCardOnBattlefield(1, "Swamp")
+                .withCardOnBattlefield(1, "Swamp")
+                .withCardOnBattlefield(1, "Swamp")
+                .withCardInHand(2, "Grizzly Bears")
+                .withCardInHand(2, "Hill Giant")
+                .withCardInHand(2, "Craw Wurm")
+                .withCardInLibrary(2, "Forest")
+                .withCardInLibrary(2, "Mountain")
+                .build()
+            game.castSpellTargetingPlayer(1, "Mind Rot", 2).error shouldBe null
+            game.resolveStack()
+
+            val source = game.state
+            val decision = source.pendingDecision.shouldBeInstanceOf<SelectCardsDecision>()
+            val referencedHandId = decision.options.first()
+            val referencedHandCard = source.getEntity(referencedHandId)!!.require<CardComponent>()
+            val unrelatedLibraryId = source.getLibrary(game.player2Id).first()
+            val originalLibraryCard = source.getEntity(unrelatedLibraryId)!!.require<CardComponent>()
+            val determinizer = Determinizer(cardRegistry)
+
+            val sampled = (1L..32L).map { seed ->
+                determinizer.sample(
+                    source,
+                    game.player1Id,
+                    OpponentModel.IdentityPermutation,
+                    GameRng.seeded(seed),
+                )
+            }
+
+            sampled.forEach {
+                it.getEntity(referencedHandId)!!.require<CardComponent>() shouldBe referencedHandCard
+            }
+            sampled.any {
+                it.getEntity(unrelatedLibraryId)!!.require<CardComponent>() != originalLibraryCard
+            } shouldBe true
+        }
+
+        test("a live Monstrous Emergence keeps its chosen hidden hand card fixed while other slots sample") {
+            val game = scenario()
+                .withPlayers()
+                .withCardOnBattlefield(1, "Grizzly Bears")
+                .withCardInHand(2, "Monstrous Emergence")
+                .withCardInHand(2, "Craw Wurm")
+                .withCardInHand(2, "Hill Giant")
+                .withCardInLibrary(2, "Forest")
+                .withCardInLibrary(2, "Mountain")
+                .withLandsOnBattlefield(2, "Forest", 2)
+                .withActivePlayer(2)
+                .inPhase(Phase.PRECOMBAT_MAIN, Step.PRECOMBAT_MAIN)
+                .build()
+            val spellId = game.state.getHand(game.player2Id).first { id ->
+                game.state.getEntity(id)?.get<CardComponent>()?.name == "Monstrous Emergence"
+            }
+            val chosenHandId = game.state.getHand(game.player2Id).first { id ->
+                game.state.getEntity(id)?.get<CardComponent>()?.name == "Craw Wurm"
+            }
+            val targetId = game.findPermanent("Grizzly Bears")!!
+
+            game.execute(
+                CastSpell(
+                    game.player2Id,
+                    spellId,
+                    listOf(ChosenTarget.Permanent(targetId)),
+                    additionalCostPayment = AdditionalCostPayment(beheldCards = listOf(chosenHandId)),
+                ),
+            ).error shouldBe null
+            val source = game.state
+            val chosenHandCard = source.getEntity(chosenHandId)!!.require<CardComponent>()
+            val unrelatedLibraryId = source.getLibrary(game.player2Id).first()
+            val originalLibraryCard = source.getEntity(unrelatedLibraryId)!!.require<CardComponent>()
+
+            val sampled = (1L..32L).map { seed ->
+                Determinizer(cardRegistry).sample(
+                    source,
+                    game.player1Id,
+                    OpponentModel.IdentityPermutation,
+                    GameRng.seeded(seed),
+                )
+            }
+
+            sampled.forEach {
+                it.getEntity(chosenHandId)!!.require<CardComponent>() shouldBe chosenHandCard
+            }
+            sampled.any {
+                it.getEntity(unrelatedLibraryId)!!.require<CardComponent>() != originalLibraryCard
+            } shouldBe true
+        }
+
+        test("an incomplete shared pin analysis leaves every hidden candidate identity unchanged") {
+            val game = scenario()
+                .withPlayers()
+                .withCardInHand(2, "Grizzly Bears")
+                .withCardInHand(2, "Hill Giant")
+                .withCardInLibrary(2, "Forest")
+                .withCardInLibrary(2, "Mountain")
+                .build()
+            val source = game.state
+            val candidateIds = source.getHand(game.player2Id) + source.getLibrary(game.player2Id)
+            val candidateIdentities = candidateIds.associateWith {
+                source.getEntity(it)!!.require<CardComponent>()
+            }
+            val determinizer = Determinizer.withInFlightPinAnalysis(
+                cardRegistry,
+                Visibility(cardRegistry),
+            ) {
+                HiddenSlotRewrite.IdentitySensitiveInFlightPins.Incomplete(listOf("forced for test"))
+            }
+
+            val sampled = determinizer.sample(
+                source,
+                game.player1Id,
+                OpponentModel.IdentityPermutation,
+                GameRng.seeded(913L),
+            )
+
+            candidateIdentities.forEach { (entityId, identity) ->
+                sampled.getEntity(entityId)!!.require<CardComponent>() shouldBe identity
+            }
+            sampled shouldBe source
         }
 
         test("the viewer does not retain knowledge of their own library order") {

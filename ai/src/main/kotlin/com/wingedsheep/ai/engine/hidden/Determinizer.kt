@@ -20,10 +20,16 @@ import com.wingedsheep.sdk.model.GameRng
  * valid. Cards carrying runtime components are pinned because changing their definition could make
  * those components nonsensical.
  */
-class Determinizer(
+class Determinizer private constructor(
     private val cardRegistry: CardRegistry,
-    private val visibility: Visibility = Visibility(cardRegistry),
+    private val visibility: Visibility,
+    private val inFlightPinAnalysis: (GameState) -> HiddenSlotRewrite.IdentitySensitiveInFlightPins,
 ) {
+    constructor(
+        cardRegistry: CardRegistry,
+        visibility: Visibility = Visibility(cardRegistry),
+    ) : this(cardRegistry, visibility, HiddenSlotRewrite::identitySensitiveInFlightPins)
+
     /** Pure per-position entry point used by the Strategist before it simulates any candidate. */
     fun sampleForSearch(
         state: GameState,
@@ -106,15 +112,16 @@ class Determinizer(
         val libraryKey = ZoneKey(opponentId, Zone.LIBRARY)
         val library = state.getLibrary(opponentId)
         val candidates = library + state.getHand(opponentId)
-        val referencedByStack = HiddenSlotRewrite.stackReferencedEntities(state)
+        val inFlightPins = when (val pins = inFlightPinAnalysis(state)) {
+            is HiddenSlotRewrite.IdentitySensitiveInFlightPins.Complete -> pins.entityIds
+            // An incomplete traversal cannot justify sampling any hidden identity. HWM rejects the
+            // corresponding all-or-nothing request; sampling instead keeps every candidate slot.
+            is HiddenSlotRewrite.IdentitySensitiveInFlightPins.Incomplete -> return emptyList()
+        }
         return candidates.filter { id ->
             val zoneKey = if (id in library) libraryKey else handKey
             !visibility.isCardIdentityVisibleTo(state, zoneKey, id, viewerId) &&
-                id !in referencedByStack &&
-                // Continuation frames carry entity references in several different shapes.
-                // Quiet search roots normally have none; pinning while one exists is the safe
-                // fallback until those shapes share a common reference visitor.
-                state.continuationStack.isEmpty() &&
+                id !in inFlightPins &&
                 isSafeToRewrite(state, id)
         }
     }
@@ -156,5 +163,14 @@ class Determinizer(
         if (pool.size < hidden.size) return emptyList<CardDefinition>() to rng
         val (shuffled, next) = rng.shuffle(pool)
         return shuffled.take(hidden.size) to next
+    }
+
+    companion object {
+        /** Test-only seam: inject the shared final analysis, never reference traversal rules. */
+        internal fun withInFlightPinAnalysis(
+            cardRegistry: CardRegistry,
+            visibility: Visibility,
+            inFlightPinAnalysis: (GameState) -> HiddenSlotRewrite.IdentitySensitiveInFlightPins,
+        ): Determinizer = Determinizer(cardRegistry, visibility, inFlightPinAnalysis)
     }
 }

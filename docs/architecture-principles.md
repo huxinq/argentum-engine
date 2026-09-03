@@ -475,8 +475,10 @@ reference pointing at it — that is what `HiddenSlotRewrite` (`rules-engine/hid
 lets the AI reason about hypothetical opponent hands. It derives the safe set from what
 `CardEntityFactory` would build for the card currently there, so a slot carrying anything else —
 last-known battlefield information, a reveal someone has been shown — is refused rather than
-transplanted. `HiddenWorldMaterializer` is the all-or-nothing caller (`docs/ai/architecture.md`
-covers the sampling one).
+transplanted. Its one whole-state in-flight-pin answer is the conservative superset of every typed
+`EntityId` in live stack objects, pending decisions, and continuation frames; an incomplete in-flight
+graph traversal pins all candidates. `HiddenWorldMaterializer` is the all-or-nothing caller
+(`docs/ai/architecture.md` covers the sampling one).
 
 ### 2.3 Rule 613: Base State vs. Projected State
 

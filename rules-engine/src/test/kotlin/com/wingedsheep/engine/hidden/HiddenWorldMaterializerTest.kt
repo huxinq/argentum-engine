@@ -1,8 +1,15 @@
 package com.wingedsheep.engine.hidden
 
+import com.wingedsheep.engine.core.CardsSelectedResponse
+import com.wingedsheep.engine.core.CastSpell
+import com.wingedsheep.engine.core.InFlightEntityReferences
+import com.wingedsheep.engine.core.InFlightReferenceProjector
+import com.wingedsheep.engine.core.SelectCardsDecision
+import com.wingedsheep.engine.core.SubmitDecision
 import com.wingedsheep.engine.core.PlayLand
 import com.wingedsheep.engine.handlers.effects.ZoneTransitionService
 import com.wingedsheep.engine.state.GameState
+import com.wingedsheep.engine.state.ComponentContainer
 import com.wingedsheep.engine.state.ZoneKey
 import com.wingedsheep.engine.state.components.battlefield.LastKnownPermanentComponent
 import com.wingedsheep.engine.state.components.identity.CardComponent
@@ -13,7 +20,10 @@ import com.wingedsheep.engine.state.components.stack.ChosenTarget
 import com.wingedsheep.engine.state.components.stack.TargetsComponent
 import com.wingedsheep.engine.support.ScenarioTestBase
 import com.wingedsheep.sdk.core.Zone
+import com.wingedsheep.sdk.core.Phase
+import com.wingedsheep.sdk.core.Step
 import com.wingedsheep.sdk.dsl.card
+import com.wingedsheep.sdk.scripting.AdditionalCostPayment
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.model.GameRng
 import io.kotest.assertions.withClue
@@ -27,6 +37,50 @@ class HiddenWorldMaterializerTest : ScenarioTestBase() {
     private val materializer = HiddenWorldMaterializer(cardRegistry)
 
     init {
+        test("a Monstrous Emergence hand choice is pinned by the live stack object") {
+            val game = scenario()
+                .withPlayers()
+                .withCardOnBattlefield(1, "Grizzly Bears")
+                .withCardInHand(2, "Monstrous Emergence")
+                .withCardInHand(2, "Craw Wurm")
+                .withCardInHand(2, "Hill Giant")
+                .withCardInLibrary(2, "Forest")
+                .withLandsOnBattlefield(2, "Forest", 2)
+                .withActivePlayer(2)
+                .inPhase(Phase.PRECOMBAT_MAIN, Step.PRECOMBAT_MAIN)
+                .build()
+            val spellId = game.state.getHand(game.player2Id).first { id ->
+                game.state.getEntity(id)?.get<CardComponent>()?.name == "Monstrous Emergence"
+            }
+            val chosenHandId = game.state.getHand(game.player2Id).first { id ->
+                game.state.getEntity(id)?.get<CardComponent>()?.name == "Craw Wurm"
+            }
+            val targetId = game.findPermanent("Grizzly Bears")!!
+
+            game.execute(
+                CastSpell(
+                    game.player2Id,
+                    spellId,
+                    listOf(ChosenTarget.Permanent(targetId)),
+                    additionalCostPayment = AdditionalCostPayment(beheldCards = listOf(chosenHandId)),
+                ),
+            ).error shouldBe null
+            val source = game.state
+            source.getHand(game.player2Id) shouldContain chosenHandId
+
+            val result = materializer.materialize(
+                source,
+                HiddenWorldMaterializationRequest(
+                    slotAssignments = mapOf(chosenHandId to cardRegistry.requireCard("Mountain")),
+                    futureRng = GameRng.seeded(605L),
+                ),
+            ).shouldBeInstanceOf<HiddenWorldMaterializationResult.Unsupported>()
+
+            result.reason.kind shouldBe UnsupportedHiddenWorldKind.IN_FLIGHT_REFERENCES
+            result.reason.entityId shouldBe chosenHandId
+            source.getEntity(chosenHandId)?.get<CardComponent>()?.name shouldBe "Craw Wurm"
+        }
+
         test("explicit assignments preserve slots and unrelated state while installing future RNG") {
             val game = scenario()
                 .withPlayers()
@@ -230,71 +284,164 @@ class HiddenWorldMaterializerTest : ScenarioTestBase() {
 
             result.reason.kind shouldBe UnsupportedHiddenWorldKind.IN_FLIGHT_REFERENCES
             result.reason.entityId shouldBe libraryId
-            result.reason.details shouldContain "slot is the chosen target of a stack object"
+            result.reason.details shouldContain "slot is conservatively pinned by in-flight execution"
             cardName(targeted, libraryId) shouldBe "Hill Giant"
         }
 
-        test("a pending decision and its continuation frames refuse the whole request") {
+        test("a Mind Rot pause pins the targeted opponent's referenced hand slots but not library slots") {
             val game = scenario()
                 .withPlayers()
-                .withCardInHand(1, "Preordain")
-                .withCardOnBattlefield(1, "Island")
-                .withCardInLibrary(1, "Forest")
-                .withCardInLibrary(1, "Mountain")
+                .withCardInHand(1, "Mind Rot")
+                .withCardOnBattlefield(1, "Swamp")
+                .withCardOnBattlefield(1, "Swamp")
+                .withCardOnBattlefield(1, "Swamp")
                 .withCardInHand(2, "Grizzly Bears")
+                .withCardInHand(2, "Hill Giant")
+                .withCardInHand(2, "Craw Wurm")
+                .withCardInLibrary(2, "Forest")
+                .withRngSeed(615L)
                 .build()
-            val hiddenId = game.state.getHand(game.player2Id).single()
-            game.castSpell(1, "Preordain").error shouldBe null
+            game.castSpellTargetingPlayer(1, "Mind Rot", 2).error shouldBe null
             game.resolveStack()
 
-            // Preordain scries before it draws, so the engine is parked on a decision with the
-            // rest of the resolution held in a continuation frame.
+            // These are hidden opponent slots from player 1's search root. Mind Rot has already
+            // targeted player 2, but the actual discard selection remains player 2's decision.
             val source = game.state
-            source.pendingDecision shouldNotBe null
+            val sourceDecision = source.pendingDecision.shouldBeInstanceOf<SelectCardsDecision>()
+            sourceDecision.playerId shouldBe game.player2Id
             source.continuationStack.isNotEmpty() shouldBe true
+            val referencedHandId = sourceDecision.options.first()
+            val unrelatedLibraryId = source.getLibrary(game.player2Id).single()
+            val referencedHandName = cardName(source, referencedHandId)
+            val sourceRng = source.rng
 
-            val result = materializer.materialize(
+            val atomicFailure = materializer.materialize(
                 source,
                 HiddenWorldMaterializationRequest(
-                    slotAssignments = mapOf(hiddenId to cardRegistry.requireCard("Mountain")),
+                    slotAssignments = mapOf(
+                        unrelatedLibraryId to cardRegistry.requireCard("Mountain"),
+                        referencedHandId to cardRegistry.requireCard("Island"),
+                    ),
                     futureRng = GameRng.seeded(616L),
+                ),
+            ).shouldBeInstanceOf<HiddenWorldMaterializationResult.Unsupported>()
+
+            atomicFailure.reason.kind shouldBe UnsupportedHiddenWorldKind.IN_FLIGHT_REFERENCES
+            atomicFailure.reason.entityId shouldBe referencedHandId
+            atomicFailure.reason.details shouldContain "slot is conservatively pinned by in-flight execution"
+            cardName(source, referencedHandId) shouldBe referencedHandName
+            cardName(source, unrelatedLibraryId) shouldBe "Forest"
+            source.rng shouldBe sourceRng
+
+            val world = materializer.materialize(
+                source,
+                HiddenWorldMaterializationRequest(
+                    slotAssignments = mapOf(unrelatedLibraryId to cardRegistry.requireCard("Mountain")),
+                    futureRng = GameRng.seeded(617L),
+                ),
+            ).shouldBeInstanceOf<HiddenWorldMaterializationResult.Materialized>().state
+
+            cardName(world, unrelatedLibraryId) shouldBe "Mountain"
+            world.rng shouldBe GameRng.seeded(617L)
+            val worldDecision = world.pendingDecision.shouldBeInstanceOf<SelectCardsDecision>()
+            val discardedIds = worldDecision.options.take(2)
+            val resumed = actionProcessor.process(
+                world,
+                SubmitDecision(
+                    game.player2Id,
+                    CardsSelectedResponse(worldDecision.id, discardedIds),
+                ),
+            ).result
+
+            resumed.error shouldBe null
+            resumed.state.pendingDecision shouldBe null
+            resumed.state.continuationStack shouldBe emptyList()
+            resumed.state.stack shouldBe emptyList()
+            discardedIds.forEach { discardedId ->
+                resumed.state.getGraveyard(game.player2Id) shouldContain discardedId
+            }
+            cardName(resumed.state, unrelatedLibraryId) shouldBe "Mountain"
+            resumed.state.rng shouldBe GameRng.seeded(617L)
+        }
+
+        test("an empty assignment traverses a Mind Rot pause and installs the caller RNG") {
+            val game = scenario()
+                .withPlayers()
+                .withCardInHand(1, "Mind Rot")
+                .withCardOnBattlefield(1, "Swamp")
+                .withCardOnBattlefield(1, "Swamp")
+                .withCardOnBattlefield(1, "Swamp")
+                .withCardInHand(2, "Grizzly Bears")
+                .withCardInHand(2, "Hill Giant")
+                .withCardInHand(2, "Craw Wurm")
+                .withRngSeed(620L)
+                .build()
+            game.castSpellTargetingPlayer(1, "Mind Rot", 2).error shouldBe null
+            game.resolveStack()
+            val source = game.state
+            source.pendingDecision.shouldBeInstanceOf<SelectCardsDecision>()
+            source.continuationStack.isNotEmpty() shouldBe true
+
+            val futureRng = GameRng.seeded(621L)
+            val world = materializer.materialize(
+                source,
+                HiddenWorldMaterializationRequest(emptyMap(), futureRng),
+            ).shouldBeInstanceOf<HiddenWorldMaterializationResult.Materialized>().state
+
+            world shouldBe source.copy(rng = futureRng)
+        }
+
+        test("an incomplete paused-state projection refuses the whole request before assignments or RNG") {
+            val game = scenario()
+                .withPlayers()
+                .withCardInHand(2, "Grizzly Bears")
+                .withCardInLibrary(2, "Forest")
+                .withRngSeed(618L)
+                .build()
+            val handId = game.state.getHand(game.player2Id).single()
+            val libraryId = game.state.getLibrary(game.player2Id).single()
+            val pending = SelectCardsDecision(
+                id = "untraversable",
+                playerId = game.player1Id,
+                prompt = "choose",
+                context = com.wingedsheep.engine.core.DecisionContext(),
+                options = emptyList(),
+                minSelections = 0,
+                maxSelections = 0,
+            )
+            val source = game.state.copy(pendingDecision = pending)
+            val sourceRng = source.rng
+            val rejectingMaterializer = HiddenWorldMaterializer(
+                cardRegistry,
+                object : InFlightReferenceProjector {
+                    override fun project(stackObject: ComponentContainer) =
+                        InFlightEntityReferences.Projection.Complete(emptySet())
+
+                    override fun project(decision: com.wingedsheep.engine.core.PendingDecision) =
+                        InFlightEntityReferences.Projection.Incomplete("test", "forced")
+
+                    override fun project(frame: com.wingedsheep.engine.core.ContinuationFrame) =
+                        InFlightEntityReferences.Projection.Complete(emptySet())
+                },
+            )
+
+            val result = rejectingMaterializer.materialize(
+                source,
+                HiddenWorldMaterializationRequest(
+                    slotAssignments = mapOf(
+                        handId to cardRegistry.requireCard("Mountain"),
+                        libraryId to cardRegistry.requireCard("Island"),
+                    ),
+                    futureRng = GameRng.seeded(619L),
                 ),
             ).shouldBeInstanceOf<HiddenWorldMaterializationResult.Unsupported>()
 
             result.reason.kind shouldBe UnsupportedHiddenWorldKind.IN_FLIGHT_REFERENCES
             result.reason.entityId shouldBe null
-            result.reason.details shouldContain
-                (source.pendingDecision!!::class.simpleName ?: "PendingDecision")
-            result.reason.details shouldContain "continuationDepth=${source.continuationStack.size}"
-            cardName(source, hiddenId) shouldBe "Grizzly Bears"
-        }
-
-        test("an empty assignment is gated too, because it still installs the future RNG") {
-            val game = scenario()
-                .withPlayers()
-                .withCardInHand(1, "Preordain")
-                .withCardOnBattlefield(1, "Island")
-                .withCardInLibrary(1, "Forest")
-                .withCardInLibrary(1, "Mountain")
-                .build()
-            game.castSpell(1, "Preordain").error shouldBe null
-            game.resolveStack()
-            game.state.pendingDecision shouldNotBe null
-
-            materializer.materialize(
-                game.state,
-                HiddenWorldMaterializationRequest(emptyMap(), GameRng.seeded(626L)),
-            ).shouldBeInstanceOf<HiddenWorldMaterializationResult.Unsupported>()
-                .reason.kind shouldBe UnsupportedHiddenWorldKind.IN_FLIGHT_REFERENCES
-
-            withClue("a quiet position accepts the same empty request") {
-                val quiet = scenario().withPlayers().withRngSeed(1L).build().state
-                val world = materializer.materialize(
-                    quiet,
-                    HiddenWorldMaterializationRequest(emptyMap(), GameRng.seeded(636L)),
-                ).shouldBeInstanceOf<HiddenWorldMaterializationResult.Materialized>().state
-                world shouldBe quiet.copy(rng = GameRng.seeded(636L))
-            }
+            result.reason.details shouldContain "could not traverse pending decision test: forced"
+            cardName(source, handId) shouldBe "Grizzly Bears"
+            cardName(source, libraryId) shouldBe "Forest"
+            source.rng shouldBe sourceRng
         }
 
         test("a DFC back face cannot be materialized directly into a hidden zone") {

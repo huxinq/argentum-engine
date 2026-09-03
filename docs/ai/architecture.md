@@ -177,8 +177,10 @@ Phase 8 starts with one shared determinization per search. More worlds compete d
 count, so raising K requires an arena result showing it buys more strength at the same wall-clock
 budget.
 
-The mechanics of a swap — which slots are safe, which are pinned by a stack target, how the
-rebuild is applied — live in `HiddenSlotRewrite` in `rules-engine`, not here. `Determinizer` keeps
+The mechanics of a swap — which slots are safe, which are pinned by the conservative typed-`EntityId`
+projection of every live stack object, pending decision, and continuation frame, how the rebuild is
+applied — live in `HiddenSlotRewrite` in `rules-engine`, not here. Its whole-state pin projection
+fails closed: an incomplete in-flight graph pins every candidate hidden slot. `Determinizer` keeps
 the policy: it decides *which* slots are hidden from the viewer and *what* to put in them. The other
 caller of that primitive is `HiddenWorldMaterializer`, for callers that already own an assignment:
 it takes an explicit `EntityId → CardDefinition` map plus a caller-selected RNG for future simulated
