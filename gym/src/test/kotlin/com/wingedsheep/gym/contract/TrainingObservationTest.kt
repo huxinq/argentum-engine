@@ -74,8 +74,8 @@ class TrainingObservationTest : FunSpec({
         obs.stateDigest shouldMatch Regex("[0-9a-f]{64}")
         obs.legalActions.shouldNotBeEmpty()
 
-        // Hand + library + graveyard + exile + battlefield for each player.
-        obs.zones.size shouldBe 2 * 5
+        // Every player-keyed zone is present; stack has its own ordered field.
+        obs.zones.size shouldBe 2 * (Zone.entries.size - 1)
 
         val encoded = json.encodeToString(TrainingObservation.serializer(), obs)
         val decoded = json.decodeFromString(TrainingObservation.serializer(), encoded)

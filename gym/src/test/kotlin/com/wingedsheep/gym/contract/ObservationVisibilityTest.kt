@@ -149,6 +149,37 @@ class ObservationVisibilityTest : ScenarioTestBase() {
             }
         }
 
+        test("every modeled player zone is represented with engine-owned visibility") {
+            val game = scenario()
+                .withPlayers()
+                .withCardInCommandZone(2, "Mountain")
+                .withCardInSideboard(1, "Forest")
+                .withCardInSideboard(2, "Hill Giant")
+                .build()
+            val view = observe(game.state, game.player1Id)
+
+            game.state.turnOrder.forEach { playerId ->
+                view.zones
+                    .filter { it.ownerId == playerId }
+                    .map { it.zoneType }
+                    .toSet() shouldBe Zone.entries.filterNot { it == Zone.STACK }.toSet()
+            }
+
+            zone(view, game.player2Id, Zone.COMMAND).let {
+                it.hidden shouldBe false
+                it.cards.single().name shouldBe "Mountain"
+            }
+            zone(view, game.player1Id, Zone.SIDEBOARD).let {
+                it.hidden shouldBe false
+                it.cards.single().name shouldBe "Forest"
+            }
+            zone(view, game.player2Id, Zone.SIDEBOARD).let {
+                it.hidden shouldBe true
+                it.size shouldBe 1
+                it.cards shouldBe emptyList()
+            }
+        }
+
         test("a face-down object keeps its public characteristics and loses its identity") {
             val game = scenario()
                 .withPlayers()

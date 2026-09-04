@@ -157,7 +157,8 @@ data class ZoneView(
  *
  * Not every field is populated for every zone:
  * - On the battlefield: all fields relevant to a permanent are set.
- * - In the library/hand/graveyard/exile: the card's static properties are set;
+ * - Outside the battlefield (library/hand/graveyard/exile/command/sideboard): the card's static
+ *   properties are set;
  *   dynamic properties (tapped, damage, counters) default to their "not present" values.
  */
 @Serializable

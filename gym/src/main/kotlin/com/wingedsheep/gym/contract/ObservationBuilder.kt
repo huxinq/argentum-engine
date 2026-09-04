@@ -192,11 +192,11 @@ class ObservationBuilder(
         perspectivePlayerId: EntityId,
         revealAll: Boolean
     ): List<ZoneView> {
-        // Emit a view for every (player, zone) in turn order so trainers see a
-        // consistent shape regardless of whether a zone happens to be empty.
-        val perPlayerZones = listOf(
-            Zone.HAND, Zone.LIBRARY, Zone.GRAVEYARD, Zone.EXILE, Zone.BATTLEFIELD
-        )
+        // Emit a view for every modeled (player, zone) in turn order so trainers see a
+        // consistent shape regardless of whether a zone happens to be empty. The stack has its
+        // own ordered representation above; every other Zone is stored under a ZoneKey and must
+        // not disappear merely because this allowlist predates it (COMMAND and SIDEBOARD both did).
+        val perPlayerZones = Zone.entries.filterNot { it == Zone.STACK }
         val views = mutableListOf<ZoneView>()
         for (playerId in state.turnOrder) {
             for (zone in perPlayerZones) {
