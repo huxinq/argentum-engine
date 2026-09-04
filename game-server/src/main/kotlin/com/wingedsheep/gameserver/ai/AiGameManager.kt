@@ -24,9 +24,10 @@ private val logger = LoggerFactory.getLogger(AiGameManager::class.java)
 /**
  * Manages the lifecycle of AI opponents in games.
  *
- * Supports two AI modes:
+ * Supports built-in and externally supplied AI modes:
  * - **engine** (default): Built-in rules-engine AI. No API key needed. Fast, deterministic.
  * - **llm**: LLM-based AI via OpenAI-compatible API. Requires API key.
+ * - any unique mode registered by an [AiControllerProvider].
  */
 @Service
 class AiGameManager(
@@ -36,7 +37,9 @@ class AiGameManager(
     private val cardRegistry: CardRegistry,
     private val llmCostTracker: com.wingedsheep.gameserver.tournament.llm.LlmCostTracker,
     private val aiInsightService: AiInsightService,
+    controllerProviders: List<AiControllerProvider> = emptyList(),
 ) {
+    private val controllerProviders = AiControllerProviderRegistry(controllerProviders)
     /**
      * The live AI sessions of each game, keyed game → AI player. A multiplayer pod seats more than
      * one AI (an FFA table, a Two-Headed Giant team), so this is per *seat* and not per game: keyed
@@ -62,10 +65,13 @@ class AiGameManager(
         }
         if (ai.isEngineMode) {
             logger.info("AI opponent: enabled | mode=engine (built-in)")
-        } else {
+        } else if (ai.isLlmMode) {
             val provider = if (ai.baseUrl.contains("openrouter")) "OpenRouter" else "Local (${ai.baseUrl})"
             logger.info("AI opponent: enabled | mode=llm | provider={} | model={} | deckbuilding-model={}",
                 provider, ai.model, ai.effectiveDeckbuildingModel)
+        } else {
+            requireExternalProvider(ai.mode)
+            logger.info("AI opponent: enabled | mode={} (external)", ai.mode)
         }
     }
 
@@ -93,10 +99,10 @@ class AiGameManager(
 
     val isEnabled: Boolean get() {
         if (!gameProperties.ai.enabled) return false
-        // Engine mode doesn't need an API key
-        if (gameProperties.ai.isEngineMode) return true
-        // LLM mode requires an API key
-        return gameProperties.ai.effectiveApiKey.isNotBlank()
+        val ai = gameProperties.ai
+        if (ai.isEngineMode) return true
+        if (ai.isLlmMode) return ai.effectiveApiKey.isNotBlank()
+        return controllerProviders[ai.mode] != null
     }
 
     /**
@@ -126,6 +132,17 @@ class AiGameManager(
         modelOverride: String? = null
     ): AiPlayerController {
         val ai = gameProperties.ai
+        // A per-player model override explicitly requests the built-in LLM even when the
+        // server-wide mode is external.
+        if (modelOverride == null && !ai.isEngineMode && !ai.isLlmMode) {
+            return requireExternalProvider(ai.mode).create(
+                AiControllerContext(
+                    playerId = aiPlayerId,
+                    gameSessionId = gameSession?.sessionId,
+                    snapshot = { gameSession?.getAiRuntimeSnapshot() },
+                )
+            )
+        }
         // A model override implicitly requests LLM mode for this player,
         // regardless of the server's global mode setting.
         val aiConfig = ai.toAiConfig().let { cfg ->
@@ -157,6 +174,11 @@ class AiGameManager(
             LlmAiPlayerController(aiConfig, llmClient, aiPlayerId, fallback = engineFallback)
         }
     }
+
+    private fun requireExternalProvider(mode: String): AiControllerProvider =
+        requireNotNull(controllerProviders[mode]) {
+            "Unknown game.ai.mode '$mode'; expected ${controllerProviders.supportedModes().sorted().joinToString()}"
+        }
 
     private fun com.wingedsheep.gameserver.config.AiProperties.toAiConfig() = com.wingedsheep.ai.llm.AiConfig(
         enabled = enabled, mode = mode, baseUrl = baseUrl,

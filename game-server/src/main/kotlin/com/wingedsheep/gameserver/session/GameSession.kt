@@ -10,6 +10,7 @@ import com.wingedsheep.gameserver.protocol.GameOverReason
 import com.wingedsheep.engine.view.LegalActionInfo
 import com.wingedsheep.gameserver.protocol.ServerMessage
 import com.wingedsheep.gameserver.priority.AutoPassManager
+import com.wingedsheep.gameserver.ai.AiRuntimeSnapshot
 import com.wingedsheep.engine.core.*
 import com.wingedsheep.engine.legalactions.LegalActionEnumerator
 import com.wingedsheep.engine.mechanics.mana.ManaPaymentWindow
@@ -1528,6 +1529,19 @@ class GameSession(
 
     /** The ordered input stream applied to this game. */
     fun getRecordedActions(): List<GameAction> = recordedActions.toList()
+
+    /**
+     * Capture the current authoritative state and its reproducible action prefix under one lock.
+     *
+     * External controllers use this instead of composing the three public accessors independently;
+     * that composition can observe different game instants. Null means the session has not started
+     * with replay inputs (for example an injected development scenario).
+     */
+    fun getAiRuntimeSnapshot(): AiRuntimeSnapshot? = synchronized(stateLock) {
+        val state = gameState ?: return null
+        val setup = replaySetup ?: return null
+        AiRuntimeSnapshot(state, setup, recordedActions.toList())
+    }
 
     /** The persistent-yield mutations applied to this game, in order, for replay reconstruction. */
     fun getReplayYields(): List<com.wingedsheep.gameserver.replay.ReplayYieldEntry> = recordedYields.toList()
