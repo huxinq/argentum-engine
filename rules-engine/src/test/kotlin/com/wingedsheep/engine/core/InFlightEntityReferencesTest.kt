@@ -1,7 +1,11 @@
 package com.wingedsheep.engine.core
 
 import com.wingedsheep.engine.state.ComponentContainer
+import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.engine.state.components.stack.SpellOnStackComponent
+import com.wingedsheep.sdk.core.ManaCost
+import com.wingedsheep.sdk.core.TypeLine
+import com.wingedsheep.sdk.model.CreatureStats
 import com.wingedsheep.sdk.model.EntityId
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -22,6 +26,24 @@ class InFlightEntityReferencesTest : FunSpec({
         InFlightEntityReferences.project(stackObject)
             .shouldBeInstanceOf<InFlightEntityReferences.Projection.Complete>()
             .entityIds shouldBe setOf(casterId, handCardId)
+    }
+
+    test("projection crosses entity-free JSON-only characteristic values on creature stack objects") {
+        val ownerId = EntityId.of("owner")
+        val stackObject = ComponentContainer.of(
+            CardComponent(
+                cardDefinitionId = "creature",
+                name = "Creature",
+                manaCost = ManaCost(emptyList()),
+                typeLine = TypeLine.creature(),
+                baseStats = CreatureStats(2, 2),
+                ownerId = ownerId,
+            ),
+        )
+
+        InFlightEntityReferences.project(stackObject)
+            .shouldBeInstanceOf<InFlightEntityReferences.Projection.Complete>()
+            .entityIds shouldBe setOf(ownerId)
     }
 
     test("projection follows typed nullable nested and map-key entity references only") {

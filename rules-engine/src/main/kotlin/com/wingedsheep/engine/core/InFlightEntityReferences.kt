@@ -1,7 +1,9 @@
 package com.wingedsheep.engine.core
 
 import com.wingedsheep.engine.state.ComponentContainer
+import com.wingedsheep.sdk.model.CharacteristicValue
 import com.wingedsheep.sdk.model.EntityId
+import com.wingedsheep.sdk.scripting.values.DynamicAmount
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.PolymorphicSerializer
 import kotlinx.serialization.SerializationStrategy
@@ -12,6 +14,9 @@ import kotlinx.serialization.encoding.Encoder
 
 @OptIn(ExperimentalSerializationApi::class)
 private val entityIdSerialName = EntityId.serializer().descriptor.serialName
+
+@OptIn(ExperimentalSerializationApi::class)
+private val characteristicValueSerialName = CharacteristicValue.serializer().descriptor.serialName
 
 /** Internal seam for testing consumers' fail-closed response to projection errors. */
 internal interface InFlightReferenceProjector {
@@ -96,6 +101,35 @@ internal object InFlightEntityReferences : InFlightReferenceProjector {
             )
 
         override fun shouldEncodeElementDefault(descriptor: SerialDescriptor, index: Int): Boolean = true
+
+        /**
+         * [CharacteristicValue] deliberately serializes through JSON. Traverse the sealed value
+         * directly so ordinary card components do not make an otherwise exhaustive in-flight
+         * projection fail. Fixed values contain no references; dynamic values keep their typed
+         * [DynamicAmount] graph. A new CharacteristicValue case makes this `when` fail to compile,
+         * while any other unsupported serializer still reaches the outer fail-closed result.
+         */
+        override fun <T> encodeSerializableValue(
+            serializer: SerializationStrategy<T>,
+            value: T,
+        ) {
+            if (serializer.descriptor.serialName == characteristicValueSerialName) {
+                check(!expectsEntityId)
+                when (val characteristic = value as CharacteristicValue) {
+                    is CharacteristicValue.Fixed -> Unit
+                    is CharacteristicValue.Dynamic -> DynamicAmount.serializer().serialize(
+                        EntityReferenceEncoder(references),
+                        characteristic.source,
+                    )
+                    is CharacteristicValue.DynamicWithOffset -> DynamicAmount.serializer().serialize(
+                        EntityReferenceEncoder(references),
+                        characteristic.source,
+                    )
+                }
+                return
+            }
+            super.encodeSerializableValue(serializer, value)
+        }
 
         override fun encodeString(value: String) {
             if (expectsEntityId) references += EntityId.of(value)
