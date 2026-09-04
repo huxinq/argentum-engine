@@ -62,7 +62,7 @@ data class AdminProperties(
 
 data class AiProperties(
     val enabled: Boolean = false,
-    /** AI mode: "engine" (built-in rules engine AI, default) or "llm" (LLM-based AI via API). */
+    /** AI mode: a built-in mode (`engine` or `llm`) or a registered external provider mode. */
     val mode: String = "engine",
     val baseUrl: String = "https://openrouter.ai/api/v1",
     val apiKey: String = "",
@@ -98,6 +98,6 @@ data class AiProperties(
     /** Whether we're using the built-in engine AI (no API key required). */
     val isEngineMode: Boolean get() = mode.equals("engine", ignoreCase = true)
 
-    /** Whether we're using the LLM-based AI. */
-    val isLlmMode: Boolean get() = !isEngineMode
+    /** Whether we're using the built-in LLM-based AI. */
+    val isLlmMode: Boolean get() = mode.equals("llm", ignoreCase = true)
 }
