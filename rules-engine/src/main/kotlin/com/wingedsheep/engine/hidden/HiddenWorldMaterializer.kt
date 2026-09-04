@@ -80,6 +80,10 @@ sealed interface HiddenWorldMaterializationResult {
  * Consequently a hypothetical world never inherits the source state's authoritative future random
  * stream unless the caller explicitly asks for that exact generator. Search callers that require
  * information separation must derive this generator from caller-owned randomness, not [GameState.rng].
+ * A paused decision does not change that contract: choices and random results already represented
+ * in the decision or continuation remain fixed, while random operations that execute only after the
+ * pause consume the caller's future stream. If the typed in-flight graph cannot be traversed
+ * completely, the whole request is refused before either identities or randomness change.
  */
 class HiddenWorldMaterializer {
     private val cardRegistry: CardRegistry

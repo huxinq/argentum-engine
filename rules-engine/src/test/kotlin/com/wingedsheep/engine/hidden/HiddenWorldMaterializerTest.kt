@@ -2,8 +2,10 @@ package com.wingedsheep.engine.hidden
 
 import com.wingedsheep.engine.core.CardsSelectedResponse
 import com.wingedsheep.engine.core.CastSpell
+import com.wingedsheep.engine.core.ChooseOptionDecision
 import com.wingedsheep.engine.core.InFlightEntityReferences
 import com.wingedsheep.engine.core.InFlightReferenceProjector
+import com.wingedsheep.engine.core.OptionChosenResponse
 import com.wingedsheep.engine.core.SelectCardsDecision
 import com.wingedsheep.engine.core.SubmitDecision
 import com.wingedsheep.engine.core.PlayLand
@@ -22,10 +24,17 @@ import com.wingedsheep.engine.support.ScenarioTestBase
 import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.core.Phase
 import com.wingedsheep.sdk.core.Step
+import com.wingedsheep.sdk.core.ManaCost
 import com.wingedsheep.sdk.dsl.card
 import com.wingedsheep.sdk.scripting.AdditionalCostPayment
+import com.wingedsheep.sdk.model.CardDefinition
+import com.wingedsheep.sdk.model.CardScript
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.model.GameRng
+import com.wingedsheep.sdk.scripting.effects.ChooseOptionEffect
+import com.wingedsheep.sdk.scripting.effects.CompositeEffect
+import com.wingedsheep.sdk.scripting.effects.OptionType
+import com.wingedsheep.sdk.scripting.effects.ShuffleLibraryEffect
 import io.kotest.assertions.withClue
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
@@ -34,9 +43,25 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 
 class HiddenWorldMaterializerTest : ScenarioTestBase() {
 
+    private val chooseThenShuffle = CardDefinition.sorcery(
+        name = "Choose Then Shuffle",
+        manaCost = ManaCost.parse("{B}"),
+        oracleText = "Choose a color. Shuffle your library.",
+        script = CardScript.spell(
+            CompositeEffect(
+                listOf(
+                    ChooseOptionEffect(OptionType.COLOR, storeAs = "chosenColor"),
+                    ShuffleLibraryEffect(),
+                )
+            )
+        ),
+    )
+
     private val materializer = HiddenWorldMaterializer(cardRegistry)
 
     init {
+        cardRegistry.register(chooseThenShuffle)
+
         test("a Monstrous Emergence hand choice is pinned by the live stack object") {
             val game = scenario()
                 .withPlayers()
@@ -389,6 +414,64 @@ class HiddenWorldMaterializerTest : ScenarioTestBase() {
             ).shouldBeInstanceOf<HiddenWorldMaterializationResult.Materialized>().state
 
             world shouldBe source.copy(rng = futureRng)
+        }
+
+        test("a paused continuation consumes the caller RNG only when its later shuffle executes") {
+            val game = scenario()
+                .withPlayers()
+                .withCardInHand(1, "Choose Then Shuffle")
+                .withCardOnBattlefield(1, "Swamp")
+                .withCardInLibrary(1, "Forest")
+                .withCardInLibrary(1, "Island")
+                .withCardInLibrary(1, "Mountain")
+                .withCardInLibrary(1, "Plains")
+                .withCardInLibrary(2, "Forest")
+                .withActivePlayer(1)
+                .inPhase(Phase.PRECOMBAT_MAIN, Step.PRECOMBAT_MAIN)
+                .withRngSeed(622L)
+                .build()
+            game.castSpell(1, "Choose Then Shuffle").error shouldBe null
+            game.resolveStack()
+
+            val source = game.state
+            val decision = source.pendingDecision.shouldBeInstanceOf<ChooseOptionDecision>()
+            source.continuationStack.isNotEmpty() shouldBe true
+            val opponentSlot = source.getLibrary(game.player2Id).single()
+            val libraryBefore = source.getLibrary(game.player1Id)
+            val futureRng = GameRng.seeded(623L)
+            val (expectedOrder, expectedAdvancedRng) = futureRng.shuffle(libraryBefore)
+
+            val world = materializer.materialize(
+                source,
+                HiddenWorldMaterializationRequest(
+                    slotAssignments = mapOf(opponentSlot to cardRegistry.requireCard("Mountain")),
+                    futureRng = futureRng,
+                ),
+            ).shouldBeInstanceOf<HiddenWorldMaterializationResult.Materialized>().state
+
+            withClue("materialization freezes the already-realized pause and changes only future inputs") {
+                world.pendingDecision shouldBe source.pendingDecision
+                world.continuationStack shouldBe source.continuationStack
+                world.getLibrary(game.player1Id) shouldBe libraryBefore
+                cardName(world, opponentSlot) shouldBe "Mountain"
+                world.rng shouldBe futureRng
+            }
+
+            val resumed = actionProcessor.process(
+                world,
+                SubmitDecision(
+                    game.player1Id,
+                    OptionChosenResponse(decision.id, optionIndex = 0),
+                ),
+            ).result
+
+            resumed.error shouldBe null
+            resumed.state.pendingDecision shouldBe null
+            resumed.state.continuationStack shouldBe emptyList()
+            resumed.state.stack shouldBe emptyList()
+            resumed.state.getLibrary(game.player1Id) shouldBe expectedOrder
+            resumed.state.rng shouldBe expectedAdvancedRng
+            cardName(resumed.state, opponentSlot) shouldBe "Mountain"
         }
 
         test("an incomplete paused-state projection refuses the whole request before assignments or RNG") {
