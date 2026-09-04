@@ -402,9 +402,11 @@ class ObservationBuilder(
             } else name,
             kind = kind,
             // A face-down permanent can still contribute a ward ability from the face-down
-            // characteristic-defining rule or an external grant. Its actual stack effect is public
-            // decision information; only the source card's identity is hidden.
-            oracleText = text,
+            // characteristic-defining rule or an external grant. That ability's stack effect is
+            // public decision information even though its source identity is hidden. A face-down
+            // spell is different: its CardComponent is the hidden object itself, so its printed
+            // text remains private with the rest of that card's characteristics (CR 708.4/708.5).
+            oracleText = if (card != null && identityHidden) "" else text,
             targets = container?.get<TargetsComponent>()?.targets.orEmpty().map(::targetEntityId)
         )
     }

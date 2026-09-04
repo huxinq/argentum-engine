@@ -1,31 +1,38 @@
 package com.wingedsheep.engine.view
 
+import com.wingedsheep.engine.core.ActivateAbility
 import com.wingedsheep.engine.core.CastSpell
-import com.wingedsheep.engine.core.PaymentStrategy
-import com.wingedsheep.engine.handlers.effects.FaceDownTurnUp
 import com.wingedsheep.engine.core.ChooseTargetsDecision
+import com.wingedsheep.engine.core.PaymentStrategy
+import com.wingedsheep.engine.event.GrantedActivatedAbility
+import com.wingedsheep.engine.handlers.effects.FaceDownTurnUp
 import com.wingedsheep.engine.state.components.battlefield.PhasedOutComponent
 import com.wingedsheep.engine.state.components.identity.FaceDownComponent
 import com.wingedsheep.engine.state.components.identity.FaceDownModeComponent
-import com.wingedsheep.engine.state.nameVisibleToAll
+import com.wingedsheep.engine.state.components.stack.ActivatedAbilityOnStackComponent
 import com.wingedsheep.engine.state.components.stack.ChosenTarget
+import com.wingedsheep.engine.state.nameVisibleToAll
 import com.wingedsheep.engine.support.GameTestDriver
 import com.wingedsheep.engine.support.TestCards
 import com.wingedsheep.sdk.core.Color
-import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.core.Step
+import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.dsl.Effects
 import com.wingedsheep.sdk.dsl.Triggers
 import com.wingedsheep.sdk.dsl.card
 import com.wingedsheep.sdk.model.Deck
 import com.wingedsheep.sdk.model.EntityId
+import com.wingedsheep.sdk.scripting.AbilityCost
+import com.wingedsheep.sdk.scripting.AbilityId
+import com.wingedsheep.sdk.scripting.ActivatedAbility
+import com.wingedsheep.sdk.scripting.Duration
 import com.wingedsheep.sdk.scripting.effects.FaceDownMode
 import com.wingedsheep.sdk.scripting.targets.EffectTarget
 import com.wingedsheep.sdk.scripting.targets.TargetCreature
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
-import io.kotest.matchers.shouldBe
 import io.kotest.matchers.collections.shouldNotContain
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 
@@ -293,6 +300,46 @@ class FaceDownGameLogMaskingTest : FunSpec({
         withClue("chooser's log: $log") {
             log.forEach { it shouldNotContain "Disguised Angel" }
             log.contains("You: (Test Tapper) Targeting Face-down creature") shouldBe true
+        }
+    }
+
+    test("a granted activation from a face-down permanent uses its public name in the log") {
+        val d = driver()
+        val controller = d.activePlayer!!
+        val opponent = d.getOpponent(controller)
+        val hidden = d.putFaceDown(controller, "Disguised Angel", FaceDownMode.DISGUISE)
+        val grantedAbility = ActivatedAbility(
+            id = AbilityId("test_face_down_granted_activation"),
+            cost = AbilityCost.Free,
+            effect = Effects.GainLife(1),
+            descriptionOverride = "Gain 1 life.",
+        )
+        d.replaceState(
+            d.state.copy(
+                grantedActivatedAbilities = d.state.grantedActivatedAbilities +
+                    GrantedActivatedAbility(
+                        entityId = hidden,
+                        ability = grantedAbility,
+                        duration = Duration.Permanent,
+                    ),
+            ),
+        )
+
+        d.submitSuccess(ActivateAbility(controller, hidden, grantedAbility.id))
+
+        val stackAbility = d.state.getEntity(d.state.stack.single())
+            ?.require<ActivatedAbilityOnStackComponent>()
+        withClue("resolution keeps the private source provenance") {
+            stackAbility?.sourceName shouldBe "Disguised Angel"
+            stackAbility?.sourceId shouldBe hidden
+        }
+        withClue("controller's log: ${d.logAsSeenBy(controller)}") {
+            d.logAsSeenBy(controller).forEach { it shouldNotContain "Disguised Angel" }
+            d.logAsSeenBy(controller).contains("You activated Face-down creature") shouldBe true
+        }
+        withClue("opponent's log: ${d.logAsSeenBy(opponent)}") {
+            d.logAsSeenBy(opponent).forEach { it shouldNotContain "Disguised Angel" }
+            d.logAsSeenBy(opponent).contains("Opponent activated Face-down creature") shouldBe true
         }
     }
 
