@@ -132,6 +132,9 @@ class AiGameManager(
         modelOverride: String? = null
     ): AiPlayerController {
         val ai = gameProperties.ai
+        require(modelOverride == null || ai.effectiveApiKey.isNotBlank()) {
+            "A per-player LLM model override requires an API key"
+        }
         // A per-player model override explicitly requests the built-in LLM even when the
         // server-wide mode is external.
         if (modelOverride == null && !ai.isEngineMode && !ai.isLlmMode) {

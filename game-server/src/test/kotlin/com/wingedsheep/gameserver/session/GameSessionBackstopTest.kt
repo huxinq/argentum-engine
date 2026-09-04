@@ -1,10 +1,16 @@
 package com.wingedsheep.gameserver.session
 
+import com.wingedsheep.engine.state.YieldKind
 import com.wingedsheep.gameserver.ScenarioTestBase
+import com.wingedsheep.gameserver.ai.AiReplayHistory
 import com.wingedsheep.gameserver.protocol.GameOverReason
+import com.wingedsheep.sdk.model.EntityId
+import com.wingedsheep.sdk.scripting.AbilityId
+import com.wingedsheep.sdk.scripting.AbilityIdentity
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.every
 import io.mockk.mockk
 import org.springframework.web.socket.WebSocketSession
@@ -62,6 +68,19 @@ class GameSessionBackstopTest : ScenarioTestBase() {
 
             // And the flush snapshot carries the flag, so the stored row stops claiming to be whole.
             session.replayRecordingSnapshot().shouldNotBeNull().truncated shouldBe true
+
+            // The AI API must make the same distinction structurally. Yield recording freezes with
+            // the action prefix; otherwise the purported prefix could contain mutations from later
+            // in the live game.
+            val yieldCountAtTruncation = session.getReplayYields().size
+            session.setAbilityYield(
+                EntityId.of("backstop-p1"),
+                AbilityIdentity("Test#1", AbilityId("ability_after_truncation")),
+                YieldKind.ALWAYS_ANSWER_YES,
+            )
+            session.getReplayYields().size shouldBe yieldCountAtTruncation
+            session.getAiRuntimeSnapshot().shouldNotBeNull().replayHistory
+                .shouldBeInstanceOf<AiReplayHistory.TruncatedPrefix>()
         }
 
         test("a game that stops making progress is ended as a draw that explains itself") {
@@ -85,8 +104,18 @@ class GameSessionBackstopTest : ScenarioTestBase() {
 
             session.autoPass(40)
 
+            session.setAbilityYield(
+                EntityId.of("backstop-p1"),
+                AbilityIdentity("Test#1", AbilityId("ability_in_complete_history")),
+                YieldKind.ALWAYS_ANSWER_YES,
+            )
+
             session.stallMessage() shouldBe null
             session.isReplayTruncated() shouldBe false
+            val history = session.getAiRuntimeSnapshot().shouldNotBeNull().replayHistory
+                .shouldBeInstanceOf<AiReplayHistory.Complete>()
+            history.actions shouldBe session.getRecordedActions()
+            history.yields shouldBe session.getReplayYields()
         }
     }
 }

@@ -15,6 +15,7 @@ import com.wingedsheep.gameserver.config.AiProperties
 import com.wingedsheep.gameserver.config.GameProperties
 import com.wingedsheep.gameserver.replay.ReplaySetup
 import com.wingedsheep.gameserver.session.GameSession
+import com.wingedsheep.gameserver.session.PlayerIdentity
 import com.wingedsheep.gameserver.session.SessionRegistry
 import com.wingedsheep.gameserver.tournament.llm.LlmCostTracker
 import com.wingedsheep.sdk.model.EntityId
@@ -69,8 +70,11 @@ class AiControllerProviderTest : FunSpec({
     test("a game-attached external controller receives the session's consistent runtime snapshot") {
         val expected = AiRuntimeSnapshot(
             state = mockk<GameState>(),
-            replaySetup = mockk<ReplaySetup>(),
-            actions = emptyList(),
+            replayHistory = AiReplayHistory.Complete(
+                setup = mockk<ReplaySetup>(),
+                actions = emptyList(),
+                yields = emptyList(),
+            ),
         )
         val game = mockk<GameSession>(relaxed = true) {
             every { sessionId } returns "game-1"
@@ -97,14 +101,96 @@ class AiControllerProviderTest : FunSpec({
         provider.controller.lastDeck shouldBe mapOf("Mountain" to 40)
         sessions.destroy()
     }
+
+    test("a model override cannot bypass the LLM credential gate when creating an identity") {
+        val provider = StubProvider("search-teacher")
+        val sessions = SessionRegistry()
+        val manager = manager(provider, sessions)
+
+        shouldThrow<IllegalArgumentException> {
+            manager.createAiIdentity(modelOverride = "openai/test-model")
+        }.message shouldBe "A per-player LLM model override requires an API key"
+        sessions.destroy()
+    }
+
+    test("a credentialed model override deliberately selects the built-in LLM") {
+        val provider = CapturingProvider("search-teacher")
+        val sessions = SessionRegistry()
+        val manager = manager(
+            provider,
+            sessions,
+            aiProperties = AiProperties(
+                enabled = true,
+                mode = provider.mode,
+                apiKey = "test-key",
+            ),
+        )
+
+        val identity = manager.createAiIdentity(modelOverride = "openai/test-model")
+
+        identity.aiModelOverride shouldBe "openai/test-model"
+        provider.contexts shouldBe emptyList()
+        sessions.destroy()
+    }
+
+    test("a restored model override cannot bypass the LLM credential gate") {
+        val provider = StubProvider("search-teacher")
+        val sessions = SessionRegistry()
+        val manager = manager(provider, sessions)
+        val identity = PlayerIdentity(
+            token = "restored-ai",
+            playerId = EntityId.of("restored-ai"),
+            playerName = "Restored AI",
+            isAi = true,
+            aiModelOverride = "openai/test-model",
+        )
+
+        shouldThrow<IllegalArgumentException> {
+            manager.rehydrateAiIdentity(identity)
+        }.message shouldBe "A per-player LLM model override requires an API key"
+        sessions.destroy()
+    }
+
+    test("a model override cannot bypass the LLM credential gate when wiring a game") {
+        val provider = StubProvider("search-teacher")
+        val sessions = SessionRegistry()
+        val manager = manager(provider, sessions)
+        val aiPlayerId = EntityId.of("match-ai")
+        sessions.preRegisterIdentity(
+            PlayerIdentity(
+                token = "match-ai",
+                playerId = aiPlayerId,
+                playerName = "Match AI",
+                isAi = true,
+                aiModelOverride = "openai/test-model",
+            )
+        )
+        val game = mockk<GameSession>(relaxed = true) {
+            every { sessionId } returns "game-credential-gate"
+        }
+
+        shouldThrow<IllegalArgumentException> {
+            manager.wireAiForGame(
+                gameSession = game,
+                aiPlayerId = aiPlayerId,
+                deckList = null,
+                onActionReady = { _, _ -> },
+                onMulliganKeep = { _ -> },
+                onMulliganTake = { _ -> },
+                onBottomCards = { _, _ -> },
+            )
+        }.message shouldBe "A per-player LLM model override requires an API key"
+        sessions.destroy()
+    }
 })
 
 private fun manager(
     provider: AiControllerProvider,
     sessions: SessionRegistry,
     deckGenerator: SealedDeckGenerator = mockk(relaxed = true),
+    aiProperties: AiProperties = AiProperties(enabled = true, mode = provider.mode),
 ): AiGameManager {
-    val properties = GameProperties(ai = AiProperties(enabled = true, mode = provider.mode))
+    val properties = GameProperties(ai = aiProperties)
     return AiGameManager(
         gameProperties = properties,
         sessionRegistry = sessions,

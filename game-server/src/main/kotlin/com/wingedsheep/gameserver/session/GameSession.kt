@@ -6,11 +6,12 @@ import com.wingedsheep.engine.view.ClientGameState
 import com.wingedsheep.engine.view.ClientStateTransformer
 import com.wingedsheep.engine.view.StateDiffCalculator
 import com.wingedsheep.engine.view.LegalActionEnricher
+import com.wingedsheep.gameserver.ai.AiReplayHistory
+import com.wingedsheep.gameserver.ai.AiRuntimeSnapshot
 import com.wingedsheep.gameserver.protocol.GameOverReason
 import com.wingedsheep.engine.view.LegalActionInfo
 import com.wingedsheep.gameserver.protocol.ServerMessage
 import com.wingedsheep.gameserver.priority.AutoPassManager
-import com.wingedsheep.gameserver.ai.AiRuntimeSnapshot
 import com.wingedsheep.engine.core.*
 import com.wingedsheep.engine.legalactions.LegalActionEnumerator
 import com.wingedsheep.engine.mechanics.mana.ManaPaymentWindow
@@ -1509,7 +1510,7 @@ class GameSession(
         identity: com.wingedsheep.sdk.scripting.AbilityIdentity?,
         kind: com.wingedsheep.engine.state.YieldKind?,
     ) {
-        if (replaySetup == null) return
+        if (replaySetup == null || replayTruncated) return
         recordedYields.add(
             com.wingedsheep.gameserver.replay.ReplayYieldEntry(
                 afterActionCount = recordedActions.size,
@@ -1531,16 +1532,25 @@ class GameSession(
     fun getRecordedActions(): List<GameAction> = recordedActions.toList()
 
     /**
-     * Capture the current authoritative state and its reproducible action prefix under one lock.
+     * Capture the current authoritative state and its replay history under one lock.
      *
-     * External controllers use this instead of composing the three public accessors independently;
-     * that composition can observe different game instants. Null means the session has not started
-     * with replay inputs (for example an injected development scenario).
+     * External controllers use this instead of composing the public accessors independently; that
+     * composition can observe different game instants. A recording that reached its cap is exposed
+     * as a typed prefix rather than being mistaken for inputs that reproduce the live state. Null
+     * means the session has not started with replay inputs (for example an injected development
+     * scenario).
      */
     fun getAiRuntimeSnapshot(): AiRuntimeSnapshot? = synchronized(stateLock) {
         val state = gameState ?: return null
         val setup = replaySetup ?: return null
-        AiRuntimeSnapshot(state, setup, recordedActions.toList())
+        val actions = recordedActions.toList()
+        val yields = recordedYields.toList()
+        val history = if (replayTruncated) {
+            AiReplayHistory.TruncatedPrefix(setup, actions, yields)
+        } else {
+            AiReplayHistory.Complete(setup, actions, yields)
+        }
+        AiRuntimeSnapshot(state, history)
     }
 
     /** The persistent-yield mutations applied to this game, in order, for replay reconstruction. */

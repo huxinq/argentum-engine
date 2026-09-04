@@ -4,20 +4,50 @@ import com.wingedsheep.ai.AiPlayerController
 import com.wingedsheep.engine.core.GameAction
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.gameserver.replay.ReplaySetup
+import com.wingedsheep.gameserver.replay.ReplayYieldEntry
 import com.wingedsheep.sdk.model.EntityId
 
 /**
  * One lock-consistent view of the live inputs needed by a trusted server-side AI controller.
  *
- * The state and replay inputs must be captured together: reading them through the individual
- * [com.wingedsheep.gameserver.session.GameSession] accessors can pair a newer state with an older
- * action prefix while the game advances.
+ * [state] is always the authoritative live state. [replayHistory] says whether its compact inputs
+ * reproduce that state or are only the prefix retained after replay recording reached its cap.
+ * Keeping that distinction in the type prevents an external controller from treating a plausible
+ * but incomplete action list as the history of the live position.
  */
 data class AiRuntimeSnapshot(
     val state: GameState,
-    val replaySetup: ReplaySetup,
-    val actions: List<GameAction>,
+    val replayHistory: AiReplayHistory,
 )
+
+/**
+ * Replay inputs sampled atomically with an [AiRuntimeSnapshot]'s state.
+ *
+ * Persistent yield changes are inputs too: the engine can consume them without a [GameAction], so
+ * setup plus actions alone does not necessarily reconstruct the position an AI is looking at.
+ */
+sealed interface AiReplayHistory {
+    val setup: ReplaySetup
+    val actions: List<GameAction>
+    val yields: List<ReplayYieldEntry>
+
+    /** These inputs reproduce the snapshot's live state. */
+    data class Complete(
+        override val setup: ReplaySetup,
+        override val actions: List<GameAction>,
+        override val yields: List<ReplayYieldEntry>,
+    ) : AiReplayHistory
+
+    /**
+     * Recording stopped before the snapshot's live state. These inputs remain an honest replay
+     * prefix, but must not be used to reconstruct or explain the current state.
+     */
+    data class TruncatedPrefix(
+        override val setup: ReplaySetup,
+        override val actions: List<GameAction>,
+        override val yields: List<ReplayYieldEntry>,
+    ) : AiReplayHistory
+}
 
 /** Inputs supplied to an AI implementation hosted outside the game-server build. */
 data class AiControllerContext(
