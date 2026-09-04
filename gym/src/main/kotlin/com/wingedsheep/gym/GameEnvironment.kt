@@ -79,7 +79,14 @@ import com.wingedsheep.sdk.model.EntityId
  * ```
  */
 class GameEnvironment private constructor(
-    internal val cardRegistry: CardRegistry,
+    /**
+     * The card-definition authority used by this environment and every [fork].
+     *
+     * External search and observation adapters often need card definitions alongside the
+     * environment's state. They should derive that dependency here instead of accepting a second
+     * registry that might disagree with the one used by action processing and legal enumeration.
+     */
+    val cardRegistry: CardRegistry,
     private val processor: ActionProcessor,
     private val enumerator: LegalActionEnumerator,
     private val evaluator: BoardEvaluator,
