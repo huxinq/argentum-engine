@@ -35,6 +35,11 @@ internal interface InFlightReferenceProjector {
  * map key from its value. Consumers that need a different wire representation can therefore apply
  * their own naming policy without rediscovering engine schema shapes or collapsing repeated ids.
  *
+ * For example, a policy adapter can replace the [EntityId] keys of a spell's damage-distribution
+ * map with viewer-safe aliases while leaving a counter name or decision id unchanged, even when
+ * that ordinary string has identical bytes. The occurrence path supplies the engine-owned schema
+ * fact; the adapter still owns what alias is safe and what the resulting payload means.
+ *
  * This is deliberately not a JSON policy API: entity aliases, alias-key collisions, visibility, and
  * any choice-specific canonicalization belong to the caller. A failed traversal is explicit, so a
  * caller that cannot safely proceed must not mistake it for an empty reference list.
