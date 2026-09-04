@@ -22,6 +22,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -80,6 +81,31 @@ class TrainingObservationTest : FunSpec({
         val encoded = json.encodeToString(TrainingObservation.serializer(), obs)
         val decoded = json.decodeFromString(TrainingObservation.serializer(), encoded)
         decoded shouldBe obs
+    }
+
+    test("per-player zones have an explicit complete schema order") {
+        TRAINING_OBSERVATION_ZONE_ORDER.shouldContainExactly(
+            Zone.HAND,
+            Zone.LIBRARY,
+            Zone.GRAVEYARD,
+            Zone.EXILE,
+            Zone.BATTLEFIELD,
+            Zone.COMMAND,
+            Zone.SIDEBOARD,
+        )
+        TRAINING_OBSERVATION_ZONE_ORDER.toSet() shouldBe
+            Zone.entries.filterNot { it == Zone.STACK }.toSet()
+
+        val env = newEnv()
+        val perspective = env.playerIds[0]
+        val observation = ObservationBuilder(env.cardRegistry)
+            .build(env.state, perspective, env.legalActions())
+            .observation as TrainingObservation
+
+        observation.zones
+            .filter { it.ownerId == perspective }
+            .map { it.zoneType }
+            .shouldContainExactly(TRAINING_OBSERVATION_ZONE_ORDER)
     }
 
     test("an actionId from the observation resolves to a steppable action") {
