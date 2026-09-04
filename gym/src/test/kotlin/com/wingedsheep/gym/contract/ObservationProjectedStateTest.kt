@@ -205,7 +205,7 @@ class ObservationProjectedStateTest : ScenarioTestBase() {
         test("a face-down spell on the stack is nameless to its opponent") {
             val game = scenario()
                 .withPlayers()
-                .withCardInHand(2, "Hill Giant")
+                .withCardInHand(2, "Raging Goblin")
                 .build()
             val spell = game.state.getHand(game.player2Id).single()
             val state = game.state
@@ -219,7 +219,10 @@ class ObservationProjectedStateTest : ScenarioTestBase() {
                 it.name shouldBe "Face-down creature"
                 it.oracleText shouldBe ""
             }
-            observe(state, game.player2Id).stack.single().name shouldBe "Hill Giant"
+            observe(state, game.player2Id).stack.single().let {
+                it.name shouldBe "Raging Goblin"
+                it.oracleText shouldBe cardRegistry.requireCard("Raging Goblin").oracleText
+            }
         }
 
         test("an ability on the stack hides its face-down source but keeps its public effect text") {

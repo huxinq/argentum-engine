@@ -857,6 +857,12 @@ class StackResolver(
         newState = newState.pushToStack(abilityId)
             .copy(priorityPassedBy = emptySet())
 
+        // Keep the stack component's real source identity for resolution, but engine events feed
+        // the shared public game log and therefore carry the source's public name. This mirrors
+        // triggered abilities below and closes every activated-ability event channel at the point
+        // where both GameState and the source are still available.
+        val sourceDisplayName = nameVisibleToAll(state, ability.sourceId, ability.sourceName)
+
         val events = mutableListOf<GameEvent>()
         if (emitActivationEvent) {
             // Abilities reaching the stack are never mana abilities (CR 605.3 — mana abilities
@@ -865,7 +871,7 @@ class StackResolver(
             events.add(
                 AbilityActivatedEvent(
                     ability.sourceId,
-                    ability.sourceName,
+                    sourceDisplayName,
                     ability.controllerId,
                     abilityEntityId = abilityId,
                     costsTap = costsTap,
@@ -876,12 +882,12 @@ class StackResolver(
         }
 
         if (CrimeDetector.isCrime(newState, ability.controllerId, targets)) {
-            events.add(CommitCrimeEvent(ability.controllerId, abilityId, ability.sourceName))
+            events.add(CommitCrimeEvent(ability.controllerId, abilityId, sourceDisplayName))
             newState = recordCrime(newState, ability.controllerId)
         }
 
         if (targets.isNotEmpty()) {
-            events.add(TargetsChosenEvent(ability.controllerId, abilityId, ability.sourceName))
+            events.add(TargetsChosenEvent(ability.controllerId, abilityId, sourceDisplayName))
         }
 
         // Emit BecomesTargetEvent for each permanent, spell, or player target
