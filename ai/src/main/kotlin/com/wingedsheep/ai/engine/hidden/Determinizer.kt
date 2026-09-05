@@ -110,12 +110,12 @@ class Determinizer internal constructor(
 
             val libraryKey = ZoneKey(opponentId, Zone.LIBRARY)
             val library = sampled.getZone(libraryKey)
-            val hiddenLibraryIds = hidden.filterTo(mutableSetOf()) { it in library }
-            val (shuffledHidden, next) = currentRng.shuffle(library.filter { it in hiddenLibraryIds })
+            val hiddenIds = hidden.toHashSet()
+            val (shuffledHidden, next) = currentRng.shuffle(library.filter { it in hiddenIds })
             currentRng = next
             val iterator = shuffledHidden.iterator()
             val shuffledLibrary = library.map { id ->
-                if (id in hiddenLibraryIds) iterator.next() else id
+                if (id in hiddenIds) iterator.next() else id
             }
             sampled = sampled.copy(
                 entities = sampledEntities,
@@ -135,8 +135,9 @@ class Determinizer internal constructor(
         val libraryKey = ZoneKey(opponentId, Zone.LIBRARY)
         val library = state.getLibrary(opponentId)
         val candidates = library + state.getHand(opponentId)
+        val libraryIds = library.toHashSet()
         return candidates.filter { id ->
-            val zoneKey = if (id in library) libraryKey else handKey
+            val zoneKey = if (id in libraryIds) libraryKey else handKey
             !visibility.isCardIdentityVisibleTo(state, zoneKey, id, viewerId) &&
                 id !in inFlightPins &&
                 isSafeToRewrite(state, id)
