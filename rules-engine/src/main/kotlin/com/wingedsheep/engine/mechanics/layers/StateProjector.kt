@@ -394,16 +394,17 @@ class StateProjector(
         // Growth, Aggressive Urge), and lord-style anthems alike.
         applyAffectedPowerAtMostSourceGate(state, projectedValues)
 
-        // Convert to immutable
+        // Transfer the locally owned sets into the final projection. No later step mutates them;
+        // intermediate projections still copy their sets because subsequent layers can change them.
         val finalValues = projectedValues.mapValues { (_, v) ->
             ProjectedValues(
                 power = v.power,
                 toughness = v.toughness,
                 name = v.name,
-                keywords = v.keywords.toSet(),
-                colors = v.colors.toSet(),
-                types = v.types.toSet(),
-                subtypes = v.subtypes.toSet(),
+                keywords = v.keywords,
+                colors = v.colors,
+                types = v.types,
+                subtypes = v.subtypes,
                 controllerId = v.controllerId,
                 isFaceDown = v.isFaceDown,
                 isSuspected = v.isSuspected,
