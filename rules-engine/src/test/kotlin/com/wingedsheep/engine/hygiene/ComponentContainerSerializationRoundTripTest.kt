@@ -2,6 +2,7 @@ package com.wingedsheep.engine.hygiene
 
 import com.wingedsheep.engine.core.engineSerializersModule
 import com.wingedsheep.engine.state.ComponentContainer
+import com.wingedsheep.engine.state.Component
 import com.wingedsheep.engine.state.components.battlefield.SummoningSicknessComponent
 import com.wingedsheep.engine.state.components.battlefield.TappedComponent
 import com.wingedsheep.engine.state.components.identity.LifeTotalComponent
@@ -53,5 +54,32 @@ class ComponentContainerSerializationRoundTripTest : FunSpec({
             json.encodeToString(ComponentContainer.serializer(), ComponentContainer.EMPTY)
         )
         decoded.isEmpty() shouldBe true
+    }
+
+    test("factory retains empty identity and keys a single component by runtime type") {
+        (ComponentContainer.of() === ComponentContainer.EMPTY) shouldBe true
+        val component: Component = LifeTotalComponent(20)
+        val container = ComponentContainer.of(component)
+        container.get<LifeTotalComponent>() shouldBe component
+        container.get<Component>() shouldBe null
+    }
+
+    test("factory replaces duplicate classes without moving their iteration or serialized position") {
+        val components: Array<Component> = arrayOf(LifeTotalComponent(20), TappedComponent, LifeTotalComponent(37))
+        val container = ComponentContainer.of(*components)
+        val expected = listOf(LifeTotalComponent(37), TappedComponent)
+
+        container.all().toList() shouldBe expected
+        container.get<LifeTotalComponent>() shouldBe LifeTotalComponent(37)
+        container.has<TappedComponent>() shouldBe true
+        val encoded = json.encodeToString(ComponentContainer.serializer(), container)
+        val sequential = ComponentContainer.EMPTY.withComponent(LifeTotalComponent(37)).withComponent(TappedComponent)
+        encoded shouldBe json.encodeToString(ComponentContainer.serializer(), sequential)
+        json.decodeFromString(ComponentContainer.serializer(), encoded).all().toList() shouldBe expected
+
+        components[0] = SummoningSicknessComponent
+        container.with(LifeTotalComponent(1)).without<TappedComponent>()
+        ComponentContainer.of(SummoningSicknessComponent, LifeTotalComponent(2))
+        container.all().toList() shouldBe expected
     }
 })
