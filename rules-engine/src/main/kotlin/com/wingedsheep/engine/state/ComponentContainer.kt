@@ -77,7 +77,10 @@ data class ComponentContainer(
          */
         fun of(vararg components: Component): ComponentContainer {
             if (components.isEmpty()) return EMPTY
-            if (components.size == 1) return EMPTY.withComponent(components[0])
+            if (components.size == 1) {
+                val component = components[0]
+                return ComponentContainer(java.util.Collections.singletonMap(component::class.java, component))
+            }
 
             val byType = LinkedHashMap<Class<*>, Component>(components.size)
             for (component in components) {
