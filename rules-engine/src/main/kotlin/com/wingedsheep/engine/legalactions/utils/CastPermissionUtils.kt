@@ -1030,20 +1030,21 @@ class CastPermissionUtils(
         abilityIsManaAbility: Boolean = false
     ): Boolean {
         val projected = state.projectedState
-        for (entityId in state.getBattlefield()) {
+        battlefield@ for (entityId in state.getBattlefield()) {
             val card = state.getEntity(entityId)?.get<CardComponent>() ?: continue
             val cardDef = cardRegistry.getCard(card.cardDefinitionId) ?: continue
-            // Evaluate the filter from the *granting permanent's* controller's perspective, so a
-            // controller-relative predicate like `opponentControls()` ("lands your opponents
-            // control" on Sharkey) means opponents of the static's controller, not of the land.
-            val granterController = projected.getController(entityId)
-                ?: state.getEntity(entityId)?.get<ControllerComponent>()?.playerId
-                ?: continue
-            val context = PredicateContext(controllerId = granterController, sourceId = entityId)
+            var context: PredicateContext? = null
             for (ability in cardDef.script.staticAbilities) {
                 val prevent = ability as? PreventActivatedAbilities ?: continue
                 // "… can't be activated unless they're mana abilities" — exempt mana abilities.
                 if (prevent.nonManaAbilitiesOnly && abilityIsManaAbility) continue
+                if (context == null) {
+                    // Evaluate from the granting permanent's controller's perspective.
+                    val granterController = projected.getController(entityId)
+                        ?: state.getEntity(entityId)?.get<ControllerComponent>()?.playerId
+                        ?: continue@battlefield
+                    context = PredicateContext(controllerId = granterController, sourceId = entityId)
+                }
                 if (predicateEvaluator.matches(state, projected, sourceId, prevent.filter, context)) {
                     return true
                 }
