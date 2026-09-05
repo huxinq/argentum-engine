@@ -128,10 +128,8 @@ class CombatManager(
     // =========================================================================
 
     fun endCombat(state: GameState): ExecutionResult {
-        var newState = state
-
-        for ((entityId, _) in state.entities) {
-            newState = newState.updateEntity(entityId) { container ->
+        var newState = if (state.entities.isEmpty()) state else state.copy(
+            entities = state.entities.mapValues { (_, container) ->
                 container
                     .without<AttackingComponent>()
                     .without<BlockingComponent>()
@@ -146,7 +144,7 @@ class CombatManager(
                     .without<AttackedThisCombatComponent>()
                     .without<BlockedThisCombatComponent>()
             }
-        }
+        )
 
         // Expire "until end of combat" effects (CR 511.2: they expire at the end of the combat
         // phase, which per CR 511.3 is once the end of combat step has ended — i.e. here, the same
