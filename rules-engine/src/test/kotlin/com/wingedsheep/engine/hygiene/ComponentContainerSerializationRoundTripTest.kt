@@ -82,4 +82,24 @@ class ComponentContainerSerializationRoundTripTest : FunSpec({
         ComponentContainer.of(SummoningSicknessComponent, LifeTotalComponent(2))
         container.all().toList() shouldBe expected
     }
+
+    test("removing an absent exact component type retains the container") {
+        val container = ComponentContainer.of(LifeTotalComponent(20), SummoningSicknessComponent)
+        val encoded = json.encodeToString(ComponentContainer.serializer(), container)
+
+        (container.without<TappedComponent>() === container) shouldBe true
+        (container.without<Component>() === container) shouldBe true
+        (ComponentContainer.EMPTY.without<TappedComponent>() === ComponentContainer.EMPTY) shouldBe true
+        json.encodeToString(ComponentContainer.serializer(), container) shouldBe encoded
+    }
+
+    test("removing a present component preserves the source and remaining component order") {
+        val container = ComponentContainer.of(LifeTotalComponent(20), TappedComponent, SummoningSicknessComponent)
+        val removed = container.without<TappedComponent>()
+
+        removed.has<TappedComponent>() shouldBe false
+        removed.all().toList() shouldBe listOf(LifeTotalComponent(20), SummoningSicknessComponent)
+        container.all().toList() shouldBe listOf(LifeTotalComponent(20), TappedComponent, SummoningSicknessComponent)
+        json.decodeFromString(ComponentContainer.serializer(), json.encodeToString(ComponentContainer.serializer(), removed)) shouldBe removed
+    }
 })
