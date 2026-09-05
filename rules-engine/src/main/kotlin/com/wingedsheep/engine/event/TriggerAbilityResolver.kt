@@ -69,7 +69,8 @@ class TriggerAbilityResolver(
             val cardDef = cardRegistry.getCard(cardDefinitionId)
             val classLevel = state.getEntity(entityId)?.get<ClassLevelComponent>()?.currentLevel
             val topLevel = cardDef?.script?.effectiveTriggeredAbilities(classLevel) ?: emptyList()
-            topLevel + getRoomFaceTriggeredAbilities(entityId, cardDef, state)
+            val roomAbilities = getRoomFaceTriggeredAbilities(entityId, cardDef, state)
+            if (roomAbilities.isEmpty()) topLevel else topLevel + roomAbilities
         }
 
         // Merge in any temporarily granted triggered abilities (e.g., from Commando Raid).
@@ -77,9 +78,15 @@ class TriggerAbilityResolver(
         // Mannequin's sacrifice rider lasts only while the mannequin counter is there, and the
         // counter can leave between two state-based-action passes. The one-way latch that stops a
         // re-added counter resurrecting the grant lives in EndedDurationExpiryCheck.
-        val grantedAbilities = state.grantedTriggeredAbilities
-            .filter { it.entityId == entityId && GrantDurationGate.holds(state, it.entityId, it.sourceId, it.duration) }
-            .map { it.ability }
+        val grantedAbilities = buildList {
+            for (grant in state.grantedTriggeredAbilities) {
+                if (grant.entityId == entityId &&
+                    GrantDurationGate.holds(state, grant.entityId, grant.sourceId, grant.duration)
+                ) {
+                    add(grant.ability)
+                }
+            }
+        }
 
         // Merge in triggered abilities granted by static abilities on other permanents
         // (e.g., Hunter Sliver granting provoke to all Slivers)
@@ -286,14 +293,21 @@ class TriggerAbilityResolver(
                 val cardDef = cardRegistry.getCard(cardDefinitionId)
                 val classLevel = state.getEntity(entityId)?.get<ClassLevelComponent>()?.currentLevel
                 val topLevel = cardDef?.script?.effectiveTriggeredAbilities(classLevel) ?: emptyList()
-                topLevel + getRoomFaceTriggeredAbilities(entityId, cardDef, state)
+                val roomAbilities = getRoomFaceTriggeredAbilities(entityId, cardDef, state)
+                if (roomAbilities.isEmpty()) topLevel else topLevel + roomAbilities
             }
         }
 
         // Same per-read "for as long as …" gate as the other lookup path above.
-        val grantedAbilities = state.grantedTriggeredAbilities
-            .filter { it.entityId == entityId && GrantDurationGate.holds(state, it.entityId, it.sourceId, it.duration) }
-            .map { it.ability }
+        val grantedAbilities = buildList {
+            for (grant in state.grantedTriggeredAbilities) {
+                if (grant.entityId == entityId &&
+                    GrantDurationGate.holds(state, grant.entityId, grant.sourceId, grant.duration)
+                ) {
+                    add(grant.ability)
+                }
+            }
+        }
 
         val staticGrantedAbilities = if (grantProviders.isNotEmpty()) {
             getStaticGrantedFromProviders(entityId, state, grantProviders)

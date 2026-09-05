@@ -34,7 +34,8 @@ class TriggerAbilityResolverTest : FunSpec({
         val temporary = ability("temporary")
         val static = ability("static")
         val grant = GrantTriggeredAbility(static, GroupFilter.AllCreatures)
-        val target = CardDefinition.creature("Trigger Target", ManaCost.ZERO, subtypes = emptySet(), power = 1, toughness = 1)
+        val target = CardDefinition.creature("Trigger Target", ManaCost.ZERO, subtypes = emptySet(), power = 1, toughness = 1,
+            script = CardScript(triggeredAbilities = base))
         val provider = CardDefinition.enchantment("Trigger Provider", ManaCost.ZERO,
             script = CardScript(staticAbilities = listOf(grant)))
         val registry = CardRegistry().apply { register(listOf(target, provider)) }
@@ -48,10 +49,19 @@ class TriggerAbilityResolverTest : FunSpec({
         (resolver.getTriggeredAbilities(targetId, target.name, ungranted) === base) shouldBe true
         (resolver.getTriggeredAbilitiesWithProviders(targetId, target.name, ungranted, emptyList()) === base) shouldBe true
 
+        val fallback = TriggerAbilityResolver(registry, AbilityRegistry())
+        (fallback.getTriggeredAbilities(targetId, target.name, ungranted) === base) shouldBe true
+        (fallback.getTriggeredAbilitiesWithProviders(targetId, target.name, ungranted, emptyList()) === base) shouldBe true
+
         val granted = ungranted.copy(
             entities = ungranted.entities + (providerId to CardEntityFactory.create(provider, owner)),
             zones = mapOf(zone to listOf(targetId, providerId)),
-            grantedTriggeredAbilities = List(2) { GrantedTriggeredAbility(targetId, temporary, Duration.Permanent) },
+            grantedTriggeredAbilities = listOf(
+                GrantedTriggeredAbility(providerId, ability("unrelated"), Duration.Permanent),
+                GrantedTriggeredAbility(targetId, temporary, Duration.Permanent),
+                GrantedTriggeredAbility(targetId, ability("expired"), Duration.WhileAffectedTapped),
+                GrantedTriggeredAbility(targetId, temporary, Duration.Permanent),
+            ),
         )
         val expected = base + listOf(temporary, temporary, static)
         resolver.getTriggeredAbilities(targetId, target.name, granted) shouldBe expected
