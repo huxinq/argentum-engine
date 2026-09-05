@@ -116,22 +116,26 @@ class StateProjector(
                 projectedValues[entityId] = MutableProjectedValues(
                     power = baseStats?.basePower,
                     toughness = baseStats?.baseToughness,
-                    keywords = (cardComponent.baseKeywords.map { it.name } +
-                        cardComponent.baseFlags.map { it.name } +
-                        (container.get<ProtectionComponent>()?.colors?.map { "PROTECTION_FROM_${it.name}" } ?: emptyList()) +
-                        (container.get<ProtectionComponent>()?.subtypes?.map { "PROTECTION_FROM_SUBTYPE_${it.uppercase()}" } ?: emptyList()) +
-            (container.get<ProtectionComponent>()?.supertypes?.map { "PROTECTION_FROM_SUPERTYPE_${it.uppercase()}" } ?: emptyList()) +
-                        (container.get<ProtectionComponent>()?.cardTypes?.map { "PROTECTION_FROM_CARDTYPE_$it" } ?: emptyList()) +
-                        (container.get<HexproofFromComponent>()?.colors?.map { "HEXPROOF_FROM_${it.name}" } ?: emptyList()) +
-                        (container.get<HexproofFromComponent>()?.cardTypes?.map { "HEXPROOF_FROM_CARDTYPE_$it" } ?: emptyList()) +
-                        (container.get<ToxicComponent>()?.let { listOf("TOXIC_${it.amount}") } ?: emptyList()) +
-                        // CR 702.109a: "as long as this permanent's dash cost was paid, it has
-                        // haste" — derived live from the marker every projection, not stored as a
-                        // floating effect (see DashedComponent's doc for why).
-                        (if (container.has<DashedComponent>()) listOf(Keyword.HASTE.name) else emptyList())).toMutableSet(),
-                    colors = cardComponent.colors.map { it.name }.toMutableSet(),
+                    keywords = linkedSetOf<String>().apply {
+                        cardComponent.baseKeywords.forEach { add(it.name) }
+                        cardComponent.baseFlags.forEach { add(it.name) }
+                        container.get<ProtectionComponent>()?.let { protection ->
+                            protection.colors.forEach { add("PROTECTION_FROM_${it.name}") }
+                            protection.subtypes.forEach { add("PROTECTION_FROM_SUBTYPE_${it.uppercase()}") }
+                            protection.supertypes.forEach { add("PROTECTION_FROM_SUPERTYPE_${it.uppercase()}") }
+                            protection.cardTypes.forEach { add("PROTECTION_FROM_CARDTYPE_$it") }
+                        }
+                        container.get<HexproofFromComponent>()?.let { hexproof ->
+                            hexproof.colors.forEach { add("HEXPROOF_FROM_${it.name}") }
+                            hexproof.cardTypes.forEach { add("HEXPROOF_FROM_CARDTYPE_$it") }
+                        }
+                        container.get<ToxicComponent>()?.let { add("TOXIC_${it.amount}") }
+                        // Dash supplies haste from the live marker on every projection.
+                        if (container.has<DashedComponent>()) add(Keyword.HASTE.name)
+                    },
+                    colors = cardComponent.colors.mapTo(linkedSetOf()) { it.name },
                     types = extractTypes(cardComponent),
-                    subtypes = cardComponent.typeLine.subtypes.map { it.value }.toMutableSet(),
+                    subtypes = cardComponent.typeLine.subtypes.mapTo(linkedSetOf()) { it.value },
                     controllerId = container.get<ControllerComponent>()?.playerId,
                     isFaceDown = false
                 )
