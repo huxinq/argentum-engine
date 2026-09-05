@@ -83,7 +83,9 @@ class TriggerAbilityResolver(
 
         // Merge in triggered abilities granted by static abilities on other permanents
         // (e.g., Hunter Sliver granting provoke to all Slivers)
-        val staticGrantedAbilities = getStaticGrantedTriggeredAbilities(entityId, state)
+        // The index includes every battlefield/soulbond provider this scan can use.
+        val staticGrantedAbilities = if (statics.triggerGrantProviders.isEmpty()) emptyList()
+            else getStaticGrantedTriggeredAbilities(entityId, state)
         val attachedGrantedAbilities = getAttachedGrantedTriggeredAbilities(entityId, state, statics)
         // "This creature has '<triggered ability>' [as long as …]" — a Scope.Self GrantTriggeredAbility
         // on the permanent's own definition, optionally gated by a ConditionalStaticAbility.
