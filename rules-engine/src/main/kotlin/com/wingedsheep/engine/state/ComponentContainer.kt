@@ -53,10 +53,12 @@ data class ComponentContainer(
     }
 
     /**
-     * Remove a component type (returns new container).
+     * Remove a component type, retaining this container when the type is absent.
      */
     inline fun <reified T : Component> without(): ComponentContainer {
-        return ComponentContainer(components - T::class.java)
+        val key = T::class.java
+        if (!components.containsKey(key)) return this
+        return ComponentContainer(components - key)
     }
 
     /**
