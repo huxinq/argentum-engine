@@ -40,12 +40,14 @@ export const createPipelineSlice: SliceCreator<PipelineSlice> = (set, get) => ({
     // cancel the current pipeline (e.g. the improvise/waterbend tap step) first. Guards against casting a
     // second spell from hand mid-cast even if some interaction path slips past the UI gating.
     if (get().pipelineState != null) return
+    const interactionEpoch = actionInfo.interactionEpoch
+    if (!interactionEpoch || interactionEpoch !== get().interactionEpoch) return
     const autoTapEnabled = options?.forceManualTap ? false : get().autoTapEnabled
     const phases = computePhases(actionInfo, { autoTapEnabled })
 
     if (phases.length === 0) {
       // No interaction needed — submit directly
-      get().submitAction(actionInfo.action)
+      get().submitAction(actionInfo.action, interactionEpoch)
       get().selectCard(null)
       return
     }
@@ -74,6 +76,7 @@ export const createPipelineSlice: SliceCreator<PipelineSlice> = (set, get) => ({
 
     set({
       pipelineState: {
+        interactionEpoch,
         actionInfo,
         accumulatedAction,
         remainingPhases: phases,
@@ -97,7 +100,8 @@ export const createPipelineSlice: SliceCreator<PipelineSlice> = (set, get) => ({
     if (!pipelineState || !gameState) return
 
     let { actionInfo } = pipelineState
-    const { accumulatedAction, remainingPhases } = pipelineState
+    const { accumulatedAction, remainingPhases, interactionEpoch } = pipelineState
+    if (interactionEpoch !== get().interactionEpoch) return
 
     // Merge result into accumulated action
     const mergedAction = mergeResult(accumulatedAction, actionInfo, result, gameState)
@@ -243,6 +247,7 @@ export const createPipelineSlice: SliceCreator<PipelineSlice> = (set, get) => ({
 
       set({
         pipelineState: {
+          interactionEpoch,
           actionInfo,
           accumulatedAction: mergedAction,
           remainingPhases: [{ type: 'damageDistribution' }, ...nextPhases],
@@ -264,13 +269,14 @@ export const createPipelineSlice: SliceCreator<PipelineSlice> = (set, get) => ({
     if (nextPhases.length === 0) {
       // All phases complete — submit
       set({ pipelineState: null })
-      submitAction(mergedAction)
+      submitAction(mergedAction, interactionEpoch)
       return
     }
 
     // Update pipeline state and enter next phase
     set({
       pipelineState: {
+        interactionEpoch,
         actionInfo,
         accumulatedAction: mergedAction,
         remainingPhases: nextPhases,

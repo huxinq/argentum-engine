@@ -13,6 +13,7 @@ import { autoSelectForPower, totalPowerOf } from '@/utils/tapForPower'
  */
 export function TapForPowerSelector() {
   const selection = useGameStore((state) => state.tapForPowerSelectionState)
+  const interactionEpoch = useGameStore((state) => state.interactionEpoch)
   const cancelSelection = useGameStore((state) => state.cancelTapForPowerSelection)
   const confirmSelection = useGameStore((state) => state.confirmTapForPowerSelection)
   const toggleCreature = useGameStore((state) => state.toggleTapForPowerCreature)
@@ -44,15 +45,15 @@ export function TapForPowerSelector() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        cancelSelection()
+        cancelSelection(interactionEpoch)
       } else if (e.key === 'Enter' && canConfirm) {
         e.preventDefault()
-        confirmSelection()
+        confirmSelection(interactionEpoch)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selection, canConfirm, cancelSelection, confirmSelection])
+  }, [selection, canConfirm, cancelSelection, confirmSelection, interactionEpoch])
 
   if (!selection) return null
 
@@ -125,11 +126,11 @@ export function TapForPowerSelector() {
       >
         Auto
       </button>
-      <button onClick={cancelSelection} style={styles.cancelButton}>
+      <button onClick={() => cancelSelection(interactionEpoch)} style={styles.cancelButton}>
         Cancel
       </button>
       <button
-        onClick={confirmSelection}
+        onClick={() => confirmSelection(interactionEpoch)}
         disabled={!canConfirm}
         style={{
           ...styles.confirmButton,

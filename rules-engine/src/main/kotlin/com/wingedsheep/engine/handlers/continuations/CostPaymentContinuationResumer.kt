@@ -1,11 +1,11 @@
 package com.wingedsheep.engine.handlers.continuations
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.CardsSelectedResponse
 import com.wingedsheep.engine.core.CostPaymentContinuation
 import com.wingedsheep.engine.core.CostPaymentManaSelectionContinuation
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.ManaSourcesSelectedResponse
 import com.wingedsheep.engine.mechanics.mana.ManaPaymentWindow
 import com.wingedsheep.engine.core.DecisionResponse
@@ -136,38 +136,26 @@ class CostPaymentContinuationResumer(
         val manaCost = ((cost as? PayCost.Atom)?.atom as? CostAtom.Mana)?.cost ?: return null
         if (ManaPaymentWindow.floatingManaCovers(state, continuation.payerId, manaCost)) return null
 
-        val (decisionId, stateAfterRouting) = state.newRoutingId()
-        val decision = ManaPaymentWindow.buildDecision(
-            state = stateAfterRouting,
-            playerId = continuation.payerId,
-            cost = manaCost,
-            decisionId = decisionId,
-            prompt = "Pay $manaCost",
-            context = DecisionContext(
-                sourceId = continuation.sourceId,
-                sourceName = continuation.sourceName,
-                phase = DecisionPhase.RESOLUTION
-            ),
-            canDecline = true,
-            cardRegistry = services.cardRegistry
-        )
-        val frame = CostPaymentManaSelectionContinuation(
-            decisionId = decisionId,
-            inner = continuation,
-            manaCost = manaCost,
-            availableSources = decision.availableSources
-        )
-        return ExecutionResult.paused(
-            stateAfterRouting.withPendingDecision(decision).pushContinuation(frame),
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = continuation.payerId,
-                    decisionType = "SELECT_MANA_SOURCES",
-                    prompt = decision.prompt
-                )
-            )
+        return state.suspendForDecision(
+            question = { decisionId -> ManaPaymentWindow.buildDecision(
+                state = state,
+                playerId = continuation.payerId,
+                cost = manaCost,
+                decisionId = decisionId,
+                prompt = "Pay $manaCost",
+                context = DecisionContext(
+                    sourceId = continuation.sourceId,
+                    sourceName = continuation.sourceName,
+                    phase = DecisionPhase.RESOLUTION
+                ),
+                canDecline = true,
+                cardRegistry = services.cardRegistry
+            ) },
+            answer = { decision -> CostPaymentManaSelectionContinuation(
+                inner = continuation,
+                manaCost = manaCost,
+                availableSources = decision.availableSources
+        ) },
         )
     }
 
@@ -256,7 +244,7 @@ class CostPaymentContinuationResumer(
         val chosen = cost.options[response.optionIndex]
         val result = paymentService.pay(state, continuation.payerId, chosen, continuation.sourceId, contextOf(continuation))
         return when (result) {
-            is PaymentResult.Pending -> ExecutionResult.paused(result.state, result.pendingDecision, result.events)
+            is PaymentResult.Pending -> ExecutionResult.propagatePause(result.state, result.events)
             // canAfford was checked when building the option list, so a sub-cost should be payable;
             // treat any unexpected non-pending result as a decline so the punisher branch still runs.
             else -> declined(result.state, continuation, checkForMore)
@@ -289,7 +277,7 @@ class CostPaymentContinuationResumer(
             .toExecutionResult()
         val allEvents = priorEvents + result.events
         return if (result.isPaused) {
-            ExecutionResult.paused(result.state, result.pendingDecision!!, allEvents)
+            ExecutionResult.propagatePause(result.state, allEvents)
         } else {
             checkForMore(result.state, allEvents)
         }

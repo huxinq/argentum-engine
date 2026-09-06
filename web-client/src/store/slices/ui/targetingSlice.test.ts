@@ -16,7 +16,9 @@ function makeStore() {
   const action: GameAction = { type: 'CastSpell', playerId: 'p1', cardId: 'spell1' } as GameAction
   const store = create<GameStore>()((set, get, api) => ({
     ...createTargetingSlice(set, get, api),
+    interactionEpoch: 'test-epoch',
     pipelineState: {
+      interactionEpoch: 'test-epoch',
       actionInfo: { actionType: 'CastSpell', description: 'Cast Test', action } as LegalActionInfo,
       accumulatedAction: action,
       remainingPhases: [{ type: 'targeting' }],
@@ -60,7 +62,7 @@ describe('targetingSlice — multi-target back navigation', () => {
     s.startTargeting(twoRequirementState(store.getState().pipelineState!.accumulatedAction))
 
     s.addTarget(id('a'))
-    s.confirmTargeting()
+    s.confirmTargeting('test-epoch')
 
     const state = targeting(store)
     expect(state.currentRequirementIndex).toBe(1)
@@ -76,7 +78,7 @@ describe('targetingSlice — multi-target back navigation', () => {
     s.startTargeting(twoRequirementState(store.getState().pipelineState!.accumulatedAction))
 
     s.addTarget(id('a'))
-    s.confirmTargeting()
+    s.confirmTargeting('test-epoch')
     store.getState().goBackTargeting()
 
     const state = targeting(store)
@@ -93,11 +95,11 @@ describe('targetingSlice — multi-target back navigation', () => {
     s.startTargeting(twoRequirementState(store.getState().pipelineState!.accumulatedAction))
 
     s.addTarget(id('a'))
-    s.confirmTargeting()
+    s.confirmTargeting('test-epoch')
     store.getState().goBackTargeting()
     // maxTargets is 1, so picking 'b' replaces 'a'
     store.getState().addTarget(id('b'))
-    store.getState().confirmTargeting()
+    store.getState().confirmTargeting('test-epoch')
 
     const state = targeting(store)
     expect(state.currentRequirementIndex).toBe(1)
@@ -124,9 +126,9 @@ describe('targetingSlice — multi-target back navigation', () => {
     s.startTargeting(twoRequirementState(store.getState().pipelineState!.accumulatedAction))
 
     s.addTarget(id('a'))
-    s.confirmTargeting()
+    s.confirmTargeting('test-epoch')
     store.getState().addTarget(id('c'))
-    store.getState().confirmTargeting()
+    store.getState().confirmTargeting('test-epoch')
 
     expect(store.getState().targetingState).toBeNull()
     expect(advancePipeline).toHaveBeenCalledWith({ type: 'targeting', selectedTargets: [id('a'), id('c')] })

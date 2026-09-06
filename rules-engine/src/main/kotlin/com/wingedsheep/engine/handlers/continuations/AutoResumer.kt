@@ -1,6 +1,6 @@
 package com.wingedsheep.engine.handlers.continuations
 
-import com.wingedsheep.engine.core.ContinuationFrame
+import com.wingedsheep.engine.core.AutomaticContinuation
 import com.wingedsheep.engine.core.ExecutionResult
 import com.wingedsheep.engine.core.GameEvent
 import com.wingedsheep.engine.state.GameState
@@ -16,7 +16,7 @@ import kotlin.reflect.KClass
  *
  * @param T The specific continuation frame type this auto-resumer handles
  */
-interface AutoResumer<T : ContinuationFrame> {
+interface AutoResumer<T : AutomaticContinuation> {
     val frameType: KClass<T>
 
     /**
@@ -45,7 +45,7 @@ interface AutoResumer<T : ContinuationFrame> {
 /**
  * Factory function to create an [AutoResumer] from lambdas.
  */
-fun <T : ContinuationFrame> autoResumer(
+fun <T : AutomaticContinuation> autoResumer(
     type: KClass<T>,
     canResume: (T) -> Boolean = { true },
     handler: (GameState, T, List<GameEvent>, CheckForMore) -> ExecutionResult

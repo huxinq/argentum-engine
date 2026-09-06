@@ -174,9 +174,7 @@ class CopyTargetSpellOrAbilityExecutor(
                 val copyLabel = if (totalCopies > 1)
                     "copy $copyNumber of $totalCopies of $sourceName's ability"
                 else "copy of $sourceName's ability"
-                val (routingId, stateWithRoutingId) = currentState.newRoutingId()
-                val decisionId = "copy-ability-target-$routingId"
-                val decision = ChooseTargetsDecision(
+                val decision = { decisionId: String -> ChooseTargetsDecision(
                     id = decisionId,
                     playerId = controllerId,
                     prompt = "Choose new targets for $copyLabel",
@@ -189,9 +187,8 @@ class CopyTargetSpellOrAbilityExecutor(
                         TargetRequirementInfo(index = index, description = req.description)
                     },
                     legalTargets = legalTargetsMap
-                )
+                ) }
                 val continuation = CopyAbilityTargetContinuation(
-                    decisionId = decisionId,
                     abilityEntityId = abilityEntityId,
                     controllerId = controllerId,
                     copierSourceId = copierSourceId,
@@ -199,10 +196,7 @@ class CopyTargetSpellOrAbilityExecutor(
                     remainingCopies = copiesLeft,
                     totalCopies = totalCopies
                 )
-                val paused = stateWithRoutingId
-                    .withPendingDecision(decision)
-                    .pushContinuation(continuation)
-                return ExecutionResult.paused(paused, decision, allEvents)
+                return currentState.suspendForDecision(decision, continuation, allEvents)
             }
 
             return ExecutionResult.success(currentState, allEvents)

@@ -85,7 +85,7 @@ export function BattlefieldTargetingUI({
     startDecisionSelection(selectionState)
 
     return () => {
-      cancelDecisionSelection()
+      cancelDecisionSelection(decision.id)
     }
   }, [decision.id, requirementIndex])
 
@@ -96,23 +96,23 @@ export function BattlefieldTargetingUI({
   const handleConfirm = () => {
     if (canConfirm && decisionSelectionState) {
       const selected = decisionSelectionState.selectedOptions
-      cancelDecisionSelection()
+      cancelDecisionSelection(decision.id)
       onComplete(selected)
     }
   }
 
   const handleDecline = () => {
-    cancelDecisionSelection()
+    cancelDecisionSelection(decision.id)
     onComplete([])
   }
 
   const handleCancel = () => {
-    cancelDecisionSelection()
-    submitCancelDecision()
+    cancelDecisionSelection(decision.id)
+    submitCancelDecision(decision.id)
   }
 
   const handleBack = () => {
-    cancelDecisionSelection()
+    cancelDecisionSelection(decision.id)
     onBack?.()
   }
 
@@ -120,7 +120,7 @@ export function BattlefieldTargetingUI({
     // Carry the board picks over so the pile picker counts them toward this requirement's
     // minimum/maximum and submits them together with whatever is chosen there.
     const carried = [...(decisionSelectionState?.selectedOptions ?? [])]
-    cancelDecisionSelection()
+    cancelDecisionSelection(decision.id)
     pileButton?.onOpen(carried)
   }
 

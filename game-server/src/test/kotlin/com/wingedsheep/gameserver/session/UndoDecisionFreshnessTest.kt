@@ -31,7 +31,7 @@ class UndoDecisionFreshnessTest : ScenarioTestBase() {
             val player = game.player1Id
             val session = newSession(game)
 
-            val first = session.executeClientAction(player, PlayLand(player, lands[0]), "land-a")
+            val first = session.executeAction(player, PlayLand(player, lands[0]), "land-a")
                 .shouldBeInstanceOf<GameSession.ActionResult.PausedForDecision>()
             val full = session.createStateUpdate(player, first.events)
                 .shouldBeInstanceOf<ServerMessage.StateUpdate>()
@@ -55,7 +55,7 @@ class UndoDecisionFreshnessTest : ScenarioTestBase() {
             session.getRecordedActions() shouldBe emptyList()
 
             val secondAction = PlayLand(player, lands[1])
-            val second = session.executeClientAction(player, secondAction, "land-b")
+            val second = session.executeAction(player, secondAction, "land-b")
                 .shouldBeInstanceOf<GameSession.ActionResult.PausedForDecision>()
             val nextPrompt = session.createStateUpdate(player, second.events)
                 .shouldBeInstanceOf<ServerMessage.StateDeltaUpdate>()
@@ -116,9 +116,9 @@ class UndoDecisionFreshnessTest : ScenarioTestBase() {
             val firstSession = newSession(game)
             val secondSession = newSession(game)
             val action = PlayLand(player, land)
-            val first = firstSession.executeClientAction(player, action)
+            val first = firstSession.executeAction(player, action)
                 .shouldBeInstanceOf<GameSession.ActionResult.PausedForDecision>()
-            val second = secondSession.executeClientAction(player, action)
+            val second = secondSession.executeAction(player, action)
                 .shouldBeInstanceOf<GameSession.ActionResult.PausedForDecision>()
             first.state shouldBe second.state
             val raw = first.state.pendingDecision.shouldBeInstanceOf<ChooseOptionDecision>()

@@ -52,6 +52,7 @@ class InFlightEntityReferencesTest : FunSpec({
         val nestedId = EntityId.of("nested")
         val nullableId = EntityId.of("nullable")
         val stringOnlyId = EntityId.of("looks-like-an-id")
+        val answerOnlyId = EntityId.of("answer-only")
 
         val decision = DistributeDecision(
             id = "decision",
@@ -67,11 +68,10 @@ class InFlightEntityReferencesTest : FunSpec({
             maxPerTarget = mapOf(mapKeyId to 1),
         )
         val continuation = SelectFromCollectionContinuation(
-            decisionId = "continuation",
             playerId = playerId,
             sourceId = nullableId,
             sourceName = stringOnlyId.value,
-            allCards = emptyList(),
+            allCards = listOf(answerOnlyId),
             storeSelected = "selected",
             storeRemainder = null,
             storedCollections = mapOf(stringOnlyId.value to listOf(nestedId)),
@@ -80,11 +80,15 @@ class InFlightEntityReferencesTest : FunSpec({
         InFlightEntityReferences.project(decision)
             .shouldBeInstanceOf<TypedEntityReferences.Projection.Complete>()
             .entityIds shouldBe setOf(playerId, nullableId, nestedId, mapKeyId)
-        InFlightEntityReferences.project(continuation)
+        val suspension = Suspension(decision, continuation)
+        InFlightEntityReferences.project(suspension)
             .shouldBeInstanceOf<TypedEntityReferences.Projection.Complete>()
-            .entityIds shouldBe setOf(playerId, nullableId, nestedId)
-        InFlightEntityReferences.project(continuation.copy(sourceId = null))
+            .entityIds shouldBe setOf(playerId, nullableId, nestedId, mapKeyId, answerOnlyId)
+        InFlightEntityReferences.project(Suspension(
+            decision.copy(context = decision.context.copy(sourceId = null)),
+            continuation.copy(sourceId = null),
+        ))
             .shouldBeInstanceOf<TypedEntityReferences.Projection.Complete>()
-            .entityIds shouldBe setOf(playerId, nestedId)
+            .entityIds shouldBe setOf(playerId, nestedId, mapKeyId, answerOnlyId)
     }
 })

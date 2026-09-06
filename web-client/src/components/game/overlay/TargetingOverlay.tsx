@@ -510,6 +510,7 @@ function ZoneCardTargetingOverlay({
  */
 export function TargetingOverlay() {
   const targetingState = useGameStore((state) => state.targetingState)
+  const interactionEpoch = useGameStore((state) => state.interactionEpoch)
   const cancelTargeting = useGameStore((state) => state.cancelTargeting)
   const confirmTargeting = useGameStore((state) => state.confirmTargeting)
   const goBackTargeting = useGameStore((state) => state.goBackTargeting)
@@ -595,8 +596,8 @@ export function TargetingOverlay() {
         responsive={responsive}
         onSelect={addTarget}
         onDeselect={removeTarget}
-        onConfirm={confirmTargeting}
-        onCancel={cancelTargeting}
+        onConfirm={() => confirmTargeting(interactionEpoch)}
+        onCancel={() => cancelTargeting(interactionEpoch)}
         {...(canGoBack ? { onBack: goBackTargeting } : {})}
       />
     )
@@ -613,8 +614,8 @@ export function TargetingOverlay() {
         responsive={responsive}
         onSelect={addTarget}
         onDeselect={removeTarget}
-        onConfirm={confirmTargeting}
-        onCancel={cancelTargeting}
+        onConfirm={() => confirmTargeting(interactionEpoch)}
+        onCancel={() => cancelTargeting(interactionEpoch)}
         onViewBattlefield={() => setPilePickerOpen(false)}
         {...(canGoBack ? { onBack: goBackTargeting } : {})}
       />
@@ -822,7 +823,7 @@ export function TargetingOverlay() {
           </button>
         )}
         {hasEnoughTargets && (
-          <button onClick={confirmTargeting} style={{
+          <button onClick={() => confirmTargeting(interactionEpoch)} style={{
             ...styles.actionButton,
             padding: responsive.isMobile ? '8px 12px' : '10px 16px',
             fontSize: responsive.fontSize.normal,
@@ -830,7 +831,7 @@ export function TargetingOverlay() {
             Confirm ({selectedCount})
           </button>
         )}
-        <button onClick={cancelTargeting} style={{
+        <button onClick={() => cancelTargeting(interactionEpoch)} style={{
           ...styles.cancelButton,
           padding: responsive.isMobile ? '8px 12px' : '10px 16px',
           fontSize: responsive.fontSize.normal,

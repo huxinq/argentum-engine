@@ -171,6 +171,7 @@ function mergeCardsRevealedEvents(
  * Common state update fields shared by both full and delta update messages.
  */
 interface StateUpdateEnvelope {
+  readonly interactionEpoch?: string | null
   readonly events: readonly ClientEvent[]
   readonly legalActions: readonly LegalActionInfo[]
   readonly pendingDecision?: PendingDecision
@@ -180,6 +181,36 @@ interface StateUpdateEnvelope {
   readonly undoAvailable?: boolean
   readonly priorityMode?: PriorityModeValue | null
 }
+
+/** A replaced timeline invalidates every partially built action in the same store update. */
+const CLEARED_ACTION_SELECTIONS = {
+  selectedCardId: null,
+  pipelineState: null,
+  targetingState: null,
+  modalModeSelectionState: null,
+  xSelectionState: null,
+  blightVariableSelectionState: null,
+  payXLifeSelectionState: null,
+  convokeSelectionState: null,
+  tapForGenericSelectionState: null,
+  harmonizeSelectionState: null,
+  tapForPowerSelectionState: null,
+  delveSelectionState: null,
+  manaSelectionState: null,
+  manaColorSelectionState: null,
+  decisionSelectionState: null,
+  damageDistributionState: null,
+  lastDamageDistribution: null,
+  distributeState: null,
+  counterDistributionState: null,
+  combatState: null,
+  draggingBlockerId: null,
+  draggingAttackerId: null,
+  draggingAttackerHasBanding: null,
+  draggingCardId: null,
+  opponentAttackerTargets: null,
+  opponentBlockerAssignments: null,
+} as const
 
 /**
  * The transient animation queues, emptied together. Every one of these layers sits far above the
@@ -542,7 +573,8 @@ function processStateUpdate(
 
   set((state) => ({
     gameState: resolvedState,
-    legalActions: msg.legalActions,
+    interactionEpoch: msg.interactionEpoch ?? null,
+    legalActions: msg.legalActions.map((action) => ({ ...action, interactionEpoch: msg.interactionEpoch ?? null })),
     pendingDecision: msg.pendingDecision ?? null,
     opponentDecisionStatus: msg.opponentDecisionStatus ?? null,
     nextStopPoint: msg.nextStopPoint ?? null,
@@ -614,6 +646,7 @@ function processStateUpdate(
     )
       ? state.opponentBlockerAssignments
       : null,
+    ...(state.interactionEpoch !== (msg.interactionEpoch ?? null) ? CLEARED_ACTION_SELECTIONS : {}),
   }))
 
   // Auto-initialize inline distribute state for DistributeDecision
@@ -739,6 +772,7 @@ export function createGameplayHandlers(set: SetState, get: GetState): Pick<Messa
         sessionId: null,
         opponentName: null,
         gameState: null,
+        interactionEpoch: null,
         legalActions: [],
         mulliganState: null,
         deckBuildingState: null,

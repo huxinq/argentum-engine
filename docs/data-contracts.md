@@ -650,22 +650,24 @@ random or clock-based IDs; reconstruction retains rebinding for those records wh
 the recorded choice payload (entity-id targets/cards). Routing IDs are game-local correlation
 tokens and must not be interpreted as globally unique identifiers or semantic action identity.
 
-The live browser protocol wraps each pending decision ID with a session epoch. Clients continue
-to echo the opaque `pendingDecision.id` in `SubmitDecision`; no new envelope field is needed.
-`GameSession.executeClientAction` rejects a cancelled generation before changing game state,
-undo checkpoints, replay inputs, or message-id bookkeeping, then rebinds a valid response to the
-engine ID for execution and recording. Successful undo rotates the epoch without changing the
-restored engine checkpoint. Full and delta updates share the same token while that prompt is
-outstanding, including after reconnect; a new session instance starts a fresh epoch.
+Both browser and AI adapters produce `LiveActionSubmission`: a canonical engine action and the
+live `interactionEpoch` from the update that originated the choice. `GameSession.executeLiveAction`
+checks that epoch and any pending-question ID under the same lock as execution, before changing
+undo checkpoints, replay inputs, or message-id bookkeeping. Successful undo rotates the live
+epoch without changing the restored engine checkpoint. A new session instance starts a new epoch.
 
-In-process AI updates retain raw decision IDs for engine simulations and carry the same live
-generation separately in `interactionEpoch`. Both full and delta updates capture it under the
-session lock. The AI carries that originating value through thinking and approval delays into
-its callback; `GameSession.executeAiAction` validates it atomically with action execution.
-Missing or obsolete generations are discarded before fallback actions, rejection accounting,
-or broadcasts. Fallback execution rechecks the originating generation, and rejection accounting
-plus any resulting concession share one guarded operation, so undo between recovery steps cannot
-apply them to the replacement branch. Replay continues to record only canonical engine IDs.
+Every full and delta update captures the epoch under the session lock. Browser decisions retain
+an epoch-prefixed opaque ID; `executeClientAction` decodes it and verifies any explicit envelope
+origin agrees. Other browser actions require the originating `interactionEpoch` in `SubmitAction`.
+The client retains that origin while selecting targets, modes, or combat assignments, and clears
+in-progress interaction state when a replacement epoch arrives. It never stamps an older choice
+with the latest update's epoch. Older clients lacking an origin for ordinary actions fail closed.
+
+In-process AI updates retain raw question IDs for engine simulations. The AI carries the update's
+epoch through thinking and approval delays into its callback. Its adapter and every fallback action
+use the same live acceptance operation. Missing or obsolete AI deliveries are discarded before
+fallbacks, rejection accounting, or broadcasts. Rejection accounting and any resulting concession
+also check the originating epoch atomically. Replay records only canonical engine actions.
 
 
 #### One store

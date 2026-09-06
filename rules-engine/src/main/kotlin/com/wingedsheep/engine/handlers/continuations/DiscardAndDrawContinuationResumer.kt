@@ -133,6 +133,12 @@ class DiscardAndDrawContinuationResumer(
 
             // Create decision for next player
             val decisionHandler = DecisionHandler()
+            val newContinuation = continuation.copy(
+                currentPlayerId = nextPlayer,
+                remainingPlayers = nextRemainingPlayers,
+                discardedCreature = newDiscardedCreature
+            )
+
             val decisionResult = decisionHandler.createCardSelectionDecision(
                 state = newState,
                 playerId = nextPlayer,
@@ -143,21 +149,12 @@ class DiscardAndDrawContinuationResumer(
                 minSelections = 1,
                 maxSelections = 1,
                 ordered = false,
-                phase = DecisionPhase.RESOLUTION
+                phase = DecisionPhase.RESOLUTION,
+                answer = newContinuation,
             )
 
-            val newContinuation = continuation.copy(
-                decisionId = decisionResult.pendingDecision!!.id,
-                currentPlayerId = nextPlayer,
-                remainingPlayers = nextRemainingPlayers,
-                discardedCreature = newDiscardedCreature
-            )
-
-            val stateWithContinuation = decisionResult.state.pushContinuation(newContinuation)
-
-            return ExecutionResult.paused(
-                stateWithContinuation,
-                decisionResult.pendingDecision,
+            return ExecutionResult.propagatePause(
+                decisionResult.state,
                 discardEvents + decisionResult.events
             )
         }
@@ -232,6 +229,11 @@ class DiscardAndDrawContinuationResumer(
 
         // Create decision for next player
         val decisionHandler = DecisionHandler()
+        val newContinuation = continuation.copy(
+            currentPlayerId = nextPlayer,
+            remainingPlayers = nextRemainingPlayers
+        )
+
         val decisionResult = decisionHandler.createCardSelectionDecision(
             state = state,
             playerId = nextPlayer,
@@ -242,20 +244,12 @@ class DiscardAndDrawContinuationResumer(
             minSelections = 1,
             maxSelections = 1,
             ordered = false,
-            phase = DecisionPhase.RESOLUTION
+            phase = DecisionPhase.RESOLUTION,
+            answer = newContinuation,
         )
 
-        val newContinuation = continuation.copy(
-            decisionId = decisionResult.pendingDecision!!.id,
-            currentPlayerId = nextPlayer,
-            remainingPlayers = nextRemainingPlayers
-        )
-
-        val stateWithContinuation = decisionResult.state.pushContinuation(newContinuation)
-
-        return ExecutionResult.paused(
-            stateWithContinuation,
-            decisionResult.pendingDecision,
+        return ExecutionResult.propagatePause(
+            decisionResult.state,
             priorEvents + decisionResult.events
         )
     }

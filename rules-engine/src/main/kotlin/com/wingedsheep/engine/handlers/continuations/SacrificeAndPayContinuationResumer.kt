@@ -104,7 +104,7 @@ class SacrificeAndPayContinuationResumer(
             val allEvents = events + result.events
             return if (result.isPaused) {
                 // Another player needs a decision — return paused with combined events
-                ExecutionResult.paused(resultStateWithSnaps, result.pendingDecision!!, allEvents)
+                ExecutionResult.propagatePause(resultStateWithSnaps, allEvents)
             } else {
                 checkForMore(resultStateWithSnaps, allEvents)
             }
@@ -594,38 +594,26 @@ class SacrificeAndPayContinuationResumer(
         continuation: PayOrSufferContinuation,
         manaCost: ManaCost
     ): ExecutionResult {
-        val (decisionId, stateAfterRouting) = state.newRoutingId()
-        val decision = ManaPaymentWindow.buildDecision(
-            state = stateAfterRouting,
-            playerId = continuation.playerId,
-            cost = manaCost,
-            decisionId = decisionId,
-            prompt = "Pay $manaCost",
-            context = DecisionContext(
-                sourceId = continuation.sourceId,
-                sourceName = continuation.sourceName,
-                phase = DecisionPhase.RESOLUTION
-            ),
-            canDecline = true,
-            cardRegistry = services.cardRegistry
-        )
-        val frame = PayOrSufferManaSelectionContinuation(
-            decisionId = decisionId,
-            inner = continuation,
-            manaCost = manaCost,
-            availableSources = decision.availableSources
-        )
-        return ExecutionResult.paused(
-            stateAfterRouting.withPendingDecision(decision).pushContinuation(frame),
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = continuation.playerId,
-                    decisionType = "SELECT_MANA_SOURCES",
-                    prompt = decision.prompt
-                )
-            )
+        return state.suspendForDecision(
+            question = { decisionId -> ManaPaymentWindow.buildDecision(
+                state = state,
+                playerId = continuation.playerId,
+                cost = manaCost,
+                decisionId = decisionId,
+                prompt = "Pay $manaCost",
+                context = DecisionContext(
+                    sourceId = continuation.sourceId,
+                    sourceName = continuation.sourceName,
+                    phase = DecisionPhase.RESOLUTION
+                ),
+                canDecline = true,
+                cardRegistry = services.cardRegistry
+            ) },
+            answer = { decision -> PayOrSufferManaSelectionContinuation(
+                inner = continuation,
+                manaCost = manaCost,
+                availableSources = decision.availableSources
+        ) },
         )
     }
 
@@ -927,6 +915,11 @@ class SacrificeAndPayContinuationResumer(
                     )
                     if (validPermanents.size >= atom.count) {
                         val prompt = "You may sacrifice ${atom.count} ${atom.filter.description}s to cause ${continuation.sourceName} to be sacrificed, or skip"
+                        val newContinuation = continuation.copy(
+                            currentPlayerId = nextPlayerId,
+                            remainingPlayers = remainingAfter
+                        )
+
                         val decisionResult = decisionHandler.createCardSelectionDecision(
                             state = state,
                             playerId = nextPlayerId,
@@ -938,17 +931,11 @@ class SacrificeAndPayContinuationResumer(
                             maxSelections = atom.count,
                             ordered = false,
                             phase = DecisionPhase.RESOLUTION,
-                            useTargetingUI = true
+                            useTargetingUI = true,
+                            answer = newContinuation,
                         )
-                        val newContinuation = continuation.copy(
-                            decisionId = decisionResult.pendingDecision!!.id,
-                            currentPlayerId = nextPlayerId,
-                            remainingPlayers = remainingAfter
-                        )
-                        val stateWithContinuation = decisionResult.state.pushContinuation(newContinuation)
-                        return ExecutionResult.paused(
-                            stateWithContinuation,
-                            decisionResult.pendingDecision,
+                        return ExecutionResult.propagatePause(
+                            decisionResult.state,
                             decisionResult.events
                         )
                     }
@@ -957,9 +944,8 @@ class SacrificeAndPayContinuationResumer(
                 is CostAtom.PayLife -> {
                     val life = state.lifeTotal(nextPlayerId) // CR 810.9a — team's shared total
                     if (life >= atom.amount) {
-                        val (decisionId, stateAfterRouting) = state.newRoutingId()
                         val prompt = "Pay ${atom.amount} life to prevent ${continuation.sourceName}'s effect?"
-                        val decision = YesNoDecision(
+                        val question = { decisionId: String -> YesNoDecision(
                             id = decisionId,
                             playerId = nextPlayerId,
                             prompt = prompt,
@@ -970,24 +956,15 @@ class SacrificeAndPayContinuationResumer(
                             ),
                             yesText = "Pay ${atom.amount} life",
                             noText = "Don't pay"
-                        )
+                        ) }
                         val newContinuation = continuation.copy(
-                            decisionId = decisionId,
                             currentPlayerId = nextPlayerId,
                             remainingPlayers = remainingAfter
                         )
-                        val stateWithContinuation = stateAfterRouting.withPendingDecision(decision).pushContinuation(newContinuation)
-                        return ExecutionResult.paused(
-                            stateWithContinuation,
-                            decision,
-                            listOf(
-                                DecisionRequestedEvent(
-                                    decisionId = decisionId,
-                                    playerId = nextPlayerId,
-                                    decisionType = "YES_NO",
-                                    prompt = prompt
-                                )
-                            )
+                        return state.suspendForDecision(
+                            question = question,
+                            answer = newContinuation,
+                            events = emptyList(),
                         )
                     }
                 }

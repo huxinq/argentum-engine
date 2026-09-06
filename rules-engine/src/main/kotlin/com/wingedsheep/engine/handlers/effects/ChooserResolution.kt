@@ -1,10 +1,10 @@
 package com.wingedsheep.engine.handlers.effects
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.ChooseOpponentDeciderContinuation
 import com.wingedsheep.engine.core.ChooseOptionDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.EffectResult
 import com.wingedsheep.engine.handlers.EffectContext
 import com.wingedsheep.engine.state.GameState
@@ -167,9 +167,9 @@ object ChooserResolution {
         context: EffectContext,
         prompt: String
     ): EffectResult {
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name }
-        val decision = ChooseOptionDecision(
+        val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
+
+        val decision = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = context.controllerId,
             prompt = prompt,
@@ -178,28 +178,18 @@ object ChooserResolution {
                 sourceName = sourceName,
                 phase = DecisionPhase.RESOLUTION
             ),
-            options = opponents.map { playerName(stateWithRoutingId, it) }
-        )
+            options = opponents.map { playerName(state, it) }
+        ) }
+
         val continuation = ChooseOpponentDeciderContinuation(
-            decisionId = decisionId,
             controllerId = context.controllerId,
             sourceId = context.sourceId,
             opponentIds = opponents,
             effect = effect,
             baseContext = context
         )
-        return EffectResult.paused(
-            stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation),
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = context.controllerId,
-                    decisionType = "CHOOSE_OPTION",
-                    prompt = prompt
-                )
-            )
-        )
+
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 
     private fun playerName(state: GameState, playerId: EntityId): String =

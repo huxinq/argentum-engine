@@ -155,8 +155,7 @@ class ManaPaymentContinuationResumer(
             val solution = manaSolver.solve(state, playerId, partialResult.remainingCost)
             val autoPaySuggestion = solution?.sources?.map { it.entityId } ?: emptyList()
 
-            val (decisionId, stateAfterRouting) = state.newRoutingId()
-            val decision = SelectManaSourcesDecision(
+            val question = { decisionId: String -> SelectManaSourcesDecision(
                 id = decisionId,
                 playerId = playerId,
                 prompt = "Pay ${continuation.manaCost}",
@@ -168,10 +167,9 @@ class ManaPaymentContinuationResumer(
                 availableSources = sourceOptions,
                 requiredCost = continuation.manaCost.toString(),
                 autoPaySuggestion = autoPaySuggestion
-            )
+            ) }
 
             val manaSelectionContinuation = CounterUnlessPaysManaSelectionContinuation(
-                decisionId = decisionId,
                 payingPlayerId = playerId,
                 spellEntityId = continuation.spellEntityId,
                 manaCost = continuation.manaCost,
@@ -183,20 +181,10 @@ class ManaPaymentContinuationResumer(
                 sourceId = continuation.sourceId
             )
 
-            val stateWithDecision = stateAfterRouting.withPendingDecision(decision)
-            val stateWithContinuation = stateWithDecision.pushContinuation(manaSelectionContinuation)
-
-            return ExecutionResult.paused(
-                stateWithContinuation,
-                decision,
-                listOf(
-                    DecisionRequestedEvent(
-                        decisionId = decisionId,
-                        playerId = playerId,
-                        decisionType = "SELECT_MANA_SOURCES",
-                        prompt = decision.prompt
-                    )
-                )
+            return state.suspendForDecision(
+                question = question,
+                answer = manaSelectionContinuation,
+                events = emptyList(),
             )
         } else {
             // Player chose not to pay — counter the spell
@@ -824,7 +812,7 @@ class ManaPaymentContinuationResumer(
 
         if (next.error != null) return next
         return if (next.isPaused) {
-            ExecutionResult.paused(next.state, next.pendingDecision!!, priorEvents + next.events)
+            ExecutionResult.propagatePause(next.state, priorEvents + next.events)
         } else {
             checkForMore(next.state, priorEvents + next.events)
         }
@@ -859,9 +847,8 @@ class ManaPaymentContinuationResumer(
             .toExecutionResult()
         if (riderResult.error != null) return riderResult
         if (riderResult.isPaused) {
-            return ExecutionResult.paused(
+            return ExecutionResult.propagatePause(
                 riderResult.state,
-                riderResult.pendingDecision!!,
                 priorEvents + riderResult.events
             )
         }
@@ -976,8 +963,7 @@ class ManaPaymentContinuationResumer(
         val solution = manaSolver.solve(state, playerId, partialResult.remainingCost)
         val autoPaySuggestion = solution?.sources?.map { it.entityId } ?: emptyList()
 
-        val (decisionId, stateAfterRouting) = state.newRoutingId()
-        val decision = SelectManaSourcesDecision(
+        val question = { decisionId: String -> SelectManaSourcesDecision(
             id = decisionId,
             playerId = playerId,
             prompt = "Pay ${continuation.manaCost}",
@@ -990,10 +976,9 @@ class ManaPaymentContinuationResumer(
             requiredCost = continuation.manaCost.toString(),
             autoPaySuggestion = autoPaySuggestion,
             canDecline = true
-        )
+        ) }
 
         val manaSelectionContinuation = MayPayManaSelectionContinuation(
-            decisionId = decisionId,
             playerId = playerId,
             sourceName = continuation.sourceName,
             manaCost = continuation.manaCost,
@@ -1003,20 +988,10 @@ class ManaPaymentContinuationResumer(
             autoPaySuggestion = autoPaySuggestion
         )
 
-        val stateWithDecision = stateAfterRouting.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(manaSelectionContinuation)
-
-        return ExecutionResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = playerId,
-                    decisionType = "SELECT_MANA_SOURCES",
-                    prompt = decision.prompt
-                )
-            )
+        return state.suspendForDecision(
+            question = question,
+            answer = manaSelectionContinuation,
+            events = emptyList(),
         )
     }
 
@@ -1182,8 +1157,7 @@ class ManaPaymentContinuationResumer(
         val autoPaySuggestion = solution?.sources?.map { it.entityId } ?: emptyList()
 
         // Create mana source selection decision
-        val (decisionId, stateAfterRouting) = state.newRoutingId()
-        val decision = SelectManaSourcesDecision(
+        val question = { decisionId: String -> SelectManaSourcesDecision(
             id = decisionId,
             playerId = playerId,
             prompt = "Pay ${continuation.manaCost}",
@@ -1195,10 +1169,9 @@ class ManaPaymentContinuationResumer(
             availableSources = sourceOptions,
             requiredCost = continuation.manaCost.toString(),
             autoPaySuggestion = autoPaySuggestion
-        )
+        ) }
 
         val manaSourceContinuation = ManaSourceSelectionContinuation(
-            decisionId = decisionId,
             trigger = continuation.trigger,
             targetRequirement = continuation.targetRequirement,
             manaCost = continuation.manaCost,
@@ -1206,20 +1179,10 @@ class ManaPaymentContinuationResumer(
             autoPaySuggestion = autoPaySuggestion
         )
 
-        val stateWithDecision = stateAfterRouting.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(manaSourceContinuation)
-
-        return ExecutionResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = playerId,
-                    decisionType = "SELECT_MANA_SOURCES",
-                    prompt = decision.prompt
-                )
-            )
+        return state.suspendForDecision(
+            question = question,
+            answer = manaSourceContinuation,
+            events = emptyList(),
         )
     }
 
@@ -1426,9 +1389,8 @@ class ManaPaymentContinuationResumer(
 
         if (result.isPaused) {
             // Target selection is needed - return paused with accumulated events
-            return ExecutionResult.paused(
+            return ExecutionResult.propagatePause(
                 result.state,
-                result.pendingDecision!!,
                 events + result.events
             )
         }
@@ -1576,8 +1538,7 @@ class ManaPaymentContinuationResumer(
             return ExecutionResult.error(state, "Not enough valid permanents to satisfy $sourceName's tap cost")
         }
 
-        val (decisionId, stateAfterRouting) = state.newRoutingId()
-        val decision = SelectCardsDecision(
+        val question = { decisionId: String -> SelectCardsDecision(
             id = decisionId,
             playerId = payingPlayerId,
             prompt = "Tap an untapped ${subCost.filter.description} you control for $sourceName",
@@ -1590,10 +1551,9 @@ class ManaPaymentContinuationResumer(
             minSelections = subCost.count,
             maxSelections = subCost.count,
             useTargetingUI = true
-        )
+        ) }
 
         val continuation = WardTapPermanentsSubCostContinuation(
-            decisionId = decisionId,
             payingPlayerId = payingPlayerId,
             spellEntityId = spellEntityId,
             manaCost = manaCost,
@@ -1607,20 +1567,10 @@ class ManaPaymentContinuationResumer(
             wardSourceId = wardSourceId
         )
 
-        val stateWithDecision = stateAfterRouting.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return ExecutionResult.paused(
-            stateWithContinuation,
-            decision,
-            priorEvents + listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = payingPlayerId,
-                    decisionType = "SELECT_CARDS",
-                    prompt = decision.prompt
-                )
-            )
+        return state.suspendForDecision(
+            question = question,
+            answer = continuation,
+            events = priorEvents,
         )
     }
 

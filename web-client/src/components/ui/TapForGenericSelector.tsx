@@ -17,6 +17,7 @@ import { ManaSymbol } from './ManaSymbols'
  */
 export function TapForGenericSelector() {
   const tapForGenericSelectionState = useGameStore((state) => state.tapForGenericSelectionState)
+  const interactionEpoch = useGameStore((state) => state.interactionEpoch)
   const cancelTapForGenericSelection = useGameStore((state) => state.cancelTapForGenericSelection)
   const confirmTapForGenericSelection = useGameStore((state) => state.confirmTapForGenericSelection)
   const viewingPlayer = useViewingPlayer()
@@ -83,10 +84,10 @@ export function TapForGenericSelector() {
         </span>
       )}
       <span style={styles.divider} />
-      <button onClick={cancelTapForGenericSelection} style={styles.cancelButton}>
+      <button onClick={() => cancelTapForGenericSelection(interactionEpoch)} style={styles.cancelButton}>
         Cancel
       </button>
-      <button onClick={confirmTapForGenericSelection} style={styles.confirmButton}>
+      <button onClick={() => confirmTapForGenericSelection(interactionEpoch)} style={styles.confirmButton}>
         Confirm
       </button>
     </div>

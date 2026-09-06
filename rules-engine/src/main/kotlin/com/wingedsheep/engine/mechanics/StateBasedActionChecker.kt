@@ -70,9 +70,8 @@ class StateBasedActionChecker(
 
             // If an SBA needs player input (e.g., legend rule choice), return paused
             if (result.isPaused) {
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     result.state,
-                    result.pendingDecision!!,
                     allEvents + result.events
                 )
             }
@@ -102,9 +101,8 @@ class StateBasedActionChecker(
 
             if (result.isPaused) {
                 // Return paused with events accumulated so far + this check's events
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     result.state,
-                    result.pendingDecision!!,
                     events + result.events
                 )
             }

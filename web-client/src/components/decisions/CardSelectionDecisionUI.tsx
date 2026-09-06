@@ -268,7 +268,7 @@ export function CardSelectionDecision({
   }
 
   const handleConfirm = () => {
-    submitDecision(selectedCards)
+    submitDecision(decision.id, selectedCards)
     setSelectedCards([])
   }
 

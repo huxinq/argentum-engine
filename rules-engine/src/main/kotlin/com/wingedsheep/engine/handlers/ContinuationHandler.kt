@@ -7,9 +7,9 @@ import com.wingedsheep.engine.state.GameState
 /**
  * Handles resumption of execution after a player decision.
  *
- * When the engine pauses for player input, it pushes a ContinuationFrame
- * onto the state's continuation stack. When the player submits their decision,
- * this handler pops the frame and resumes execution based on the frame type.
+ * The top suspension retains the player's question and the operation that consumes its answer.
+ * This handler validates the response identity, consumes that suspension, and dispatches the
+ * answer operation together with its question.
  *
  * Delegates to specialized resumer modules via the ContinuationResumerRegistry.
  */
@@ -71,25 +71,22 @@ class ContinuationHandler(
     /**
      * Resume execution after a decision is submitted.
      *
-     * @param state The game state with the pending decision already cleared
+     * @param state The game state containing the suspension being answered
      * @param response The player's decision response
      * @return The result of resuming execution
      */
     fun resume(state: GameState, response: DecisionResponse): ExecutionResult {
-        val (continuation, stateAfterPop) = state.popContinuation()
-
-        if (continuation == null) {
-            return ExecutionResult.success(state)
-        }
-
-        if (continuation.decisionId != response.decisionId) {
+        val suspension = state.peekContinuation() as? Suspension
+            ?: return ExecutionResult.error(state, "No suspension is awaiting an answer")
+        if (suspension.question.id != response.decisionId) {
             return ExecutionResult.error(
                 state,
-                "Decision ID mismatch: expected ${continuation.decisionId}, got ${response.decisionId}"
+                "Decision ID mismatch: expected ${suspension.question.id}, got ${response.decisionId}"
             )
         }
 
-        return registry.resume(stateAfterPop, continuation, response, ::checkForMoreContinuations)
+        val (_, stateAfterPop) = state.popContinuation()
+        return registry.resume(stateAfterPop, suspension.answer, suspension.question, response, ::checkForMoreContinuations)
     }
 
     private fun checkForMoreContinuations(

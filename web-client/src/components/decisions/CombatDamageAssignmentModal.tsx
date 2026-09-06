@@ -114,7 +114,7 @@ export function CombatDamageAssignmentModal({ decision }: { decision: AssignDama
   }
 
   const handleConfirm = () => {
-    submitDamageAssignment(distribution)
+    submitDamageAssignment(decision.id, distribution)
   }
 
   const handleMouseEnter = (cardId: EntityId, e: React.MouseEvent) => {

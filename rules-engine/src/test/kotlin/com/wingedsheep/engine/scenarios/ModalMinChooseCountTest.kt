@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.scenarios
 
+import com.wingedsheep.engine.core.Suspension
 import com.wingedsheep.engine.core.CastModalModeSelectionContinuation
 import com.wingedsheep.engine.core.CastSpell
 import com.wingedsheep.engine.core.ChooseOptionDecision
@@ -146,6 +147,7 @@ class ModalMinChooseCountTest : FunSpec({
 
         // Continuation state confirms doneOptionOffered=false and selectedModeIndices empty.
         val continuation = d.state.continuationStack
+            .filterIsInstance<Suspension>().map { it.answer }
             .filterIsInstance<CastModalModeSelectionContinuation>()
             .single()
         continuation.doneOptionOffered shouldBe false

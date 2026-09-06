@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.mechanics.sba
 
+import com.wingedsheep.engine.core.Suspension
 import com.wingedsheep.engine.core.BattleProtectorChoiceContinuation
 import com.wingedsheep.engine.core.ChooseOptionDecision
 import com.wingedsheep.engine.mechanics.battle.Battles
@@ -94,7 +95,7 @@ class BattleProtectorCheckTest : FunSpec({
         }
         decision.options.size shouldBe 2
 
-        val frame = result.state.continuationStack.last()
+        val frame = result.state.continuationStack.last().shouldBeInstanceOf<Suspension>().answer
         frame.shouldBeInstanceOf<BattleProtectorChoiceContinuation>()
         frame.battleId shouldBe battleId
         frame.candidateIds shouldContainExactlyInAnyOrder listOf(p2, p3)

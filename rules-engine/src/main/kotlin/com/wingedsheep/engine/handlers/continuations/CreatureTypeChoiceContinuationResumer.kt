@@ -247,8 +247,7 @@ class CreatureTypeChoiceContinuationResumer(
             val nextPlayer = continuation.remainingPlayers.first()
             val nextRemaining = continuation.remainingPlayers.drop(1)
 
-            val (decisionId, stateAfterRouting) = state.newRoutingId()
-            val decision = ChooseOptionDecision(
+            val question = { decisionId: String -> ChooseOptionDecision(
                 id = decisionId,
                 playerId = nextPlayer,
                 prompt = "Choose a creature type",
@@ -258,29 +257,18 @@ class CreatureTypeChoiceContinuationResumer(
                     phase = DecisionPhase.RESOLUTION
                 ),
                 options = continuation.creatureTypes
-            )
+            ) }
 
             val newContinuation = continuation.copy(
-                decisionId = decisionId,
                 currentPlayerId = nextPlayer,
                 remainingPlayers = nextRemaining,
                 chosenTypes = updatedChosenTypes
             )
 
-            val stateWithDecision = stateAfterRouting.withPendingDecision(decision)
-            val stateWithContinuation = stateWithDecision.pushContinuation(newContinuation)
-
-            return ExecutionResult.paused(
-                stateWithContinuation,
-                decision,
-                listOf(
-                    DecisionRequestedEvent(
-                        decisionId = decisionId,
-                        playerId = nextPlayer,
-                        decisionType = "CHOOSE_OPTION",
-                        prompt = decision.prompt
-                    )
-                )
+            return state.suspendForDecision(
+                question = question,
+                answer = newContinuation,
+                events = emptyList(),
             )
         }
 

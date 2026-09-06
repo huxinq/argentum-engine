@@ -30,7 +30,7 @@ export function LibrarySearchUI({ decision, responsive }: LibrarySearchUIProps) 
   }, [decision.options, decision.cards])
 
   const handleConfirm = (selectedCards: EntityId[]) => {
-    submitDecision(selectedCards)
+    submitDecision(decision.id, selectedCards)
   }
 
   return (

@@ -98,7 +98,7 @@ class DrawReplacementDispatcher(
                 // Player must choose between competing replacements (CR 616.1)
                 // or answer a yes/no prompt for an optional replacement.
                 return DispatchResult.Paused(
-                    EffectResult.paused(processorResult.state, processorResult.decision)
+                    EffectResult.propagatePause(processorResult.state, processorResult.events)
                 )
             }
             is ProcessorResult.Resolved -> {
@@ -178,7 +178,7 @@ class DrawReplacementDispatcher(
         when (val processorResult = processor.process(state, event, context)) {
             is ProcessorResult.Paused -> {
                 return DispatchResult.Paused(
-                    EffectResult.paused(processorResult.state, processorResult.decision)
+                    EffectResult.propagatePause(processorResult.state, processorResult.events)
                 )
             }
             is ProcessorResult.Resolved -> {
@@ -276,7 +276,7 @@ class DrawReplacementDispatcher(
             // Clear chain on pause so subsequent draw iterations are unaffected.
             val clearedState = pipelineResult.state.copy(activeReplacementChain = null)
             return DispatchResult.Paused(
-                EffectResult.paused(clearedState, pipelineResult.pendingDecision!!, pipelineResult.events)
+                EffectResult.propagatePause(clearedState, pipelineResult.events)
             )
         }
 

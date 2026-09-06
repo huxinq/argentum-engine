@@ -33,8 +33,7 @@ class BudgetModalEffectExecutor(
             state.getEntity(sourceId)?.get<CardComponent>()?.name
         }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = BudgetModalDecision(
+        val decision = { decisionId: String -> BudgetModalDecision(
             id = decisionId,
             playerId = playerId,
             prompt = "Choose modes for ${sourceName ?: "budget modal spell"}",
@@ -47,10 +46,9 @@ class BudgetModalEffectExecutor(
             modes = effect.modes.map { mode ->
                 BudgetModeOption(cost = mode.cost, description = mode.description)
             }
-        )
+        ) }
 
         val continuation = BudgetModalContinuation(
-            decisionId = decisionId,
             controllerId = context.controllerId,
             sourceId = context.sourceId,
             sourceName = sourceName,
@@ -59,20 +57,6 @@ class BudgetModalEffectExecutor(
             selectedModeIndices = emptyList(),
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = playerId,
-                    decisionType = "BUDGET_MODAL",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 }

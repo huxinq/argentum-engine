@@ -1,5 +1,8 @@
 package com.wingedsheep.engine.scenarios
 
+import com.wingedsheep.engine.core.DecisionContext
+import com.wingedsheep.engine.core.ChooseOptionDecision
+import com.wingedsheep.engine.core.Suspension
 import com.wingedsheep.engine.core.CardsRevealedEvent
 import com.wingedsheep.engine.core.EngineServices
 import com.wingedsheep.engine.core.CardsSelectedResponse
@@ -635,9 +638,15 @@ class CostPaymentServiceTest : ScenarioTestBase() {
                 serializersModule = com.wingedsheep.engine.core.engineSerializersModule
                 encodeDefaults = true
             }
-            val original: com.wingedsheep.engine.core.ContinuationFrame =
-                com.wingedsheep.engine.core.CostPaymentContinuation(
-                    decisionId = "d1",
+            val original = Suspension(
+                question = ChooseOptionDecision(
+                    id = "payment-choice",
+                    playerId = EntityId.of("player-1"),
+                    prompt = "Choose a cost to pay",
+                    context = DecisionContext(sourceId = EntityId.of("src"), sourceName = "Goblin Guide"),
+                    options = listOf("Pay 3 life", "Discard a card")
+                ),
+                answer = com.wingedsheep.engine.core.CostPaymentContinuation(
                     payerId = EntityId.of("player-1"),
                     sourceId = EntityId.of("src"),
                     sourceName = "Goblin Guide",
@@ -645,6 +654,7 @@ class CostPaymentServiceTest : ScenarioTestBase() {
                     onPaid = Effects.DrawCards(1),
                     onDeclined = Effects.GainLife(2)
                 )
+            )
             val encoded = json.encodeToString(com.wingedsheep.engine.core.ContinuationFrame.serializer(), original)
             val decoded = json.decodeFromString(com.wingedsheep.engine.core.ContinuationFrame.serializer(), encoded)
             decoded shouldBe original

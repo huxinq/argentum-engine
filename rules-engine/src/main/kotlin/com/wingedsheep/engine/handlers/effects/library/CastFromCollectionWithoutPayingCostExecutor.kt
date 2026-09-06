@@ -1,11 +1,11 @@
 package com.wingedsheep.engine.handlers.effects.library
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.CastSpell
 import com.wingedsheep.engine.core.CastFromCollectionTargetsContinuation
 import com.wingedsheep.engine.core.ChooseTargetsDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.EffectResult
 import com.wingedsheep.engine.core.TargetRequirementInfo
 import com.wingedsheep.engine.handlers.EffectContext
@@ -106,7 +106,7 @@ class CastFromCollectionWithoutPayingCostExecutor(
         // the copy"); only the free-cast path stamps PlayWithoutPayingCostComponent. Both grant a
         // MayPlayPermission so the card is castable from its current (e.g. exile) zone.
         val (permId, newState) = grantFreeCast(
-            state = (prep as? TargetPrep.NeedsTargets)?.state ?: state,
+            state = state,
             cardId = cardId,
             controllerId = controllerId,
             sourceId = context.sourceId,
@@ -116,11 +116,10 @@ class CastFromCollectionWithoutPayingCostExecutor(
         )
 
         if (prep is TargetPrep.NeedsTargets) {
-            val pausedState = newState
-                .pushContinuation(prep.continuation.copy(grantedPermissionId = permId))
-                .withPendingDecision(prep.decision)
-                .withPriority(controllerId)
-            return EffectResult.paused(pausedState, prep.decision, listOf(prep.event))
+            return EffectResult.from(newState.withPriority(controllerId).suspendForDecision(
+                prep.question,
+                prep.continuation.copy(grantedPermissionId = permId)
+            ))
         }
 
         // No targets needed (or modal — CastSpellHandler will handle per-mode targets).
@@ -156,9 +155,8 @@ class CastFromCollectionWithoutPayingCostExecutor(
         val castCollections = storeCastTo?.let { mapOf(it to listOf(cardId)) } ?: emptyMap()
 
         if (castResult.pendingDecision != null) {
-            return EffectResult.paused(
+            return EffectResult.propagatePause(
                 castResult.state,
-                castResult.pendingDecision,
                 castResult.events,
             ).copy(
                 updatedCollections = castCollections,
@@ -184,12 +182,10 @@ class CastFromCollectionWithoutPayingCostExecutor(
         /** A required target slot has no legal targets — the cast can't initiate (CR 601.2c). */
         data object NoLegalTargets : TargetPrep
 
-        /** Pause with [decision] and push [continuation]; the resumer performs the cast with the picks. */
+        /** Describe a question and its answer operation; the caller grants permission before suspending. */
         data class NeedsTargets(
-            val state: GameState,
-            val decision: ChooseTargetsDecision,
+            val question: (String) -> ChooseTargetsDecision,
             val continuation: CastFromCollectionTargetsContinuation,
-            val event: DecisionRequestedEvent,
         ) : TargetPrep
     }
 
@@ -320,8 +316,7 @@ class CastFromCollectionWithoutPayingCostExecutor(
             // Name the face being cast — a transformed cast prompts for "Deluge of the Dead",
             // not for the front face the player exiled.
             val cardName = (if (castTransformed) cardDef?.name else null) ?: cardComponent?.name ?: "spell"
-            val (decisionId, stateWithRoutingId) = state.newRoutingId()
-            val decision = ChooseTargetsDecision(
+            val question = { decisionId: String -> ChooseTargetsDecision(
                 id = decisionId,
                 playerId = casterId,
                 prompt = "Choose targets for $cardName",
@@ -333,20 +328,13 @@ class CastFromCollectionWithoutPayingCostExecutor(
                 targetRequirements = requirementInfos,
                 legalTargets = legalTargetsMap,
                 canCancel = false,
-            )
+            ) }
             val continuation = CastFromCollectionTargetsContinuation(
-                decisionId = decisionId,
                 cardId = cardId,
                 casterId = casterId,
                 storeCastTo = storeCastTo,
             )
-            val event = DecisionRequestedEvent(
-                decisionId = decisionId,
-                playerId = casterId,
-                decisionType = "CHOOSE_TARGETS",
-                prompt = decision.prompt,
-            )
-            return TargetPrep.NeedsTargets(stateWithRoutingId, decision, continuation, event)
+            return TargetPrep.NeedsTargets(question, continuation)
         }
 
         /**

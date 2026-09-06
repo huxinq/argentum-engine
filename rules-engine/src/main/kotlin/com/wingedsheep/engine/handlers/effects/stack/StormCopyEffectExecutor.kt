@@ -154,10 +154,7 @@ class StormCopyEffectExecutor(
                 continue
             }
 
-            val (routingId, stateWithRoutingId) = currentState.newRoutingId()
-            val decisionId = "storm-copy-target-$routingId"
             val continuation = StormCopyTargetContinuation(
-                decisionId = decisionId,
                 remainingCopies = copiesLeft,
                 spellEffect = effect.spellEffect,
                 spellTargetRequirements = effect.spellTargetRequirements,
@@ -177,7 +174,7 @@ class StormCopyEffectExecutor(
             val copyLabel = if (effect.copyCount > 1)
                 "copy $copyNumber of ${effect.copyCount} of ${effect.spellName}"
                 else "copy of ${effect.spellName}"
-            val decision = ChooseTargetsDecision(
+            val decision = { decisionId: String -> ChooseTargetsDecision(
                 id = decisionId,
                 playerId = context.controllerId,
                 prompt = "Choose new targets for $copyLabel",
@@ -188,12 +185,9 @@ class StormCopyEffectExecutor(
                 ),
                 targetRequirements = targetReqInfos,
                 legalTargets = legalTargetsMap
-            )
+            ) }
 
-            val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-            val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-            return EffectResult.paused(stateWithContinuation, decision, allEvents)
+            return EffectResult.from(currentState.suspendForDecision(decision, continuation, allEvents))
         }
 
         return EffectResult.success(currentState, allEvents)
@@ -268,14 +262,12 @@ class StormCopyEffectExecutor(
                         continue
                     }
 
-                    val (routingId, stateWithRoutingId) = currentState.newRoutingId()
-                    val decisionId = "storm-copy-modal-target-$routingId"
                     val copyNumber = totalCopies - copiesLeft + 1
                     val copyLabel = if (totalCopies > 1) "copy $copyNumber of $totalCopies of $spellName"
                         else "copy of $spellName"
                     val modeLabel = if (chosenModes.size > 1) " — mode ${ordinal + 1} of ${chosenModes.size}"
                         else ""
-                    val decision = ChooseTargetsDecision(
+                    val decision = { decisionId: String -> ChooseTargetsDecision(
                         id = decisionId,
                         playerId = controllerId,
                         prompt = "Choose new targets for $copyLabel$modeLabel",
@@ -291,10 +283,9 @@ class StormCopyEffectExecutor(
                             )
                         },
                         legalTargets = legalTargetsMap
-                    )
+                    ) }
 
                     val continuation = StormCopyModalTargetContinuation(
-                        decisionId = decisionId,
                         remainingCopies = copiesLeft,
                         totalCopies = totalCopies,
                         spellName = spellName,
@@ -308,10 +299,7 @@ class StormCopyEffectExecutor(
                         removeLegendary = removeLegendary
                     )
 
-                    val pausedState = stateWithRoutingId
-                        .withPendingDecision(decision)
-                        .pushContinuation(continuation)
-                    return ExecutionResult.paused(pausedState, decision, allEvents)
+                    return currentState.suspendForDecision(decision, continuation, allEvents)
                 }
 
                 val copyIndex = totalCopies - copiesLeft + 1

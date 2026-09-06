@@ -18,9 +18,8 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class ConvertCountersToTokensContinuation(
-    override val decisionId: String,
     val sourceId: EntityId,
     val controllerId: EntityId,
     val counterType: CounterTypeFilter,
     val tokenFactory: CreateTokenEffect
-) : ContinuationFrame
+) : AnswerContinuation

@@ -14,6 +14,7 @@ import type { EntityId } from '@/types'
 export function DelveSelector() {
   const delveSelectionState = useGameStore((state) => state.delveSelectionState)
   const toggleDelveCard = useGameStore((state) => state.toggleDelveCard)
+  const interactionEpoch = useGameStore((state) => state.interactionEpoch)
   const cancelDelveSelection = useGameStore((state) => state.cancelDelveSelection)
   const confirmDelveSelection = useGameStore((state) => state.confirmDelveSelection)
   const [viewingBattlefield, setViewingBattlefield] = useState(false)
@@ -132,11 +133,11 @@ export function DelveSelector() {
           >
             View Battlefield
           </button>
-          <button onClick={cancelDelveSelection} style={styles.cancelButton}>
+          <button onClick={() => cancelDelveSelection(interactionEpoch)} style={styles.cancelButton}>
             Cancel
           </button>
           <button
-            onClick={confirmDelveSelection}
+            onClick={() => confirmDelveSelection(interactionEpoch)}
             disabled={!castInfo?.isCastable}
             style={{
               ...styles.confirmButton,

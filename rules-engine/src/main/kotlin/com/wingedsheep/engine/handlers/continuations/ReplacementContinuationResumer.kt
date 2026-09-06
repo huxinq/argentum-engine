@@ -105,7 +105,7 @@ class ReplacementContinuationResumer(
                 }
             }
             is ProcessorResult.Paused -> {
-                ExecutionResult.paused(result.state, result.decision)
+                ExecutionResult.propagatePause(result.state, result.events)
             }
             is ProcessorResult.Pass -> {
                 // Shouldn't happen — the chosen effect was matched
@@ -141,9 +141,7 @@ class ReplacementContinuationResumer(
         context: EffectContext?,
         checkForMore: CheckForMore
     ): ExecutionResult {
-        val resumeContinuation = ReplacementResolveContinuation(
-            decisionId = "pending"
-        )
+        val resumeContinuation = ReplacementResolveContinuation
 
         val stateWithResumeFrame = state.pushContinuation(resumeContinuation)
 

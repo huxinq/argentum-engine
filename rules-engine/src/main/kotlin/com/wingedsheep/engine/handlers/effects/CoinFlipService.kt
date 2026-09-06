@@ -1,5 +1,7 @@
 package com.wingedsheep.engine.handlers.effects
 
+import com.wingedsheep.engine.core.DecisionContext
+import com.wingedsheep.engine.core.YesNoDecision
 import com.wingedsheep.engine.core.CoinFlipEvent
 import com.wingedsheep.engine.core.DecisionPhase
 import com.wingedsheep.engine.core.GameEvent
@@ -26,7 +28,7 @@ import kotlinx.serialization.Serializable
  *
  * "Flip two coins and ignore one" is a *choice*, so a flip can pause mid-resolution. The service
  * therefore returns either a [Resolution.Resolved] with one result per coin the caller asked for,
- * or a [Resolution.NeedsChoice] carrying the decision plus the [PendingCoinFlipChoice] the caller
+ * or a [Resolution.NeedsChoice] carrying an unallocated question plus the [PendingCoinFlipChoice] the caller
  * must park in a [com.wingedsheep.engine.core.CoinFlipChoiceContinuation]. Resuming calls
  * [advanceAfterAnswer], which either raises the next question or finishes the batch — so a caller
  * never has to know how many prompts a flip will cost.
@@ -83,7 +85,7 @@ object CoinFlipService {
          */
         data class NeedsChoice(
             val state: GameState,
-            val decision: PendingDecision,
+            val question: (String) -> PendingDecision,
             val pending: PendingCoinFlipChoice,
             val events: List<GameEvent>
         ) : Resolution
@@ -182,30 +184,23 @@ object CoinFlipService {
                 continue
             }
 
-            val decisionResult = decisionHandler.createYesNoDecision(
-                state = state,
-                playerId = settled.flipperId,
-                sourceId = settled.sourceId,
-                sourceName = settled.sourceName,
-                prompt = choicePrompt(settled, index),
-                yesText = "Keep heads",
-                noText = "Keep tails",
-                phase = DecisionPhase.RESOLUTION
-            )
-            val decision = decisionResult.pendingDecision
-                ?: return Resolution.Resolved(
-                    // Fail closed on the honest result rather than inventing a choice: without a
-                    // decision the flipper cannot pick, so the batch keeps its first coin.
-                    state,
-                    settled.decided + batch.first(),
-                    events + eventsForBatch(settled.copy(decided = settled.decided + batch.first()), index)
-                )
-
+            val questionState = settled
             return Resolution.NeedsChoice(
-                decisionResult.state,
-                decision,
+                state,
+                { id -> YesNoDecision(
+                    id = id,
+                    playerId = questionState.flipperId,
+                    prompt = choicePrompt(questionState, index),
+                    context = DecisionContext(
+                        sourceId = questionState.sourceId,
+                        sourceName = questionState.sourceName,
+                        phase = DecisionPhase.RESOLUTION
+                    ),
+                    yesText = "Keep heads",
+                    noText = "Keep tails"
+                ) },
                 settled,
-                events + decisionResult.events
+                events.toList()
             )
         }
 

@@ -207,7 +207,7 @@ export function useInteraction() {
 
         if (canAutoExecute(actionInfo)) {
           // Auto-execute simple action
-          submitAction(actionInfo.action)
+          submitAction(actionInfo.action, actionInfo.interactionEpoch)
           selectCard(null)
           return
         }
@@ -239,7 +239,7 @@ export function useInteraction() {
     )
 
     if (passAction) {
-      submitAction(passAction.action)
+      submitAction(passAction.action, passAction.interactionEpoch)
     }
   }, [submitAction])
 

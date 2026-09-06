@@ -1009,9 +1009,8 @@ class StackResolver(
             // Put permanent on battlefield
             val permanentResult = resolvePermanentSpell(newState, spellId, spellComponent, cardComponent)
             if (permanentResult.isPaused) {
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     permanentResult.state,
-                    permanentResult.pendingDecision!!,
                     events + permanentResult.events
                 )
             }
@@ -1050,9 +1049,8 @@ class StackResolver(
                 // resolveNonPermanentSpell already moved spell to graveyard.
                 val allEvents = events + effectResult.events +
                     ResolvedEvent(spellId, cardComponent?.name ?: "Unknown")
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     effectResult.state,
-                    effectResult.pendingDecision!!,
                     allEvents
                 )
             }
@@ -1116,31 +1114,8 @@ class StackResolver(
                     // Present the selection decision
                     val filterDesc = copyFilter.description
                     val whereDesc = if (copyFromGraveyard) "$filterDesc card in a graveyard" else "$filterDesc"
-                    val decisionId = "clone-enters-${spellId.value}"
-                    val decision = SelectCardsDecision(
-                        id = decisionId,
-                        playerId = controllerId,
-                        prompt = if (entersAsCopy.optional) {
-                            "You may choose a $whereDesc to copy"
-                        } else {
-                            "Choose a $whereDesc to copy"
-                        },
-                        context = DecisionContext(
-                            sourceId = spellId,
-                            sourceName = cardComponent.name,
-                            phase = DecisionPhase.RESOLUTION
-                        ),
-                        options = candidates,
-                        minSelections = if (entersAsCopy.optional) 0 else 1,
-                        maxSelections = 1,
-                        // Battlefield copies click permanents in-place; graveyard copies use the
-                        // modal card-list overlay (graveyards aren't on the battlefield).
-                        useTargetingUI = !copyFromGraveyard
-                    )
-
-                    // Push continuation
+                    // Store the operation that consumes the copy choice.
                     val continuation = CloneEntersContinuation(
-                        decisionId = decisionId,
                         spellId = spellId,
                         controllerId = controllerId,
                         ownerId = ownerId,
@@ -1153,11 +1128,31 @@ class StackResolver(
                         exileCopiedCard = entersAsCopy.exileCopiedCard,
                         additionalCounters = entersAsCopy.additionalCounters
                     )
-
-                    val pausedState = state
-                        .pushContinuation(continuation)
-                        .withPendingDecision(decision)
-                    return ExecutionResult.paused(pausedState, decision)
+                    return state.suspendForDecision(
+                        question = { decisionId ->
+                            SelectCardsDecision(
+                                id = decisionId,
+                                playerId = controllerId,
+                                prompt = if (entersAsCopy.optional) {
+                                    "You may choose a $whereDesc to copy"
+                                } else {
+                                    "Choose a $whereDesc to copy"
+                                },
+                                context = DecisionContext(
+                                    sourceId = spellId,
+                                    sourceName = cardComponent.name,
+                                    phase = DecisionPhase.RESOLUTION
+                                ),
+                                options = candidates,
+                                minSelections = if (entersAsCopy.optional) 0 else 1,
+                                maxSelections = 1,
+                                // Battlefield copies click permanents in-place; graveyard copies use the
+                                // modal card-list overlay (graveyards aren't on the battlefield).
+                                useTargetingUI = !copyFromGraveyard
+                            )
+                        },
+                        answer = continuation
+                    )
                 }
                 // No matching permanents on battlefield - fall through to enter as itself (0/0)
             }
@@ -1201,34 +1196,31 @@ class StackResolver(
                 }
 
                 if (validCards.isNotEmpty()) {
-                    val decisionId = "reveal-counters-enters-${spellId.value}"
-                    val decision = SelectCardsDecision(
-                        id = decisionId,
-                        playerId = controllerId,
-                        prompt = "Reveal cards from your ${revealCountersEffect.revealSource.name.lowercase()} that match ${cardComponent.name} (${revealCountersEffect.countersPerReveal} ${revealCountersEffect.counterType} counter${if (revealCountersEffect.countersPerReveal > 1) "s" else ""} each)",
-                        context = DecisionContext(
-                            sourceId = spellId,
-                            sourceName = cardComponent.name,
-                            phase = DecisionPhase.RESOLUTION
-                        ),
-                        options = validCards,
-                        minSelections = 0,
-                        maxSelections = validCards.size
-                    )
-
                     val continuation = RevealCountersContinuation(
-                        decisionId = decisionId,
                         spellId = spellId,
                         controllerId = controllerId,
                         ownerId = ownerId,
                         counterType = revealCountersEffect.counterType,
                         countersPerReveal = revealCountersEffect.countersPerReveal
                     )
-
-                    val pausedState = state
-                        .pushContinuation(continuation)
-                        .withPendingDecision(decision)
-                    return ExecutionResult.paused(pausedState, decision)
+                    return state.suspendForDecision(
+                        question = { decisionId ->
+                            SelectCardsDecision(
+                                id = decisionId,
+                                playerId = controllerId,
+                                prompt = "Reveal cards from your ${revealCountersEffect.revealSource.name.lowercase()} that match ${cardComponent.name} (${revealCountersEffect.countersPerReveal} ${revealCountersEffect.counterType} counter${if (revealCountersEffect.countersPerReveal > 1) "s" else ""} each)",
+                                context = DecisionContext(
+                                    sourceId = spellId,
+                                    sourceName = cardComponent.name,
+                                    phase = DecisionPhase.RESOLUTION
+                                ),
+                                options = validCards,
+                                minSelections = 0,
+                                maxSelections = validCards.size
+                            )
+                        },
+                        answer = continuation
+                    )
                 }
                 // No valid cards — enter normally without counters
             }
@@ -1253,30 +1245,31 @@ class StackResolver(
                     )
                 ).coerceAtLeast(0).coerceAtMost(candidates.size)
                 if (candidates.isNotEmpty() && maxCards > 0) {
-                    val decisionId = "exile-counters-enters-${spellId.value}"
-                    val decision = SelectCardsDecision(
-                        id = decisionId,
-                        playerId = controllerId,
-                        prompt = "Exile up to $maxCards ${exileCountersEffect.filter.description} cards from your ${exileCountersEffect.sourceZone.name.lowercase()} for ${cardComponent.name}",
-                        context = DecisionContext(
-                            sourceId = spellId,
-                            sourceName = cardComponent.name,
-                            phase = DecisionPhase.RESOLUTION
-                        ),
-                        options = candidates,
-                        minSelections = 0,
-                        maxSelections = maxCards
-                    )
                     val continuation = ExileCountersContinuation(
-                        decisionId = decisionId,
                         spellId = spellId,
                         controllerId = controllerId,
                         ownerId = ownerId,
                         counterType = exileCountersEffect.counterType.description,
                         countersPerCard = exileCountersEffect.countersPerCard
                     )
-                    val pausedState = state.pushContinuation(continuation).withPendingDecision(decision)
-                    return ExecutionResult.paused(pausedState, decision)
+                    return state.suspendForDecision(
+                        question = { decisionId ->
+                            SelectCardsDecision(
+                                id = decisionId,
+                                playerId = controllerId,
+                                prompt = "Exile up to $maxCards ${exileCountersEffect.filter.description} cards from your ${exileCountersEffect.sourceZone.name.lowercase()} for ${cardComponent.name}",
+                                context = DecisionContext(
+                                    sourceId = spellId,
+                                    sourceName = cardComponent.name,
+                                    phase = DecisionPhase.RESOLUTION
+                                ),
+                                options = candidates,
+                                minSelections = 0,
+                                maxSelections = maxCards
+                            )
+                        },
+                        answer = continuation
+                    )
                 }
             }
 
@@ -1292,35 +1285,32 @@ class StackResolver(
 
                 if (candidates.isNotEmpty()) {
                     val devourLabel = devourEffect.description.substringBefore(" (")
-                    val decisionId = "devour-enters-${spellId.value}"
-                    val decision = SelectCardsDecision(
-                        id = decisionId,
-                        playerId = controllerId,
-                        prompt = "$devourLabel: sacrifice any number of ${devourEffect.sacrificeFilter.description}s for ${cardComponent.name}",
-                        context = DecisionContext(
-                            sourceId = spellId,
-                            sourceName = cardComponent.name,
-                            phase = DecisionPhase.RESOLUTION
-                        ),
-                        options = candidates,
-                        minSelections = 0,
-                        maxSelections = candidates.size,
-                        useTargetingUI = true
-                    )
-
                     val continuation = DevourEntersContinuation(
-                        decisionId = decisionId,
                         spellId = spellId,
                         controllerId = controllerId,
                         ownerId = ownerId,
                         multiplier = devourEffect.multiplier,
                         counterType = devourEffect.counterType.description
                     )
-
-                    val pausedState = state
-                        .pushContinuation(continuation)
-                        .withPendingDecision(decision)
-                    return ExecutionResult.paused(pausedState, decision)
+                    return state.suspendForDecision(
+                        question = { decisionId ->
+                            SelectCardsDecision(
+                                id = decisionId,
+                                playerId = controllerId,
+                                prompt = "$devourLabel: sacrifice any number of ${devourEffect.sacrificeFilter.description}s for ${cardComponent.name}",
+                                context = DecisionContext(
+                                    sourceId = spellId,
+                                    sourceName = cardComponent.name,
+                                    phase = DecisionPhase.RESOLUTION
+                                ),
+                                options = candidates,
+                                minSelections = 0,
+                                maxSelections = candidates.size,
+                                useTargetingUI = true
+                            )
+                        },
+                        answer = continuation
+                    )
                 }
                 // No valid permanents to sacrifice — enter with zero devour counters
             }
@@ -1330,28 +1320,27 @@ class StackResolver(
         if (cardDef != null && !spellComponent.castFaceDown) {
             val entersTapped = cardDef.script.replacementEffects.filterIsInstance<EntersTapped>().firstOrNull()
             if (entersTapped?.payLifeCost != null) {
-                val decisionId = "pay-life-or-enter-tapped-spell-${spellId.value}"
-                val decision = YesNoDecision(
-                    id = decisionId,
-                    playerId = controllerId,
-                    prompt = "Pay ${entersTapped.payLifeCost} life to have ${cardComponent.name} enter untapped?",
-                    context = DecisionContext(
-                        sourceId = spellId,
-                        sourceName = cardComponent.name,
-                        phase = DecisionPhase.RESOLUTION
-                    )
-                )
                 val continuation = PayLifeOrEnterTappedSpellContinuation(
-                    decisionId = decisionId,
                     spellId = spellId,
                     controllerId = controllerId,
                     ownerId = ownerId,
                     lifeCost = entersTapped.payLifeCost!!
                 )
-                val pausedState = state
-                    .pushContinuation(continuation)
-                    .withPendingDecision(decision)
-                return ExecutionResult.paused(pausedState, decision)
+                return state.suspendForDecision(
+                    question = { decisionId ->
+                        YesNoDecision(
+                            id = decisionId,
+                            playerId = controllerId,
+                            prompt = "Pay ${entersTapped.payLifeCost} life to have ${cardComponent.name} enter untapped?",
+                            context = DecisionContext(
+                                sourceId = spellId,
+                                sourceName = cardComponent.name,
+                                phase = DecisionPhase.RESOLUTION
+                            )
+                        )
+                    },
+                    answer = continuation
+                )
             }
         }
 
@@ -1380,10 +1369,8 @@ class StackResolver(
                     xValue = spellComponent.xValue,
                 )
             if (onEnterResult != null) {
-                return ExecutionResult(
-                    state = onEnterResult.state,
+                return onEnterResult.toExecutionResult().copy(
                     events = enterEvents + sagaEvents + onEnterResult.events,
-                    pendingDecision = onEnterResult.pendingDecision,
                 )
             }
         }
@@ -2176,10 +2163,8 @@ class StackResolver(
             // pauses for a decision of its own — the frame sits beneath the inner decision's frames
             // and auto-resumes once they finish (CR 702.47b: main spell first, then the spliced text).
             val stateForMainEffect = if (spliceEntries.isNotEmpty()) {
-                val (tailId, allocatedState) = newState.newRoutingId()
-                allocatedState.pushContinuation(
+                newState.pushContinuation(
                     SpliceTailContinuation(
-                        decisionId = tailId,
                         controllerId = spellComponent.casterId,
                         sourceId = spellId,
                         sourceName = cardComponent?.name,
@@ -2219,9 +2204,8 @@ class StackResolver(
                 if (pausedIsCopy) {
                     // Rule 112.3b — copies cease to exist when they leave the stack.
                     val pausedState = effectResult.state.removeEntity(spellId)
-                    return ExecutionResult.paused(
+                    return ExecutionResult.propagatePause(
                         pausedState,
-                        effectResult.pendingDecision!!,
                         events + effectResult.events
                     )
                 }
@@ -2243,9 +2227,8 @@ class StackResolver(
                         effectResult.state, spellId, pausedReturnTransformed.counters, transformEvents
                     )
                     if (transformed != null) {
-                        return ExecutionResult.paused(
+                        return ExecutionResult.propagatePause(
                             transformed,
-                            effectResult.pendingDecision!!,
                             events + effectResult.events + transformEvents
                         )
                     }
@@ -2374,9 +2357,8 @@ class StackResolver(
                     ownerId
                 ) + pausedCounterEvents
 
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     pausedState,
-                    effectResult.pendingDecision!!,
                     allEvents
                 )
             }
@@ -2867,9 +2849,8 @@ class StackResolver(
         // The ability entity stays removed (it's off the stack), but the decision must resolve
         if (effectResult.isPaused) {
             val pausedState = effectResult.state.removeEntity(abilityId)
-            return ExecutionResult.paused(
+            return ExecutionResult.propagatePause(
                 pausedState,
-                effectResult.pendingDecision!!,
                 effectResult.events
             )
         }
@@ -2993,9 +2974,8 @@ class StackResolver(
         // The ability entity stays removed (it's off the stack), but the decision must resolve
         if (effectResult.isPaused) {
             val pausedState = effectResult.state.removeEntity(abilityId)
-            return ExecutionResult.paused(
+            return ExecutionResult.propagatePause(
                 pausedState,
-                effectResult.pendingDecision!!,
                 effectResult.events
             )
         }
@@ -3993,58 +3973,56 @@ class StackResolver(
 
         return when (choice.choiceType) {
             ChoiceType.COLOR -> {
-                val decisionId = "choose-color-enters-${spellId.value}"
-                val decision = ChooseColorDecision(
-                    id = decisionId,
-                    playerId = chooserId,
-                    prompt = "Choose a color",
-                    context = DecisionContext(
-                        sourceId = spellId,
-                        sourceName = cardComponent.name,
-                        phase = DecisionPhase.RESOLUTION
-                    )
-                )
                 val continuation = EntersWithChoiceSpellContinuation(
-                    decisionId = decisionId,
                     spellId = spellId,
                     controllerId = controllerId,
                     ownerId = ownerId,
                     choiceType = ChoiceType.COLOR
                 )
-                val pausedState = state
-                    .pushContinuation(continuation)
-                    .withPendingDecision(decision)
-                ExecutionResult.paused(pausedState, decision)
+                state.suspendForDecision(
+                    question = { decisionId ->
+                        ChooseColorDecision(
+                            id = decisionId,
+                            playerId = chooserId,
+                            prompt = "Choose a color",
+                            context = DecisionContext(
+                                sourceId = spellId,
+                                sourceName = cardComponent.name,
+                                phase = DecisionPhase.RESOLUTION
+                            )
+                        )
+                    },
+                    answer = continuation
+                )
             }
 
             ChoiceType.CREATURE_TYPE -> {
                 val creatureTypeOptions = choice.allowedCreatureTypes
                     ?: com.wingedsheep.sdk.core.Subtype.ALL_CREATURE_TYPES
-                val decisionId = "choose-creature-type-enters-${spellId.value}"
-                val decision = ChooseOptionDecision(
-                    id = decisionId,
-                    playerId = chooserId,
-                    prompt = "Choose a creature type",
-                    context = DecisionContext(
-                        sourceId = spellId,
-                        sourceName = cardComponent.name,
-                        phase = DecisionPhase.RESOLUTION
-                    ),
-                    options = creatureTypeOptions,
-                    defaultSearch = ""
-                )
                 val continuation = EntersWithChoiceSpellContinuation(
-                    decisionId = decisionId,
                     spellId = spellId,
                     controllerId = controllerId,
                     ownerId = ownerId,
                     choiceType = ChoiceType.CREATURE_TYPE,
                     creatureTypes = creatureTypeOptions
                 )
-                val pausedState = state
-                    .pushContinuation(continuation)
-                    .withPendingDecision(decision)
-                ExecutionResult.paused(pausedState, decision)
+                state.suspendForDecision(
+                    question = { decisionId ->
+                        ChooseOptionDecision(
+                            id = decisionId,
+                            playerId = chooserId,
+                            prompt = "Choose a creature type",
+                            context = DecisionContext(
+                                sourceId = spellId,
+                                sourceName = cardComponent.name,
+                                phase = DecisionPhase.RESOLUTION
+                            ),
+                            options = creatureTypeOptions,
+                            defaultSearch = ""
+                        )
+                    },
+                    answer = continuation
+                )
             }
 
             ChoiceType.CREATURE_ON_BATTLEFIELD -> {
@@ -4054,58 +4032,38 @@ class StackResolver(
                         state.projectedState.isCreature(entityId)
                 }
                 if (battlefieldCreatures.isEmpty()) return null // No creatures — enter without choice
-                val decisionId = "choose-creature-enters-${spellId.value}"
-                val decision = SelectCardsDecision(
-                    id = decisionId,
-                    playerId = controllerId,
-                    prompt = "Choose another creature you control",
-                    context = DecisionContext(
-                        sourceId = spellId,
-                        sourceName = cardComponent.name,
-                        phase = DecisionPhase.RESOLUTION
-                    ),
-                    options = battlefieldCreatures,
-                    minSelections = 1,
-                    maxSelections = 1,
-                    useTargetingUI = true
-                )
                 val continuation = EntersWithChoiceSpellContinuation(
-                    decisionId = decisionId,
                     spellId = spellId,
                     controllerId = controllerId,
                     ownerId = ownerId,
                     choiceType = ChoiceType.CREATURE_ON_BATTLEFIELD
                 )
-                val pausedState = state
-                    .pushContinuation(continuation)
-                    .withPendingDecision(decision)
-                ExecutionResult.paused(pausedState, decision)
+                state.suspendForDecision(
+                    question = { decisionId ->
+                        SelectCardsDecision(
+                            id = decisionId,
+                            playerId = controllerId,
+                            prompt = "Choose another creature you control",
+                            context = DecisionContext(
+                                sourceId = spellId,
+                                sourceName = cardComponent.name,
+                                phase = DecisionPhase.RESOLUTION
+                            ),
+                            options = battlefieldCreatures,
+                            minSelections = 1,
+                            maxSelections = 1,
+                            useTargetingUI = true
+                        )
+                    },
+                    answer = continuation
+                )
             }
 
             ChoiceType.MODE -> {
                 if (choice.modeOptions.isEmpty()) {
                     return null
                 }
-                // A permanent granted multiple riot instances re-pauses on the same spell; suffix the
-                // id with the remaining count so each instance's decision is distinct (CR 702.136b).
-                val decisionId = "choose-mode-enters-${spellId.value}" +
-                    if (syntheticRiot) "-riot$syntheticRiotRemaining" else ""
-                val decision = ChooseOptionDecision(
-                    id = decisionId,
-                    playerId = chooserId,
-                    prompt = "Choose for ${cardComponent.name}",
-                    context = DecisionContext(
-                        sourceId = spellId,
-                        sourceName = cardComponent.name,
-                        phase = DecisionPhase.RESOLUTION
-                    ),
-                    options = choice.modeOptions.map { it.label },
-                    optionMetadata = choice.modeOptions.map {
-                        OptionMetadata(id = it.id, description = it.description, iconKey = it.iconKey)
-                    }
-                )
                 val continuation = EntersWithChoiceSpellContinuation(
-                    decisionId = decisionId,
                     spellId = spellId,
                     controllerId = controllerId,
                     ownerId = ownerId,
@@ -4114,39 +4072,53 @@ class StackResolver(
                     syntheticRiot = syntheticRiot,
                     syntheticRiotRemaining = syntheticRiotRemaining
                 )
-                val pausedState = state
-                    .pushContinuation(continuation)
-                    .withPendingDecision(decision)
-                ExecutionResult.paused(pausedState, decision)
+                state.suspendForDecision(
+                    question = { decisionId ->
+                        ChooseOptionDecision(
+                            id = decisionId,
+                            playerId = chooserId,
+                            prompt = "Choose for ${cardComponent.name}",
+                            context = DecisionContext(
+                                sourceId = spellId,
+                                sourceName = cardComponent.name,
+                                phase = DecisionPhase.RESOLUTION
+                            ),
+                            options = choice.modeOptions.map { it.label },
+                            optionMetadata = choice.modeOptions.map {
+                                OptionMetadata(id = it.id, description = it.description, iconKey = it.iconKey)
+                            }
+                        )
+                    },
+                    answer = continuation
+                )
             }
 
             ChoiceType.BASIC_LAND_TYPE -> {
                 val landTypeOptions = com.wingedsheep.sdk.core.Subtype.ALL_BASIC_LAND_TYPES.toList()
-                val decisionId = "choose-land-type-enters-${spellId.value}"
-                val decision = ChooseOptionDecision(
-                    id = decisionId,
-                    playerId = chooserId,
-                    prompt = "Choose a basic land type",
-                    context = DecisionContext(
-                        sourceId = spellId,
-                        sourceName = cardComponent.name,
-                        phase = DecisionPhase.RESOLUTION
-                    ),
-                    options = landTypeOptions,
-                    defaultSearch = ""
-                )
                 val continuation = EntersWithChoiceSpellContinuation(
-                    decisionId = decisionId,
                     spellId = spellId,
                     controllerId = controllerId,
                     ownerId = ownerId,
                     choiceType = ChoiceType.BASIC_LAND_TYPE,
                     landTypes = landTypeOptions
                 )
-                val pausedState = state
-                    .pushContinuation(continuation)
-                    .withPendingDecision(decision)
-                ExecutionResult.paused(pausedState, decision)
+                state.suspendForDecision(
+                    question = { decisionId ->
+                        ChooseOptionDecision(
+                            id = decisionId,
+                            playerId = chooserId,
+                            prompt = "Choose a basic land type",
+                            context = DecisionContext(
+                                sourceId = spellId,
+                                sourceName = cardComponent.name,
+                                phase = DecisionPhase.RESOLUTION
+                            ),
+                            options = landTypeOptions,
+                            defaultSearch = ""
+                        )
+                    },
+                    answer = continuation
+                )
             }
 
             ChoiceType.OPPONENT -> {
@@ -4161,30 +4133,29 @@ class StackResolver(
                         ?.get<com.wingedsheep.engine.state.components.identity.PlayerComponent>()?.name
                         ?: "Player ${pid.value}"
                 }
-                val decisionId = "choose-opponent-enters-${spellId.value}"
-                val decision = ChooseOptionDecision(
-                    id = decisionId,
-                    playerId = chooserId,
-                    prompt = "Choose an opponent",
-                    context = DecisionContext(
-                        sourceId = spellId,
-                        sourceName = cardComponent.name,
-                        phase = DecisionPhase.RESOLUTION
-                    ),
-                    options = opponentNames
-                )
                 val continuation = EntersWithChoiceSpellContinuation(
-                    decisionId = decisionId,
                     spellId = spellId,
                     controllerId = controllerId,
                     ownerId = ownerId,
                     choiceType = ChoiceType.OPPONENT,
                     opponentIds = opponentIds
                 )
-                val pausedState = state
-                    .pushContinuation(continuation)
-                    .withPendingDecision(decision)
-                ExecutionResult.paused(pausedState, decision)
+                state.suspendForDecision(
+                    question = { decisionId ->
+                        ChooseOptionDecision(
+                            id = decisionId,
+                            playerId = chooserId,
+                            prompt = "Choose an opponent",
+                            context = DecisionContext(
+                                sourceId = spellId,
+                                sourceName = cardComponent.name,
+                                phase = DecisionPhase.RESOLUTION
+                            ),
+                            options = opponentNames
+                        )
+                    },
+                    answer = continuation
+                )
             }
 
             ChoiceType.CARD_NAME -> {
@@ -4201,59 +4172,58 @@ class StackResolver(
                         .revealOpponentHandForEntersChoice(state, controllerId)
                 } else state to emptyList()
                 val prompt = choice.cardNamePool.prompt
-                val decisionId = "choose-card-name-enters-${spellId.value}"
-                val decision = ChooseOptionDecision(
-                    id = decisionId,
-                    playerId = chooserId,
-                    prompt = prompt,
-                    context = DecisionContext(
-                        sourceId = spellId,
-                        sourceName = cardComponent.name,
-                        phase = DecisionPhase.RESOLUTION
-                    ),
-                    options = cardNames
-                )
                 val continuation = EntersWithChoiceSpellContinuation(
-                    decisionId = decisionId,
                     spellId = spellId,
                     controllerId = controllerId,
                     ownerId = ownerId,
                     choiceType = ChoiceType.CARD_NAME,
                     cardNames = cardNames
                 )
-                val pausedState = baseState
-                    .pushContinuation(continuation)
-                    .withPendingDecision(decision)
-                ExecutionResult.paused(pausedState, decision, lookEvents)
+                baseState.suspendForDecision(
+                    question = { decisionId ->
+                        ChooseOptionDecision(
+                            id = decisionId,
+                            playerId = chooserId,
+                            prompt = prompt,
+                            context = DecisionContext(
+                                sourceId = spellId,
+                                sourceName = cardComponent.name,
+                                phase = DecisionPhase.RESOLUTION
+                            ),
+                            options = cardNames
+                        )
+                    },
+                    answer = continuation,
+                    events = lookEvents
+                )
             }
 
             ChoiceType.NUMBER -> {
                 // "As this creature enters, choose a number between [min] and [max]" (Shapeshifter).
                 // The chosen number is stored durably under [ChoiceSlot.CHOSEN_NUMBER] by the resumer.
-                val decisionId = "choose-number-enters-${spellId.value}"
-                val decision = ChooseNumberDecision(
-                    id = decisionId,
-                    playerId = chooserId,
-                    prompt = "Choose a number between ${choice.minValue} and ${choice.maxValue}",
-                    context = DecisionContext(
-                        sourceId = spellId,
-                        sourceName = cardComponent.name,
-                        phase = DecisionPhase.RESOLUTION
-                    ),
-                    minValue = choice.minValue,
-                    maxValue = choice.maxValue
-                )
                 val continuation = EntersWithChoiceSpellContinuation(
-                    decisionId = decisionId,
                     spellId = spellId,
                     controllerId = controllerId,
                     ownerId = ownerId,
                     choiceType = ChoiceType.NUMBER
                 )
-                val pausedState = state
-                    .pushContinuation(continuation)
-                    .withPendingDecision(decision)
-                ExecutionResult.paused(pausedState, decision)
+                state.suspendForDecision(
+                    question = { decisionId ->
+                        ChooseNumberDecision(
+                            id = decisionId,
+                            playerId = chooserId,
+                            prompt = "Choose a number between ${choice.minValue} and ${choice.maxValue}",
+                            context = DecisionContext(
+                                sourceId = spellId,
+                                sourceName = cardComponent.name,
+                                phase = DecisionPhase.RESOLUTION
+                            ),
+                            minValue = choice.minValue,
+                            maxValue = choice.maxValue
+                        )
+                    },
+                    answer = continuation
+                )
             }
         }
     }

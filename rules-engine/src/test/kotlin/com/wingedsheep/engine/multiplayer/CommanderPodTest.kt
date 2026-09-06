@@ -257,7 +257,7 @@ class CommanderPodTest : FunSpec({
         firstDecision.playerId shouldBe players[1]
 
         // Answering (either way) marks that commander as asked; the next pass moves to seat 2.
-        val afterFirst = first.newState.updateEntity(commanders[players[1]]!!) {
+        val afterFirst = first.newState.popContinuation().second.updateEntity(commanders[players[1]]!!) {
             it.with(com.wingedsheep.engine.state.components.identity.CommanderZoneChoiceAskedComponent)
         }
         val second = check.check(afterFirst)

@@ -1,6 +1,5 @@
 package com.wingedsheep.engine.handlers.continuations
 
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.DecisionResponse
 import com.wingedsheep.engine.core.EngineServices
 import com.wingedsheep.engine.core.ExecutionResult
@@ -134,7 +133,7 @@ class LeylineContinuationResumer(
             .firstOrNull() ?: return null
 
         val parkedState = state.pushContinuation(
-            LeylinePhaseContinuation(decisionId = "leyline-phase-${leylineCardId.value}")
+            LeylinePhaseContinuation
         )
         return PermanentEntryReplacements.pauseForEntersWithChoice(
             state = parkedState,
@@ -165,21 +164,9 @@ class LeylineContinuationResumer(
         val nextLeyline = services.mulliganHandler.getNextLeylineChoice(state)
         if (nextLeyline != null) {
             val (nextPlayerId, nextCardId) = nextLeyline
-            val (decisionId, allocatedState) = state.newRoutingId()
-            val nextDecision = services.mulliganHandler.createLeylineDecision(allocatedState, nextPlayerId, nextCardId, decisionId)
-            if (nextDecision != null) {
-                val (decision, nextContinuation) = nextDecision
-                val pausedState = allocatedState.pushContinuation(nextContinuation).withPendingDecision(decision)
-                return ExecutionResult.paused(
-                    pausedState,
-                    decision,
-                    events + DecisionRequestedEvent(
-                        decisionId = decision.id,
-                        playerId = nextPlayerId,
-                        decisionType = "YES_NO",
-                        prompt = decision.prompt
-                    )
-                )
+            val result = services.mulliganHandler.createLeylineDecision(state, nextPlayerId, nextCardId)
+            if (result != null) {
+                return ExecutionResult.propagatePause(result.state, events + result.events)
             }
         }
 

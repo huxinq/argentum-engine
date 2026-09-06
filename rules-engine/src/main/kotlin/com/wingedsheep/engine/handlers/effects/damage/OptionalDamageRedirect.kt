@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.handlers.effects.damage
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
 import com.wingedsheep.engine.core.EffectResult
@@ -56,15 +57,15 @@ object OptionalDamageRedirect {
     /**
      * The outcome of asking whether the damage a caller is about to deal still needs a choice.
      *
-     * Both arms carry a state: [Ask] has the decision pending on it, [Ready] is the caller's own
-     * state with any stale answers pruned off. Callers must continue from the state they get back,
+     * Both arms carry the caller's state with stale answers pruned off; [Ask] additionally
+     * describes the question that the caller must suspend for. Callers must continue from the state they get back,
      * never from the one they passed in.
      */
     sealed interface Check {
-        /** One instance still needs an answer. Raise [decision]; record it under [choiceKey]; re-run. */
+        /** One instance still needs an answer. Suspend for [question]; record it under [choiceKey]; re-run. */
         data class Ask(
             val state: GameState,
-            val decision: YesNoDecision,
+            val question: (String) -> YesNoDecision,
             val choiceKey: String
         ) : Check
 
@@ -170,8 +171,7 @@ object OptionalDamageRedirect {
             pruned.getEntity(redirectToId)?.get<CardComponent>()?.name ?: "the redirection target"
         }
 
-        val (decisionId, stateWithRoutingId) = pruned.newRoutingId()
-        val decision = YesNoDecision(
+        val question = { decisionId: String -> YesNoDecision(
             id = decisionId,
             playerId = shield.controllerId,
             prompt = "$sourceName would deal ${instance.amount} damage to $recipientName — " +
@@ -183,8 +183,8 @@ object OptionalDamageRedirect {
             ),
             yesText = "Redirect it",
             noText = "Let it through"
-        )
-        return Check.Ask(stateWithRoutingId.withPendingDecision(decision), decision, key)
+        ) }
+        return Check.Ask(pruned, question, key)
     }
 
     /**
@@ -209,15 +209,15 @@ object OptionalDamageRedirect {
     ): Pair<GameState, EffectResult?> = when (val check = check(state, instances)) {
         is Check.Ready -> check.state to null
         is Check.Ask -> {
-            val paused = check.state.pushContinuation(
+            val paused = check.state.suspendForDecision(
+                check.question,
                 OptionalRedirectEffectContinuation(
-                    decisionId = check.decision.id,
                     choiceKey = check.choiceKey,
                     effect = effect,
                     effectContext = context
                 )
             )
-            check.state to EffectResult.paused(paused, check.decision)
+            paused.state to EffectResult.from(paused)
         }
     }
 

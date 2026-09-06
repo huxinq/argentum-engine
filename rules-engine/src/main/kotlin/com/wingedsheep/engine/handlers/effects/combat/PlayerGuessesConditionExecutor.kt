@@ -1,8 +1,8 @@
 package com.wingedsheep.engine.handlers.effects.combat
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.EffectResult
 import com.wingedsheep.engine.core.GuessConditionContinuation
 import com.wingedsheep.engine.core.YesNoDecision
@@ -55,8 +55,7 @@ class PlayerGuessesConditionExecutor : EffectExecutor<PlayerGuessesConditionEffe
             ?.let { effect.prompt.replace("{name}", it) }
             ?: effect.prompt
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = YesNoDecision(
+        val decision = { decisionId: String -> YesNoDecision(
             id = decisionId,
             playerId = guesserId,
             prompt = prompt,
@@ -67,27 +66,15 @@ class PlayerGuessesConditionExecutor : EffectExecutor<PlayerGuessesConditionEffe
             ),
             yesText = "Yes",
             noText = "No"
-        )
+        ) }
 
         val continuation = GuessConditionContinuation(
-            decisionId = decisionId,
             guesserId = guesserId,
             condition = effect.condition,
             storeGuessedRightAs = effect.storeGuessedRightAs,
             effectContext = context
         )
 
-        return EffectResult.paused(
-            stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation),
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = guesserId,
-                    decisionType = "YES_NO",
-                    prompt = prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 }

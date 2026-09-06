@@ -192,7 +192,7 @@ export function ChooseReplacementDecisionUI({ decision }: { decision: ChooseRepl
         </button>
         <button
           onClick={() => {
-            if (fromIndex !== null && toIndex !== null) submitReplacementDecision(fromIndex, toIndex)
+            if (fromIndex !== null && toIndex !== null) submitReplacementDecision(decision.id, fromIndex, toIndex)
           }}
           disabled={fromIndex === null || toIndex === null}
           className={styles.confirmButton}

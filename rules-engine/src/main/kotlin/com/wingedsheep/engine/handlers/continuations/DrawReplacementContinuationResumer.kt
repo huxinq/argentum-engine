@@ -66,9 +66,8 @@ class DrawReplacementContinuationResumer(
                 newState, continuation.replacementEffect, effectContext
             ).toExecutionResult()
             if (effectResult.isPaused) {
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     effectResult.state,
-                    effectResult.pendingDecision!!,
                     events + effectResult.events
                 )
             }
@@ -97,9 +96,8 @@ class DrawReplacementContinuationResumer(
                 stateWithDeclined, playerId, 1, announce = false
             ).toExecutionResult()
             if (singleDrawResult.isPaused) {
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     singleDrawResult.state,
-                    singleDrawResult.pendingDecision!!,
                     events + singleDrawResult.events
                 )
             }

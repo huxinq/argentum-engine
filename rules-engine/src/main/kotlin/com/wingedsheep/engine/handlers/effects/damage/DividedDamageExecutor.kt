@@ -1,8 +1,8 @@
 package com.wingedsheep.engine.handlers.effects.damage
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.DistributeDecision
 import com.wingedsheep.engine.core.DistributeDamageContinuation
 import com.wingedsheep.engine.core.EffectResult
@@ -119,8 +119,7 @@ class DividedDamageExecutor(
             state.getEntity(sourceId)?.get<CardComponent>()?.name
         } ?: "Effect"
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = DistributeDecision(
+        val decision = { decisionId: String -> DistributeDecision(
             id = decisionId,
             playerId = context.controllerId,
             prompt = "Divide $total damage among ${targets.size} targets",
@@ -132,29 +131,14 @@ class DividedDamageExecutor(
             totalAmount = total,
             targets = targets,
             minPerTarget = 1 // Per MTG rules, must assign at least 1 damage to each target
-        )
+        ) }
 
-        // Push continuation so we know how to resume
         val continuation = DistributeDamageContinuation(
-            decisionId = decisionId,
             sourceId = context.sourceId,
             controllerId = context.controllerId,
             targets = targets
         )
 
-        val newState = stateWithRoutingId
-            .withPendingDecision(decision)
-            .pushContinuation(continuation)
-
-        val events = listOf(
-            DecisionRequestedEvent(
-                decisionId = decisionId,
-                playerId = context.controllerId,
-                decisionType = "DISTRIBUTE",
-                prompt = decision.prompt
-            )
-        )
-
-        return EffectResult.paused(newState, decision, events)
+        return EffectResult.from(state.suspendForDecision(decision, continuation, eventType = "DISTRIBUTE"))
     }
 }

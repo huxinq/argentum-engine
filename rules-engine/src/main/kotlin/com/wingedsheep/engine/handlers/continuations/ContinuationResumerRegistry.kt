@@ -1,7 +1,9 @@
 package com.wingedsheep.engine.handlers.continuations
 
-import com.wingedsheep.engine.core.ContinuationFrame
+import com.wingedsheep.engine.core.AnswerContinuation
+import com.wingedsheep.engine.core.AutomaticContinuation
 import com.wingedsheep.engine.core.DecisionResponse
+import com.wingedsheep.engine.core.PendingDecision
 import com.wingedsheep.engine.core.ExecutionResult
 import com.wingedsheep.engine.core.GameEvent
 import com.wingedsheep.engine.state.GameState
@@ -18,8 +20,8 @@ import kotlin.reflect.KClass
  * dynamic resumer registration.
  */
 class ContinuationResumerRegistry {
-    private val resumers = mutableMapOf<KClass<out ContinuationFrame>, ContinuationResumer<*>>()
-    private val autoResumers = mutableMapOf<KClass<out ContinuationFrame>, AutoResumer<*>>()
+    private val resumers = mutableMapOf<KClass<out AnswerContinuation>, ContinuationResumer<*>>()
+    private val autoResumers = mutableMapOf<KClass<out AutomaticContinuation>, AutoResumer<*>>()
 
     /**
      * Register all resumers from a module.
@@ -42,14 +44,14 @@ class ContinuationResumerRegistry {
     /**
      * Register a single resumer.
      */
-    fun <T : ContinuationFrame> register(resumer: ContinuationResumer<T>) {
+    fun <T : AnswerContinuation> register(resumer: ContinuationResumer<T>) {
         resumers[resumer.frameType] = resumer
     }
 
     /**
      * Register a single auto-resumer.
      */
-    fun <T : ContinuationFrame> registerAutoResumer(autoResumer: AutoResumer<T>) {
+    fun <T : AutomaticContinuation> registerAutoResumer(autoResumer: AutoResumer<T>) {
         autoResumers[autoResumer.frameType] = autoResumer
     }
 
@@ -58,6 +60,7 @@ class ContinuationResumerRegistry {
      *
      * @param state The game state after popping the continuation
      * @param continuation The continuation frame to resume
+     * @param question The question paired with this answer in the consumed suspension
      * @param response The player's decision response
      * @param checkForMore Callback to check for more continuations on the stack
      * @return The execution result with new state and events
@@ -65,13 +68,14 @@ class ContinuationResumerRegistry {
     @Suppress("UNCHECKED_CAST")
     fun resume(
         state: GameState,
-        continuation: ContinuationFrame,
+        continuation: AnswerContinuation,
+        question: PendingDecision,
         response: DecisionResponse,
         checkForMore: CheckForMore
     ): ExecutionResult {
-        val resumer = resumers[continuation::class] as? ContinuationResumer<ContinuationFrame>
+        val resumer = resumers[continuation::class] as? ContinuationResumer<AnswerContinuation>
             ?: return ExecutionResult.error(state, "No resumer registered for continuation type: ${continuation::class.simpleName}")
-        return resumer.resume(state, continuation, response, checkForMore)
+        return resumer.resume(state, continuation, question, response, checkForMore)
     }
 
     /**
@@ -92,8 +96,8 @@ class ContinuationResumerRegistry {
         events: List<GameEvent>,
         checkForMore: CheckForMore
     ): ExecutionResult? {
-        val top = state.peekContinuation() ?: return null
-        val resumer = autoResumers[top::class] as? AutoResumer<ContinuationFrame> ?: return null
+        val top = state.peekContinuation() as? AutomaticContinuation ?: return null
+        val resumer = autoResumers[top::class] as? AutoResumer<AutomaticContinuation> ?: return null
         if (!resumer.canAutoResume(top)) return null
 
         val (_, stateAfterPop) = state.popContinuation()

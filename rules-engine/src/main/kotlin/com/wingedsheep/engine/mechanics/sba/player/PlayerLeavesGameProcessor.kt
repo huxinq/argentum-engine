@@ -158,7 +158,6 @@ object PlayerLeavesGameProcessor {
         val pending = state.pendingDecision ?: return state
         if (pending.playerId != leaver) return state
         return state
-            .clearPendingDecision()
             .copy(continuationStack = emptyList())
             .withPriority(state.activePlayerId)
     }

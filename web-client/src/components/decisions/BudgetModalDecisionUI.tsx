@@ -88,7 +88,7 @@ export function BudgetModalDecisionUI({
         selected.push(i)
       }
     }
-    submitBudgetModalDecision(selected)
+    submitBudgetModalDecision(decision.id, selected)
   }
 
   if (minimized) {

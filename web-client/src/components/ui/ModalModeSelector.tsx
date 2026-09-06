@@ -50,6 +50,7 @@ export function ModalModeSelector() {
 }
 
 function ModalModePanel({ state }: { state: ModalModeSelectionState }) {
+  const interactionEpoch = useGameStore((state) => state.interactionEpoch)
   const confirmModalModeSelection = useGameStore((s) => s.confirmModalModeSelection)
   const cancelModalModeSelection = useGameStore((s) => s.cancelModalModeSelection)
   const gameState = useGameStore((s) => s.gameState)
@@ -110,7 +111,7 @@ function ModalModePanel({ state }: { state: ModalModeSelectionState }) {
     if (!withinRange) return
     const chosenModes: number[] = []
     counts.forEach((c, i) => { for (let k = 0; k < c; k++) chosenModes.push(modes[i]!.index) })
-    confirmModalModeSelection(chosenModes)
+    confirmModalModeSelection(interactionEpoch, chosenModes)
   }
 
   if (minimized) {
@@ -243,7 +244,7 @@ function ModalModePanel({ state }: { state: ModalModeSelectionState }) {
         <button onClick={() => setMinimized(true)} className={decisionStyles.viewBattlefieldButton}>
           View Battlefield
         </button>
-        <button onClick={cancelModalModeSelection} className={decisionStyles.confirmButton}>
+        <button onClick={() => cancelModalModeSelection(interactionEpoch)} className={decisionStyles.confirmButton}>
           Cancel
         </button>
         <button onClick={handleConfirm} disabled={!withinRange} className={decisionStyles.confirmButton}>

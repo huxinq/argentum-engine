@@ -177,6 +177,16 @@ class ChooseOnePerCategoryExecutor(
             "a"
         }
 
+        val continuation = ChooseOnePerCategoryContinuation(
+            effect = effect,
+            sourceId = sourceId,
+            sourceName = sourceName,
+            storedCollections = storedCollections,
+            pendingPlayers = pendingPlayers,
+            categoryIndex = categoryIndex,
+            picks = picks
+        )
+
         val decisionResult = decisionHandler.createCardSelectionDecision(
             state = state,
             playerId = playerId,
@@ -190,23 +200,12 @@ class ChooseOnePerCategoryExecutor(
             phase = DecisionPhase.RESOLUTION,
             // On-battlefield selection: the chooser is picking among permanents already in play,
             // where counters, auras and duplicates matter (see the UX rules in AGENTS.md).
-            useTargetingUI = true
+            useTargetingUI = true,
+            answer = continuation
         )
 
-        val continuation = ChooseOnePerCategoryContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
-            effect = effect,
-            sourceId = sourceId,
-            sourceName = sourceName,
-            storedCollections = storedCollections,
-            pendingPlayers = pendingPlayers,
-            categoryIndex = categoryIndex,
-            picks = picks
-        )
-
-        return EffectResult.paused(
-            decisionResult.state.pushContinuation(continuation),
-            decisionResult.pendingDecision,
+        return EffectResult.propagatePause(
+            decisionResult.state,
             decisionResult.events
         )
     }

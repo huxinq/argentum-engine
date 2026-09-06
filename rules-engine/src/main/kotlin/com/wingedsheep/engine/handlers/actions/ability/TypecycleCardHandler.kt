@@ -220,9 +220,8 @@ class TypecycleCardHandler(
             val triggerResult = triggerProcessor.processTriggers(stateWithSearchContinuation, preTriggers)
 
             if (triggerResult.isPaused) {
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     triggerResult.state,
-                    triggerResult.pendingDecision!!,
                     events + triggerResult.events
                 )
             }
@@ -247,9 +246,8 @@ class TypecycleCardHandler(
 
         val searchResult = effectExecutorRegistry.execute(currentState, searchEffect, effectContext)
         if (searchResult.isPaused) {
-            return ExecutionResult.paused(
+            return ExecutionResult.propagatePause(
                 searchResult.state,
-                searchResult.pendingDecision!!,
                 events + searchResult.events
             )
         }

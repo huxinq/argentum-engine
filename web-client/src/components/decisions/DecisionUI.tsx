@@ -67,12 +67,12 @@ export function DecisionUI() {
 
   // Handle SelectManaSourcesDecision (mana source selection for Lightning Rift etc.)
   if (pendingDecision.type === 'SelectManaSourcesDecision') {
-    return <ManaSourceSelectionUI decision={pendingDecision} />
+    return <ManaSourceSelectionUI key={pendingDecision.id} decision={pendingDecision} />
   }
 
   // Handle SearchLibraryDecision with dedicated UI
   if (pendingDecision.type === 'SearchLibraryDecision') {
-    return <LibrarySearchUI decision={pendingDecision} responsive={responsive} />
+    return <LibrarySearchUI key={pendingDecision.id} decision={pendingDecision} responsive={responsive} />
   }
 
   // Handle ReorderLibraryDecision with dedicated UI
@@ -112,6 +112,7 @@ export function DecisionUI() {
     return (
       <div className={styles.overlay}>
         <YesNoDecisionUI
+          key={pendingDecision.id}
           decision={pendingDecision}
           gameState={gameState}
           onMinimize={() => setDecisionMinimized(true)}
@@ -135,6 +136,7 @@ export function DecisionUI() {
     return (
       <div className={styles.overlay}>
         <BatchYesNoDecisionUI
+          key={pendingDecision.id}
           decision={pendingDecision}
           gameState={gameState}
           onMinimize={() => setDecisionMinimized(true)}
@@ -158,6 +160,7 @@ export function DecisionUI() {
     return (
       <div className={styles.overlay}>
         <ChooseNumberDecisionUI
+          key={pendingDecision.id}
           decision={pendingDecision}
           onMinimize={() => setDecisionMinimized(true)}
         />
@@ -204,7 +207,7 @@ export function DecisionUI() {
   // Handle ChooseColorDecision (e.g., "Choose a color for protection")
   // Rendered as a floating bottom panel so the battlefield stays visible
   if (pendingDecision.type === 'ChooseColorDecision') {
-    return <ChooseColorDecisionUI decision={pendingDecision} />
+    return <ChooseColorDecisionUI key={pendingDecision.id} decision={pendingDecision} />
   }
 
   // Handle SelectCardsDecision
@@ -240,6 +243,7 @@ export function DecisionUI() {
       if (hasBoardTargets) {
         return (
           <BattlefieldSelectionUI
+            key={pendingDecision.id}
             decision={pendingDecision}
           />
         )
@@ -259,7 +263,7 @@ export function DecisionUI() {
     // Player-only targeting: simple banner (auto-submit via LifeDisplay click)
     if (isPlayerOnlyTargeting(pendingDecision, playerIds)) {
       return (
-        <PlayerTargetingUI decision={pendingDecision} />
+        <PlayerTargetingUI key={pendingDecision.id} decision={pendingDecision} />
       )
     }
 
@@ -274,7 +278,7 @@ export function DecisionUI() {
   if (pendingDecision.type === 'SplitPilesDecision') {
     return (
       <div className={styles.overlay}>
-        <SplitPilesUI decision={pendingDecision} responsive={responsive} />
+        <SplitPilesUI key={pendingDecision.id} decision={pendingDecision} responsive={responsive} />
       </div>
     )
   }

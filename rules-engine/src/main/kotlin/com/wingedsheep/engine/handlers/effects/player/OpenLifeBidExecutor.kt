@@ -108,18 +108,7 @@ object OpenLifeBidLogic {
             return resolve(state, casterId, highBidder, highBid, onWin, targets, sourceId, executeEffect)
         }
 
-        val decisionResult = decisionHandler.createYesNoDecision(
-            state = state,
-            playerId = bidderToAsk,
-            sourceId = sourceId,
-            sourceName = sourceName,
-            prompt = "The high bid is $highBid life. Pay more life to top it?",
-            yesText = "Top the bid",
-            noText = "Pass"
-        )
-
         val continuation = OpenLifeBidContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
             casterId = casterId,
             highBidder = highBidder,
             highBid = highBid,
@@ -131,9 +120,19 @@ object OpenLifeBidLogic {
             sourceName = sourceName
         )
 
-        return ExecutionResult.paused(
-            decisionResult.state.pushContinuation(continuation),
-            decisionResult.pendingDecision,
+        val decisionResult = decisionHandler.createYesNoDecision(
+            state = state,
+            playerId = bidderToAsk,
+            sourceId = sourceId,
+            sourceName = sourceName,
+            prompt = "The high bid is $highBid life. Pay more life to top it?",
+            yesText = "Top the bid",
+            noText = "Pass",
+            answer = continuation
+        )
+
+        return ExecutionResult.propagatePause(
+            decisionResult.state,
             decisionResult.events
         )
     }
@@ -150,17 +149,12 @@ object OpenLifeBidLogic {
             sourceName = continuation.sourceName,
             prompt = "Bid more than ${continuation.highBid} life (up to $maxBid)",
             minValue = continuation.highBid + 1,
-            maxValue = maxBid
+            maxValue = maxBid,
+            answer = continuation.copy(stage = OpenLifeBidStage.AWAITING_BID_AMOUNT)
         )
 
-        val newContinuation = continuation.copy(
-            decisionId = decisionResult.pendingDecision!!.id,
-            stage = OpenLifeBidStage.AWAITING_BID_AMOUNT
-        )
-
-        return ExecutionResult.paused(
-            decisionResult.state.pushContinuation(newContinuation),
-            decisionResult.pendingDecision,
+        return ExecutionResult.propagatePause(
+            decisionResult.state,
             decisionResult.events
         )
     }
@@ -204,7 +198,7 @@ object OpenLifeBidLogic {
             currentState = winResult.state
             events.addAll(winResult.events)
             if (winResult.pendingDecision != null) {
-                return ExecutionResult.paused(currentState, winResult.pendingDecision, events)
+                return ExecutionResult.propagatePause(currentState, events)
             }
             if (winResult.error != null) return winResult.toExecutionResult()
         }

@@ -1,0 +1,11 @@
+[
+    {
+        "type": "SubmitDecision",
+        "playerId": "player-1",
+        "response": {
+            "type": "YesNoResponse",
+            "decisionId": "r0",
+            "choice": false
+        }
+    }
+]

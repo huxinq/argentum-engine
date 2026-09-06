@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.handlers.effects.token
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.ChooseTargetsDecision
 import com.wingedsheep.engine.core.CreateTokenCopyAuraHostContinuation
 import com.wingedsheep.engine.core.DecisionContext
@@ -54,14 +55,13 @@ internal object AuraTokenHostChooser {
             return EffectResult.success(state)
         }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = ChooseTargetsDecision(
+        val decision = { decisionId: String -> ChooseTargetsDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = "Choose what the $auraName token enchants",
             context = DecisionContext(
                 sourceId = context.sourceId,
-                sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name },
+                sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name },
                 phase = DecisionPhase.RESOLUTION,
             ),
             targetRequirements = listOf(
@@ -73,10 +73,9 @@ internal object AuraTokenHostChooser {
                 )
             ),
             legalTargets = mapOf(0 to hosts),
-        )
+        ) }
 
         val continuation = CreateTokenCopyAuraHostContinuation(
-            decisionId = decisionId,
             effect = effect,
             context = context,
             controllerId = controllerId,
@@ -85,11 +84,7 @@ internal object AuraTokenHostChooser {
             remaining = remaining,
         )
 
-        return EffectResult(
-            state = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation),
-            events = emptyList(),
-            pendingDecision = decision,
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation, emptyList()))
     }
 
     /**

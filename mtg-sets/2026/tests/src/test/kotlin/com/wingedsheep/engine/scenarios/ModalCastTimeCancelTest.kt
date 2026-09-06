@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.scenarios
 
+import com.wingedsheep.engine.core.Suspension
 import com.wingedsheep.engine.core.CancelDecisionResponse
 import com.wingedsheep.engine.core.CastModalModeSelectionContinuation
 import com.wingedsheep.engine.core.CastModalTargetSelectionContinuation
@@ -86,7 +87,7 @@ class ModalCastTimeCancelTest : FunSpec({
 
         val decision = d.pendingDecision.shouldBeInstanceOf<ChooseOptionDecision>()
         // Sanity: continuation stack carries a CastModalModeSelectionContinuation.
-        d.state.continuationStack.filterIsInstance<CastModalModeSelectionContinuation>()
+        d.state.continuationStack.filterIsInstance<Suspension>().map { it.answer }.filterIsInstance<CastModalModeSelectionContinuation>()
             .shouldHaveSize(1)
 
         // Cancel without picking anything.
@@ -96,7 +97,7 @@ class ModalCastTimeCancelTest : FunSpec({
         //  1. No pending decision.
         d.state.pendingDecision.shouldBeNull()
         //  2. Continuation stack drained.
-        d.state.continuationStack.filterIsInstance<CastModalModeSelectionContinuation>()
+        d.state.continuationStack.filterIsInstance<Suspension>().map { it.answer }.filterIsInstance<CastModalModeSelectionContinuation>()
             .shouldHaveSize(0)
         //  3. Stack is empty (spell never reached it).
         d.state.stack shouldHaveSize 0
@@ -157,7 +158,7 @@ class ModalCastTimeCancelTest : FunSpec({
 
         // Now we should be at target selection (the first chosen mode's target).
         val targetDecision = d.pendingDecision.shouldBeInstanceOf<ChooseTargetsDecision>()
-        d.state.continuationStack.filterIsInstance<CastModalTargetSelectionContinuation>()
+        d.state.continuationStack.filterIsInstance<Suspension>().map { it.answer }.filterIsInstance<CastModalTargetSelectionContinuation>()
             .shouldHaveSize(1)
 
         // Cancel.
@@ -165,9 +166,9 @@ class ModalCastTimeCancelTest : FunSpec({
 
         // Rollback asserts:
         d.state.pendingDecision.shouldBeNull()
-        d.state.continuationStack.filterIsInstance<CastModalModeSelectionContinuation>()
+        d.state.continuationStack.filterIsInstance<Suspension>().map { it.answer }.filterIsInstance<CastModalModeSelectionContinuation>()
             .shouldHaveSize(0)
-        d.state.continuationStack.filterIsInstance<CastModalTargetSelectionContinuation>()
+        d.state.continuationStack.filterIsInstance<Suspension>().map { it.answer }.filterIsInstance<CastModalTargetSelectionContinuation>()
             .shouldHaveSize(0)
         d.state.stack shouldHaveSize 0
         d.state.getHand(p1).toList() shouldBe handBefore

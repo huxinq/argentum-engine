@@ -32,17 +32,7 @@ class ChooseColorThenExecutor(
     ): EffectResult {
         val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name } ?: "Unknown"
 
-        val decisionResult = decisionHandler.createColorDecision(
-            state = state,
-            playerId = context.controllerId,
-            sourceId = context.sourceId,
-            sourceName = sourceName,
-            prompt = effect.prompt,
-            phase = DecisionPhase.RESOLUTION
-        )
-
         val continuation = ChooseColorThenContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
             controllerId = context.controllerId,
             sourceId = context.sourceId,
             sourceName = sourceName,
@@ -50,9 +40,18 @@ class ChooseColorThenExecutor(
             baseContext = context
         )
 
-        return EffectResult.paused(
-            decisionResult.state.pushContinuation(continuation),
-            decisionResult.pendingDecision,
+        val decisionResult = decisionHandler.createColorDecision(
+            state = state,
+            playerId = context.controllerId,
+            sourceId = context.sourceId,
+            sourceName = sourceName,
+            prompt = effect.prompt,
+            phase = DecisionPhase.RESOLUTION,
+            answer = continuation
+        )
+
+        return EffectResult.propagatePause(
+            decisionResult.state,
             decisionResult.events
         )
     }

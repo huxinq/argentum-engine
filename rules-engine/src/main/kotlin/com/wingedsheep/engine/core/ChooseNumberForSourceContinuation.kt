@@ -18,11 +18,10 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class ChooseNumberForSourceContinuation(
-    override val decisionId: String,
     val sourceId: EntityId,
     val controllerId: EntityId,
     val slot: ChoiceSlot
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume after a player picks the recipient for a
@@ -40,11 +39,10 @@ data class ChooseNumberForSourceContinuation(
  */
 @Serializable
 data class ChooseOpponentForSourceContinuation(
-    override val decisionId: String,
     val sourceId: EntityId,
     val controllerId: EntityId,
     val opponentIds: List<EntityId>
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume after a player picks the card type for a
@@ -63,12 +61,11 @@ data class ChooseOpponentForSourceContinuation(
  */
 @Serializable
 data class ChooseCardTypeForSourceContinuation(
-    override val decisionId: String,
     val sourceId: EntityId,
     val controllerId: EntityId,
     val slot: ChoiceSlot,
     val cardTypes: List<String>
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume after the controller picks *which* opponent makes a
@@ -91,10 +88,9 @@ data class ChooseCardTypeForSourceContinuation(
  */
 @Serializable
 data class ChooseOpponentDeciderContinuation(
-    override val decisionId: String,
     val controllerId: EntityId,
     val sourceId: EntityId?,
     val opponentIds: List<EntityId>,
     val effect: com.wingedsheep.sdk.scripting.effects.Effect,
     val baseContext: com.wingedsheep.engine.handlers.EffectContext
-) : ContinuationFrame
+) : AnswerContinuation

@@ -1,10 +1,10 @@
 package com.wingedsheep.engine.handlers.effects.combat
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.ChooseGuessKindContinuation
 import com.wingedsheep.engine.core.ChooseOptionDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.EffectResult
 import com.wingedsheep.engine.handlers.EffectContext
 import com.wingedsheep.engine.handlers.effects.ChooserResolution
@@ -57,8 +57,7 @@ class OpponentGuessesTopCardKindExecutor : EffectExecutor<OpponentGuessesTopCard
 
         val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = ChooseOptionDecision(
+        val decision = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = chooserId,
             prompt = "Choose land or nonland",
@@ -68,10 +67,9 @@ class OpponentGuessesTopCardKindExecutor : EffectExecutor<OpponentGuessesTopCard
                 phase = DecisionPhase.RESOLUTION
             ),
             options = listOf("Land", "Nonland")
-        )
+        ) }
 
         val continuation = ChooseGuessKindContinuation(
-            decisionId = decisionId,
             controllerLibraryOwnerId = chooserId,
             guesserId = guesserId,
             onGuessedRight = effect.onGuessedRight,
@@ -79,20 +77,6 @@ class OpponentGuessesTopCardKindExecutor : EffectExecutor<OpponentGuessesTopCard
             effectContext = context
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = chooserId,
-                    decisionType = "CHOOSE_OPTION",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 }

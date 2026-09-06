@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.scenarios
 
+import com.wingedsheep.engine.core.Suspension
 import com.wingedsheep.engine.core.CastModalModeSelectionContinuation
 import com.wingedsheep.engine.core.CastSpell
 import com.wingedsheep.engine.core.ChooseOptionDecision
@@ -97,6 +98,7 @@ class ModalAllowRepeatTest : FunSpec({
 
         // The continuation's narrowed availableIndices must exclude the picked mode.
         val continuation = d.state.continuationStack
+            .filterIsInstance<Suspension>().map { it.answer }
             .filterIsInstance<CastModalModeSelectionContinuation>()
             .single()
         continuation.allowRepeat shouldBe false
@@ -128,6 +130,7 @@ class ModalAllowRepeatTest : FunSpec({
 
         // Continuation reflects allowRepeat semantics: no narrowed availableIndices.
         val continuation = d.state.continuationStack
+            .filterIsInstance<Suspension>().map { it.answer }
             .filterIsInstance<CastModalModeSelectionContinuation>()
             .single()
         continuation.allowRepeat shouldBe true
@@ -175,6 +178,7 @@ class ModalAllowRepeatTest : FunSpec({
         d.submitDecision(p1, OptionChosenResponse(secondDecision.id, secondDecision.options.indexOf("Draw a card")))
 
         // The continuation should now have transitioned past mode selection entirely.
-        d.state.continuationStack.filterIsInstance<CastModalModeSelectionContinuation>() shouldBe emptyList()
+        d.state.continuationStack.filterIsInstance<Suspension>().map { it.answer }
+            .filterIsInstance<CastModalModeSelectionContinuation>() shouldBe emptyList()
     }
 })

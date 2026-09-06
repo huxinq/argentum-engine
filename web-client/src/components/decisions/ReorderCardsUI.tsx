@@ -92,7 +92,7 @@ export function ReorderCardsUI({ decision, responsive }: ReorderCardsUIProps) {
   }, [orderedCards.length])
 
   const handleConfirm = () => {
-    submitOrderedDecision(orderedCards)
+    submitOrderedDecision(decision.id, orderedCards)
   }
 
   const handleMouseEnter = useCallback((cardId: EntityId, e: React.MouseEvent) => {

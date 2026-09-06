@@ -81,7 +81,7 @@ class RemoveAnyNumberOfCountersExecutor(
             is RemoveAnyNumberOfCountersFlow.Outcome.Done ->
                 EffectResult.success(outcome.state, outcome.events)
             is RemoveAnyNumberOfCountersFlow.Outcome.Prompt ->
-                EffectResult.paused(outcome.state, outcome.decision, outcome.events)
+                EffectResult.propagatePause(outcome.state, outcome.events)
         }
     }
 }

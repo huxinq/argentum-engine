@@ -113,6 +113,18 @@ class EachPlayerDiscardsOrLoseLifeExecutor(
             state.getEntity(sourceId)?.get<CardComponent>()?.name
         }
 
+        val remainingPlayers = playerOrder.drop(currentPlayerIndex + 1)
+
+        val continuation = EachPlayerDiscardsOrLoseLifeContinuation(
+            sourceId = context.sourceId,
+            sourceName = sourceName,
+            controllerId = context.controllerId,
+            currentPlayerId = playerId,
+            remainingPlayers = remainingPlayers,
+            discardedCreature = discardedCreature,
+            lifeLoss = lifeLoss
+        )
+
         val decisionResult = decisionHandler.createCardSelectionDecision(
             state = state,
             playerId = playerId,
@@ -123,27 +135,14 @@ class EachPlayerDiscardsOrLoseLifeExecutor(
             minSelections = 1,
             maxSelections = 1,
             ordered = false,
-            phase = DecisionPhase.RESOLUTION
+            phase = DecisionPhase.RESOLUTION,
+            answer = continuation
         )
 
-        val remainingPlayers = playerOrder.drop(currentPlayerIndex + 1)
+        val stateWithContinuation = decisionResult.state
 
-        val continuation = EachPlayerDiscardsOrLoseLifeContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
-            sourceId = context.sourceId,
-            sourceName = sourceName,
-            controllerId = context.controllerId,
-            currentPlayerId = playerId,
-            remainingPlayers = remainingPlayers,
-            discardedCreature = discardedCreature,
-            lifeLoss = lifeLoss
-        )
-
-        val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
-
-        return EffectResult.paused(
+        return EffectResult.propagatePause(
             stateWithContinuation,
-            decisionResult.pendingDecision,
             decisionResult.events
         )
     }

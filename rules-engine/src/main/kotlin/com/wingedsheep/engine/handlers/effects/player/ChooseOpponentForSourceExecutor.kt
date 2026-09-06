@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.handlers.effects.player
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.ChooseOpponentForSourceContinuation
 import com.wingedsheep.engine.core.ChooseOptionDecision
 import com.wingedsheep.engine.core.DecisionContext
@@ -52,8 +53,7 @@ class ChooseOpponentForSourceExecutor : EffectExecutor<ChooseOpponentForSourceEf
         val opponentNames = opponents.map { pid ->
             state.getEntity(pid)?.get<PlayerComponent>()?.name ?: "Player ${pid.value}"
         }
-        val decisionId = "choose-opponent-for-source-${sourceId.value}"
-        val decision = ChooseOptionDecision(
+        val decision = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = context.controllerId,
             prompt = effect.prompt,
@@ -63,17 +63,13 @@ class ChooseOpponentForSourceExecutor : EffectExecutor<ChooseOpponentForSourceEf
                 phase = DecisionPhase.RESOLUTION
             ),
             options = opponentNames
-        )
+        ) }
         val continuation = ChooseOpponentForSourceContinuation(
-            decisionId = decisionId,
             sourceId = sourceId,
             controllerId = context.controllerId,
             opponentIds = opponents
         )
 
-        return EffectResult.paused(
-            state.withPendingDecision(decision).pushContinuation(continuation),
-            decision
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation, emptyList()))
     }
 }

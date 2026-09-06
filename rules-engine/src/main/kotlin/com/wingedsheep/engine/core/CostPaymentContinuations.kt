@@ -34,7 +34,6 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class CostPaymentContinuation(
-    override val decisionId: String,
     val payerId: EntityId,
     val sourceId: EntityId,
     val sourceName: String,
@@ -44,7 +43,7 @@ data class CostPaymentContinuation(
     val targets: List<ChosenTarget> = emptyList(),
     val namedTargets: Map<String, ChosenTarget> = emptyMap(),
     val storedCollections: Map<String, List<EntityId>> = emptyMap()
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume after the payer picks mana sources for a [PayCost.Atom] mana cost they already agreed to
@@ -62,8 +61,7 @@ data class CostPaymentContinuation(
  */
 @Serializable
 data class CostPaymentManaSelectionContinuation(
-    override val decisionId: String,
     val inner: CostPaymentContinuation,
     val manaCost: com.wingedsheep.sdk.core.ManaCost,
     val availableSources: List<ManaSourceOption>
-) : ContinuationFrame
+) : AnswerContinuation

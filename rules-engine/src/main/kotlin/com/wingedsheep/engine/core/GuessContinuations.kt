@@ -23,13 +23,12 @@ import kotlinx.serialization.Serializable
 @Serializable
 @SerialName("ChooseGuessKindContinuation")
 data class ChooseGuessKindContinuation(
-    override val decisionId: String,
     val controllerLibraryOwnerId: EntityId,
     val guesserId: EntityId,
     val onGuessedRight: Effect,
     val onGuessedWrong: Effect,
     val effectContext: EffectContext,
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume after the guesser guessed the top card's [CardKind]. Reveals the top card of the
@@ -39,13 +38,12 @@ data class ChooseGuessKindContinuation(
 @Serializable
 @SerialName("GuessTopCardKindContinuation")
 data class GuessTopCardKindContinuation(
-    override val decisionId: String,
     val controllerLibraryOwnerId: EntityId,
     val guesserId: EntityId,
     val onGuessedRight: Effect,
     val onGuessedWrong: Effect,
     val effectContext: EffectContext,
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume after the guesser answered a
@@ -63,9 +61,8 @@ data class GuessTopCardKindContinuation(
 @Serializable
 @SerialName("GuessConditionContinuation")
 data class GuessConditionContinuation(
-    override val decisionId: String,
     val guesserId: EntityId,
     val condition: com.wingedsheep.sdk.scripting.conditions.Condition,
     val storeGuessedRightAs: String,
     val effectContext: EffectContext,
-) : ContinuationFrame
+) : AnswerContinuation

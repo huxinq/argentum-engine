@@ -7,6 +7,7 @@ import { useGameStore } from '@/store/gameStore.ts'
 export function XCostSelector() {
   const xSelectionState = useGameStore((state) => state.xSelectionState)
   const updateXValue = useGameStore((state) => state.updateXValue)
+  const interactionEpoch = useGameStore((state) => state.interactionEpoch)
   const cancelXSelection = useGameStore((state) => state.cancelXSelection)
   const confirmXSelection = useGameStore((state) => state.confirmXSelection)
 
@@ -81,10 +82,10 @@ export function XCostSelector() {
         </p>
 
         <div style={styles.buttonRow}>
-          <button onClick={cancelXSelection} style={styles.cancelButton}>
+          <button onClick={() => cancelXSelection(interactionEpoch)} style={styles.cancelButton}>
             Cancel
           </button>
-          <button onClick={confirmXSelection} style={styles.confirmButton}>
+          <button onClick={() => confirmXSelection(interactionEpoch)} style={styles.confirmButton}>
             {xSelectionState.actionInfo.action.type === 'ActivateAbility' ? 'Activate' : 'Cast'}
           </button>
         </div>

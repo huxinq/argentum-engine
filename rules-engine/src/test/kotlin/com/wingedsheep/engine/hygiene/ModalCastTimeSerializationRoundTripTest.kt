@@ -1,5 +1,10 @@
 package com.wingedsheep.engine.hygiene
 
+import com.wingedsheep.engine.core.TargetRequirementInfo
+import com.wingedsheep.engine.core.DecisionContext
+import com.wingedsheep.engine.core.ChooseTargetsDecision
+import com.wingedsheep.engine.core.ChooseOptionDecision
+import com.wingedsheep.engine.core.Suspension
 import com.wingedsheep.engine.core.CastModalModeSelectionContinuation
 import com.wingedsheep.engine.core.CastModalTargetSelectionContinuation
 import com.wingedsheep.engine.core.CastSpell
@@ -118,40 +123,50 @@ class ModalCastTimeSerializationRoundTripTest : FunSpec({
             cardId = EntityId.generate()
         )
 
-        val original: ContinuationFrame = CastModalModeSelectionContinuation(
-            decisionId = "decision-42",
-            cardId = baseAction.cardId,
-            casterId = baseAction.playerId,
-            baseCastAction = baseAction,
-            modes = modes,
-            chooseCount = 2,
-            minChooseCount = 1,
-            allowRepeat = true,
-            offeredIndices = listOf(0, 1),
-            availableIndices = null,                       // allowRepeat=true → null
-            selectedModeIndices = listOf(0),                // one mode picked already
-            doneOptionOffered = true                        // minChooseCount=1 + 1 picked → Done offered
+        val original = Suspension(
+            question = ChooseOptionDecision(
+                id = "decision-42",
+                playerId = baseAction.playerId,
+                prompt = "Choose another mode or finish",
+                context = DecisionContext(sourceId = baseAction.cardId),
+                options = modes.map { it.description } + "Done"
+            ),
+            answer = CastModalModeSelectionContinuation(
+                cardId = baseAction.cardId,
+                casterId = baseAction.playerId,
+                baseCastAction = baseAction,
+                modes = modes,
+                chooseCount = 2,
+                minChooseCount = 1,
+                allowRepeat = true,
+                offeredIndices = listOf(0, 1),
+                availableIndices = null,                       // allowRepeat=true → null
+                selectedModeIndices = listOf(0),                // one mode picked already
+                doneOptionOffered = true                        // minChooseCount=1 + 1 picked → Done offered
+            )
         )
 
         val encoded = json.encodeToString(ContinuationFrame.serializer(), original)
         val decoded = json.decodeFromString(
             ContinuationFrame.serializer(),
             encoded
-        ) as CastModalModeSelectionContinuation
+        ) as Suspension
 
-        decoded.decisionId shouldBe "decision-42"
-        decoded.chooseCount shouldBe 2
-        decoded.minChooseCount shouldBe 1
-        decoded.allowRepeat shouldBe true
-        decoded.offeredIndices shouldBe listOf(0, 1)
-        decoded.availableIndices shouldBe null
-        decoded.selectedModeIndices shouldBe listOf(0)
-        decoded.doneOptionOffered shouldBe true
-        decoded.modes.size shouldBe 2
-        decoded.modes[0].description shouldBe "Draw a card"
-        decoded.modes[1].description shouldBe "Target creature gains trample until end of turn"
-        decoded.baseCastAction.cardId shouldBe baseAction.cardId
-        decoded.baseCastAction.playerId shouldBe baseAction.playerId
+        decoded.question shouldBe original.question
+        decoded.question.id shouldBe "decision-42"
+        val answer = decoded.answer as CastModalModeSelectionContinuation
+        answer.chooseCount shouldBe 2
+        answer.minChooseCount shouldBe 1
+        answer.allowRepeat shouldBe true
+        answer.offeredIndices shouldBe listOf(0, 1)
+        answer.availableIndices shouldBe null
+        answer.selectedModeIndices shouldBe listOf(0)
+        answer.doneOptionOffered shouldBe true
+        answer.modes.size shouldBe 2
+        answer.modes[0].description shouldBe "Draw a card"
+        answer.modes[1].description shouldBe "Target creature gains trample until end of turn"
+        answer.baseCastAction.cardId shouldBe baseAction.cardId
+        answer.baseCastAction.playerId shouldBe baseAction.playerId
     }
 
     test("L3 — CastModalTargetSelectionContinuation round-trips with per-mode ChosenTargets") {
@@ -174,36 +189,47 @@ class ModalCastTimeSerializationRoundTripTest : FunSpec({
             cardId = EntityId.generate()
         )
 
-        val original: ContinuationFrame = CastModalTargetSelectionContinuation(
-            decisionId = "target-decision-7",
-            cardId = baseAction.cardId,
-            casterId = baseAction.playerId,
-            baseCastAction = baseAction,
-            modes = modes,
-            chosenModeIndices = listOf(0, 1, 1),                 // allowRepeat style: mode 1 twice
-            resolvedModeTargets = listOf(
-                emptyList(),                                      // mode 0: no targets
-                listOf(ChosenTarget.Permanent(creatureA)),        // first mode 1
-                listOf(ChosenTarget.Player(playerTarget), ChosenTarget.Permanent(creatureB))
+        val original = Suspension(
+            question = ChooseTargetsDecision(
+                id = "target-decision-7",
+                playerId = baseAction.playerId,
+                prompt = "Choose targets for the mode",
+                context = DecisionContext(sourceId = baseAction.cardId),
+                targetRequirements = listOf(TargetRequirementInfo(0, "creature")),
+                legalTargets = mapOf(0 to listOf(creatureA, creatureB))
             ),
-            currentOrdinal = 3
+            answer = CastModalTargetSelectionContinuation(
+                cardId = baseAction.cardId,
+                casterId = baseAction.playerId,
+                baseCastAction = baseAction,
+                modes = modes,
+                chosenModeIndices = listOf(0, 1, 1),                 // allowRepeat style: mode 1 twice
+                resolvedModeTargets = listOf(
+                    emptyList(),                                      // mode 0: no targets
+                    listOf(ChosenTarget.Permanent(creatureA)),        // first mode 1
+                    listOf(ChosenTarget.Player(playerTarget), ChosenTarget.Permanent(creatureB))
+                ),
+                currentOrdinal = 3
+            )
         )
 
         val decoded = json.decodeFromString(
             ContinuationFrame.serializer(),
             json.encodeToString(ContinuationFrame.serializer(), original)
-        ) as CastModalTargetSelectionContinuation
+        ) as Suspension
 
-        decoded.decisionId shouldBe "target-decision-7"
-        decoded.chosenModeIndices shouldBe listOf(0, 1, 1)
-        decoded.currentOrdinal shouldBe 3
-        decoded.resolvedModeTargets.size shouldBe 3
-        decoded.resolvedModeTargets[0] shouldBe emptyList()
-        decoded.resolvedModeTargets[1] shouldBe listOf(ChosenTarget.Permanent(creatureA))
-        decoded.resolvedModeTargets[2] shouldBe listOf(
+        decoded.question shouldBe original.question
+        decoded.question.id shouldBe "target-decision-7"
+        val answer = decoded.answer as CastModalTargetSelectionContinuation
+        answer.chosenModeIndices shouldBe listOf(0, 1, 1)
+        answer.currentOrdinal shouldBe 3
+        answer.resolvedModeTargets.size shouldBe 3
+        answer.resolvedModeTargets[0] shouldBe emptyList()
+        answer.resolvedModeTargets[1] shouldBe listOf(ChosenTarget.Permanent(creatureA))
+        answer.resolvedModeTargets[2] shouldBe listOf(
             ChosenTarget.Player(playerTarget),
             ChosenTarget.Permanent(creatureB)
         )
-        decoded.modes.size shouldBe 2
+        answer.modes.size shouldBe 2
     }
 })

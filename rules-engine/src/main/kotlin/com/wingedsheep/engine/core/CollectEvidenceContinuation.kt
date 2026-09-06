@@ -19,7 +19,6 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class CollectEvidenceContinuation(
-    override val decisionId: String,
     val playerId: EntityId,
     val amount: Int,
     val sourceName: String,
@@ -30,7 +29,7 @@ data class CollectEvidenceContinuation(
      * effect has no X to hand on.
      */
     val storeAmountAs: String? = null,
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resumes a resolution-time "collect evidence **X**" after the player has chosen X but before they
@@ -48,8 +47,7 @@ data class CollectEvidenceContinuation(
  */
 @Serializable
 data class ChooseEvidenceAmountContinuation(
-    override val decisionId: String,
     val playerId: EntityId,
     val storeAmountAs: String,
     val sourceName: String,
-) : ContinuationFrame
+) : AnswerContinuation

@@ -73,7 +73,7 @@ export function ChooseColorDecisionUI({
   const [collapsed, setCollapsed] = useState(false)
 
   const handleColorClick = (color: string) => {
-    submitColorDecision(color)
+    submitColorDecision(decision.id, color)
   }
 
   if (collapsed) {

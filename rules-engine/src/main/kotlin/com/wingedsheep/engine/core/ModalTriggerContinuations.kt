@@ -28,7 +28,6 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class TriggerModalModeSelectionContinuation(
-    override val decisionId: String,
     val ability: TriggeredAbilityOnStackComponent,
     val outerTargets: List<ChosenTarget>,
     val outerTargetRequirements: List<@Serializable TargetRequirement>,
@@ -45,7 +44,7 @@ data class TriggerModalModeSelectionContinuation(
     val recordChosenModesOnSource: Boolean = false,
     /** See [TriggerModalTargetSelectionContinuation.recordChosenModesThisTurn]. */
     val recordChosenModesThisTurn: Boolean = false
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Put-on-stack per-mode target selection for a modal triggered ability (CR 603.3c).
@@ -57,7 +56,6 @@ data class TriggerModalModeSelectionContinuation(
  */
 @Serializable
 data class TriggerModalTargetSelectionContinuation(
-    override val decisionId: String,
     val ability: TriggeredAbilityOnStackComponent,
     val outerTargets: List<ChosenTarget>,
     val outerTargetRequirements: List<@Serializable TargetRequirement>,
@@ -78,4 +76,4 @@ data class TriggerModalTargetSelectionContinuation(
      * [com.wingedsheep.engine.state.components.battlefield.ChosenModesThisTurnComponent].
      */
     val recordChosenModesThisTurn: Boolean = false
-) : ContinuationFrame
+) : AnswerContinuation

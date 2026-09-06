@@ -137,9 +137,8 @@ class PassPriorityHandler(
                 if (triggers.isNotEmpty()) {
                     val triggerResult = triggerProcessor.processTriggers(currentState, triggers)
                     if (triggerResult.isPaused) {
-                        return ExecutionResult.paused(
+                        return ExecutionResult.propagatePause(
                             triggerResult.state,
-                            triggerResult.pendingDecision!!,
                             advanceResult.events + triggerResult.events
                         )
                     }
@@ -189,18 +188,15 @@ class PassPriorityHandler(
                 result.events
             )
             if (triggers.isNotEmpty()) {
-                val (routingId, stateAfterRouting) = result.newState.newRoutingId()
                 val pendingTriggers = PendingTriggersContinuation(
-                    decisionId = "resolution-deferred-triggers-$routingId",
                     remainingTriggers = triggers
                 )
                 val stack = result.newState.continuationStack
                 val newStack = stack.subList(0, preResolutionStackSize) +
                     pendingTriggers +
                     stack.subList(preResolutionStackSize, stack.size)
-                return ExecutionResult.paused(
-                    stateAfterRouting.copy(continuationStack = newStack),
-                    result.pendingDecision!!,
+                return ExecutionResult.propagatePause(
+                    result.newState.copy(continuationStack = newStack),
                     result.events
                 )
             }
@@ -240,20 +236,17 @@ class PassPriorityHandler(
         if (sbaResult.isPaused) {
             var pausedState = sbaResult.state
             if (preSbaTriggers.isNotEmpty()) {
-                val (routingId, stateAfterRouting) = pausedState.newRoutingId()
                 val pendingTriggers = PendingTriggersContinuation(
-                    decisionId = "sba-deferred-triggers-$routingId",
                     remainingTriggers = preSbaTriggers
                 )
                 val stack = pausedState.continuationStack
                 val newStack = stack.subList(0, preSbaStackSize) +
                     pendingTriggers +
                     stack.subList(preSbaStackSize, stack.size)
-                pausedState = stateAfterRouting.copy(continuationStack = newStack)
+                pausedState = pausedState.copy(continuationStack = newStack)
             }
-            return ExecutionResult.paused(
+            return ExecutionResult.propagatePause(
                 pausedState,
-                sbaResult.pendingDecision!!,
                 result.events + sbaResult.events
             )
         }
@@ -281,9 +274,8 @@ class PassPriorityHandler(
             val triggerResult = triggerProcessor.processTriggers(postPollState, triggers)
 
             if (triggerResult.isPaused) {
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     triggerResult.state,
-                    triggerResult.pendingDecision!!,
                     combinedEvents + triggerResult.events
                 )
             }
@@ -314,7 +306,7 @@ class PassPriorityHandler(
         val priorEvents = resolutionEvents + endResult.events
 
         if (endResult.isPaused) {
-            return ExecutionResult.paused(endResult.newState, endResult.pendingDecision!!, priorEvents)
+            return ExecutionResult.propagatePause(endResult.newState, priorEvents)
         }
         if (!endResult.isSuccess || endResult.newState.gameOver) {
             return ExecutionResult.success(endResult.newState, priorEvents)
@@ -345,9 +337,8 @@ class PassPriorityHandler(
         if (triggers.isNotEmpty()) {
             val triggerResult = triggerProcessor.processTriggers(currentState, triggers)
             if (triggerResult.isPaused) {
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     triggerResult.state,
-                    triggerResult.pendingDecision!!,
                     priorEvents + triggerResult.events
                 )
             }

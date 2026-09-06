@@ -21,6 +21,7 @@ const COLORS = ['WHITE', 'BLUE', 'BLACK', 'RED', 'GREEN'] as const
  */
 export function ManaColorSelectionOverlay() {
   const manaColorSelectionState = useGameStore((s) => s.manaColorSelectionState)
+  const interactionEpoch = useGameStore((state) => state.interactionEpoch)
   const confirmManaColorSelection = useGameStore((s) => s.confirmManaColorSelection)
   const cancelManaColorSelection = useGameStore((s) => s.cancelManaColorSelection)
 
@@ -79,7 +80,7 @@ export function ManaColorSelectionOverlay() {
           return (
             <button
               key={color}
-              onClick={() => confirmManaColorSelection(color)}
+              onClick={() => confirmManaColorSelection(interactionEpoch, color)}
               style={{
                 backgroundColor: style.bg,
                 color: isLight ? '#1a1a1a' : '#f0f0f0',
@@ -108,7 +109,7 @@ export function ManaColorSelectionOverlay() {
       </div>
 
       <button
-        onClick={cancelManaColorSelection}
+        onClick={() => cancelManaColorSelection(interactionEpoch)}
         style={{
           backgroundColor: '#444',
           color: 'white',

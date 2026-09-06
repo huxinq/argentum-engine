@@ -27,9 +27,8 @@ enum class AdditionalCostSelectionKind { SACRIFICE, DISCARD, EXILE, TAP, RETURN_
  */
 @Serializable
 data class CastSpellAdditionalCostContinuation(
-    override val decisionId: String,
     val cardId: EntityId,
     val casterId: EntityId,
     val baseCastAction: CastSpell,
     val costKind: AdditionalCostSelectionKind,
-) : ContinuationFrame
+) : AnswerContinuation

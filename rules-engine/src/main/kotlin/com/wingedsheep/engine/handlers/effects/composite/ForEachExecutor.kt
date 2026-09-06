@@ -106,7 +106,6 @@ class ForEachExecutor(
             val stateForExecution = if (needsContinuation) {
                 currentState.pushContinuation(
                     ForEachContinuation(
-                        decisionId = "pending",
                         remainingItems = remainingItems,
                         effect = effect,
                         effectContext = currentOuterContext
@@ -121,9 +120,8 @@ class ForEachExecutor(
             if (result.isPaused) {
                 // The body needs a decision; our ForEachContinuation is beneath its
                 // frames and resumes the remaining items once the body completes.
-                return EffectResult.paused(
+                return EffectResult.propagatePause(
                     result.state,
-                    result.pendingDecision!!,
                     allEvents + result.events
                 )
             }

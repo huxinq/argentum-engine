@@ -1,5 +1,7 @@
 package com.wingedsheep.engine.hidden
 
+import com.wingedsheep.engine.core.Suspension
+import com.wingedsheep.engine.core.SelectFromCollectionContinuation
 import com.wingedsheep.engine.core.ContinuationFrame
 import com.wingedsheep.engine.core.CardEntityFactory
 import com.wingedsheep.engine.state.components.identity.CardComponent
@@ -97,7 +99,7 @@ class HiddenSlotRewriteTest : ScenarioTestBase() {
         test("an incomplete paused projection is the shared in-flight answer") {
             val game = scenario().withPlayers().build()
             val state = game.state.copy(
-                pendingDecision = SelectCardsDecision(
+                continuationStack = listOf(Suspension(SelectCardsDecision(
                     id = "untraversable",
                     playerId = game.player1Id,
                     prompt = "choose",
@@ -105,7 +107,7 @@ class HiddenSlotRewriteTest : ScenarioTestBase() {
                     options = emptyList(),
                     minSelections = 0,
                     maxSelections = 0,
-                ),
+                ), SelectFromCollectionContinuation(game.player1Id, null, null, emptyList(), "selected", null))),
             )
 
             HiddenSlotRewrite.identitySensitiveInFlightPins(state, projectorFailingOn(Root.DECISION))

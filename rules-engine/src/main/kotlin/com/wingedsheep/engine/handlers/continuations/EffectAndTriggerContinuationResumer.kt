@@ -15,11 +15,11 @@ import com.wingedsheep.sdk.scripting.targets.withCount
 
 /**
  * Handles core effect and trigger resumption:
- * - EffectContinuation (composite effect pipelines)
- * - TriggeredAbilityContinuation (target selection for triggered abilities)
- * - ResolveSpellContinuation (no-op marker)
- * - MayAbilityContinuation (yes/no for may effects)
- * - MayTriggerContinuation (yes/no for may triggers with targets)
+ * - EffectContinuation ()
+ * - TriggeredAbilityContinuation ()
+ * - ResolveSpellContinuation ()
+ * - MayAbilityContinuation ()
+ * - MayTriggerContinuation ()
  */
 class EffectAndTriggerContinuationResumer(
     private val services: com.wingedsheep.engine.core.EngineServices,
@@ -27,7 +27,6 @@ class EffectAndTriggerContinuationResumer(
 ) : ContinuationResumerModule {
 
     override fun resumers(): List<ContinuationResumer<*>> = listOf(
-        resumer(EffectContinuation::class, ::resumeEffect),
         resumer(TriggeredAbilityContinuation::class, ::resumeTriggeredAbility),
         resumer(TriggerDamageDistributionContinuation::class, ::resumeTriggerDamageDistribution),
         resumer(ResolveSpellContinuation::class) { state, _, _, _ ->
@@ -41,28 +40,7 @@ class EffectAndTriggerContinuationResumer(
         resumer(BatchMayTriggerContinuation::class, ::resumeBatchMayTrigger)
     )
 
-    private fun resumeEffect(
-        state: GameState,
-        continuation: EffectContinuation,
-        response: DecisionResponse,
-        checkForMore: CheckForMore
-    ): ExecutionResult {
-        val effectResult = effectRunner.executeRemainingEffects(state, continuation.remainingEffects, continuation.effectContext)
-        if (effectResult.isPaused) return effectResult.toExecutionResult()
-        // A drained composite hands its pipeline storage to the frame beneath — e.g. a DoAction
-        // gate scoring SuccessCriterion.CollectionNonEmpty, or a reflexive "when you do" reading a
-        // number the action stored. The full frame maps (not just this drain's accumulation) are
-        // what propagate: keys injected into this frame by an earlier select-resume are part of
-        // them. Numbers and chosen values ride along with collections so that pausing mid-composite
-        // preserves exactly what completing it synchronously would have.
-        val stateWithCollections = exposeCollectionsToNextFrame(
-            effectResult.state,
-            continuation.effectContext.pipeline.storedCollections + effectResult.updatedCollections,
-            continuation.effectContext.pipeline.storedNumbers + effectResult.updatedStoredNumbers,
-            continuation.effectContext.pipeline.chosenValues + effectResult.updatedChosenValues,
-        )
-        return checkForMore(stateWithCollections, effectResult.events.toList())
-    }
+
 
     private fun resumeTriggeredAbility(
         state: GameState,
@@ -238,8 +216,7 @@ class EffectAndTriggerContinuationResumer(
                 is com.wingedsheep.engine.state.components.stack.ChosenTarget.Spell -> target.spellEntityId
             }
         }
-        val (decisionId, stateAfterRouting) = state.newRoutingId()
-        val decision = DistributeDecision(
+        val question = { decisionId: String -> DistributeDecision(
             id = decisionId,
             playerId = continuation.controllerId,
             prompt = "Divide $totalDamage damage among ${selectedTargets.size} targets",
@@ -251,10 +228,9 @@ class EffectAndTriggerContinuationResumer(
             totalAmount = totalDamage,
             targets = targetEntityIds,
             minPerTarget = 1
-        )
+        ) }
 
         val distributionContinuation = TriggerDamageDistributionContinuation(
-            decisionId = decisionId,
             sourceId = continuation.sourceId,
             sourceName = continuation.sourceName,
             sourceBattlefieldTimestamp = continuation.sourceBattlefieldTimestamp,
@@ -279,20 +255,7 @@ class EffectAndTriggerContinuationResumer(
             interveningIf = continuation.interveningIf
         )
 
-        val newState = stateAfterRouting
-            .withPendingDecision(decision)
-            .pushContinuation(distributionContinuation)
-
-        val events = listOf(
-            DecisionRequestedEvent(
-                decisionId = decisionId,
-                playerId = continuation.controllerId,
-                decisionType = "DISTRIBUTE",
-                prompt = decision.prompt
-            )
-        )
-
-        return ExecutionResult.paused(newState, decision, events)
+        return state.suspendForDecision(question, distributionContinuation, emptyList())
     }
 
     /**
@@ -421,10 +384,8 @@ class EffectAndTriggerContinuationResumer(
         val rest = run.drop(1)
         var workingState = state
         if (rest.isNotEmpty()) {
-            val (routingId, stateAfterRouting) = workingState.newRoutingId()
-            workingState = stateAfterRouting.pushContinuation(
+            workingState = workingState.pushContinuation(
                 PendingTriggersContinuation(
-                    decisionId = "batch-may-peel-$routingId",
                     remainingTriggers = rest
                 )
             )

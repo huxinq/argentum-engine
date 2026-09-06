@@ -82,14 +82,14 @@ class ActionProcessorAtomicityTest : ScenarioTestBase() {
         }
 
         test("a successful reveal into hand still records who saw the card") {
-            val (game, _) = gameAwaitingDividedDamage(
+            val (game, decision) = gameAwaitingDividedDamage(
                 then = Effects.GainLife(1, EffectTarget.Controller),
                 revealTopCardFirst = true
             )
             val libraryCardId = game.state.getLibrary(game.player1Id).single()
 
             val result = game.submitDecision(
-                DistributionResponse("divide-damage", linkedMapOf(game.player2Id to 1))
+                DistributionResponse(decision.id, linkedMapOf(game.player2Id to 1))
             )
 
             result.error shouldBe null
@@ -153,14 +153,12 @@ class ActionProcessorAtomicityTest : ScenarioTestBase() {
         val builder = scenario().withPlayers()
         if (revealTopCardFirst) builder.withCardInLibrary(1, "Forest")
         val game = builder.build()
-        val decisionId = "divide-damage"
         val effectContext = EffectContext(
             sourceId = null,
             controllerId = game.player1Id,
             targets = emptyList()
         )
         val gatedFollowUp = GatedActionContinuation(
-            decisionId = "evaluate-damage",
             then = then,
             otherwise = null,
             successCriterion = SuccessCriterion.Always,
@@ -168,7 +166,6 @@ class ActionProcessorAtomicityTest : ScenarioTestBase() {
             effectContext = effectContext
         )
         val revealGate = GatedActionContinuation(
-            decisionId = "reveal-top",
             then = Patterns.Library.revealTopPutAllMatchingToHand(
                 count = DynamicAmount.Fixed(1),
                 filter = GameObjectFilter.Any
@@ -179,25 +176,27 @@ class ActionProcessorAtomicityTest : ScenarioTestBase() {
             effectContext = effectContext
         )
         val damage = DistributeDamageContinuation(
-            decisionId = decisionId,
             sourceId = null,
             controllerId = game.player1Id,
             targets = listOf(game.player2Id)
         )
-        val decision = DistributeDecision(
-            id = decisionId,
-            playerId = game.player1Id,
-            prompt = "Divide 1 damage",
-            context = DecisionContext(),
-            totalAmount = 1,
-            targets = listOf(game.player2Id),
-            minPerTarget = 1
-        )
         game.state = game.state
             .pushContinuation(gatedFollowUp)
             .let { if (revealTopCardFirst) it.pushContinuation(revealGate) else it }
-            .pushContinuation(damage)
-            .withPendingDecision(decision)
-        return game to decision
+            .suspendForDecision(
+                question = { id ->
+                    DistributeDecision(
+                        id = id,
+                        playerId = game.player1Id,
+                        prompt = "Divide 1 damage",
+                        context = DecisionContext(),
+                        totalAmount = 1,
+                        targets = listOf(game.player2Id),
+                        minPerTarget = 1
+                    )
+                },
+                answer = damage,
+            ).state
+        return game to game.state.pendingDecision.shouldBeInstanceOf<DistributeDecision>()
     }
 }

@@ -547,7 +547,9 @@ class GamePlayHandler(
             return
         }
 
-        val result = gameSession.executeClientAction(playerSession.playerId, message.action, message.messageId)
+        val result = gameSession.executeClientAction(
+            playerSession.playerId, message.action, message.messageId, message.interactionEpoch
+        )
         when (result) {
             is GameSession.ActionResult.Success -> {
                 logger.debug("Action executed successfully")

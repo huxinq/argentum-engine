@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.handlers.effects.composite
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.BeholdContinuation
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
@@ -69,8 +70,7 @@ class BeholdEffectExecutor(
         val sourceName = context.sourceId
             ?.let { state.getEntity(it)?.get<CardComponent>()?.name }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = SelectCardsDecision(
+        val decision = { decisionId: String -> SelectCardsDecision(
             id = decisionId,
             playerId = beholder,
             prompt = "You may behold a ${effect.filter.description}",
@@ -82,10 +82,9 @@ class BeholdEffectExecutor(
             options = options,
             minSelections = 0,
             maxSelections = 1,
-        )
+        ) }
 
         val continuation = BeholdContinuation(
-            decisionId = decisionId,
             beholderId = beholder,
             sourceName = sourceName,
             handOptionIds = handMatches.toSet(),
@@ -93,9 +92,6 @@ class BeholdEffectExecutor(
             effectContext = context,
         )
 
-        val paused = stateWithRoutingId
-            .pushContinuation(continuation)
-            .withPendingDecision(decision)
-        return EffectResult.paused(paused, decision)
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 }

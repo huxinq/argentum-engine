@@ -25,11 +25,11 @@ export function YesNoDecisionUI({
   const submitYesNoDecision = useGameStore((s) => s.submitYesNoDecision)
 
   const handleYes = () => {
-    submitYesNoDecision(true)
+    submitYesNoDecision(decision.id, true)
   }
 
   const handleNo = () => {
-    submitYesNoDecision(false)
+    submitYesNoDecision(decision.id, false)
   }
 
   const cards = resolveDecisionCards(decision.context, gameState)

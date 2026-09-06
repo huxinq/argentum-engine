@@ -63,8 +63,7 @@ class ChooseActionEffectExecutor(
             state.getEntity(sourceId)?.get<CardComponent>()?.name
         }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = ChooseOptionDecision(
+        val decision = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = choosingPlayerId,
             prompt = "Choose one for ${sourceName ?: "ability"}",
@@ -74,10 +73,9 @@ class ChooseActionEffectExecutor(
                 phase = DecisionPhase.RESOLUTION
             ),
             options = feasibleChoices.map { it.label }
-        )
+        ) }
 
         val continuation = ChooseActionContinuation(
-            decisionId = decisionId,
             choosingPlayerId = choosingPlayerId,
             controllerId = context.controllerId,
             sourceId = context.sourceId,
@@ -88,21 +86,7 @@ class ChooseActionEffectExecutor(
             triggeringEntityId = context.triggeringEntityId
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = choosingPlayerId,
-                    decisionType = "CHOOSE_OPTION",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 
     private fun isFeasible(

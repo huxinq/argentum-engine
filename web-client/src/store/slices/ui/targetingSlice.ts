@@ -19,8 +19,8 @@ export interface TargetingSliceActions {
   startTargeting: (state: TargetingState) => void
   addTarget: (targetId: EntityId) => void
   removeTarget: (targetId: EntityId) => void
-  cancelTargeting: () => void
-  confirmTargeting: () => void
+  cancelTargeting: (interactionEpoch: string | null) => void
+  confirmTargeting: (interactionEpoch: string | null) => void
   goBackTargeting: () => void
 }
 
@@ -81,7 +81,8 @@ export const createTargetingSlice: SliceCreator<TargetingSlice> = (set, get) => 
     })
   },
 
-  cancelTargeting: () => {
+  cancelTargeting: (interactionEpoch) => {
+    if (!interactionEpoch || interactionEpoch !== get().interactionEpoch) return
     const { pipelineState, cancelPipeline } = get()
     if (pipelineState) { cancelPipeline(); return }
     set({ targetingState: null })
@@ -99,7 +100,8 @@ export const createTargetingSlice: SliceCreator<TargetingSlice> = (set, get) => 
     })
   },
 
-  confirmTargeting: () => {
+  confirmTargeting: (interactionEpoch) => {
+    if (!interactionEpoch || interactionEpoch !== get().interactionEpoch) return
     const { targetingState, pipelineState, gameState, startTargeting } = get()
     if (!targetingState || !gameState || !pipelineState) return
 

@@ -32,11 +32,10 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class LeylineDecisionContinuation(
-    override val decisionId: String,
     val playerId: EntityId,
     val leylineCardId: EntityId,
     val cardName: String
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume the opening-hand leyline walk after something *else* paused in the middle of it.
@@ -48,9 +47,6 @@ data class LeylineDecisionContinuation(
  * is auto-resumed (see `LeylineContinuationResumer`) once the choice above it finishes, asking the
  * next player's yes/no or handing the state back for the advance into turn 1.
  *
- * @property decisionId Synthetic — this frame is never matched against a player response.
  */
 @Serializable
-data class LeylinePhaseContinuation(
-    override val decisionId: String
-) : ContinuationFrame
+data object LeylinePhaseContinuation : AutomaticContinuation

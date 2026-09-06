@@ -116,6 +116,13 @@ class CascadeExecutor(
 
         val cascadeName = currentState.getEntity(cascadeCard)
             ?.get<CardComponent>()?.name ?: "the exiled card"
+        val continuation = CascadeMayCastContinuation(
+            playerId = controllerId,
+            sourceId = context.sourceId,
+            exiledCards = exiledCards.toList(),
+            cascadeCardId = cascadeCard
+        )
+
         val pause = decisionHandler.createYesNoDecision(
             state = currentState,
             playerId = controllerId,
@@ -124,23 +131,14 @@ class CascadeExecutor(
             prompt = "Cast $cascadeName without paying its mana cost?",
             yesText = "Cast for free",
             noText = "Decline",
-            phase = DecisionPhase.RESOLUTION
+            phase = DecisionPhase.RESOLUTION,
+            answer = continuation
         )
 
-        val pendingDecision = pause.pendingDecision
-            ?: error("createYesNoDecision must return a pending decision")
-        val continuation = CascadeMayCastContinuation(
-            decisionId = pendingDecision.id,
-            playerId = controllerId,
-            sourceId = context.sourceId,
-            exiledCards = exiledCards.toList(),
-            cascadeCardId = cascadeCard
-        )
-        val stateWithCont = pause.state.pushContinuation(continuation)
+        val stateWithCont = pause.state
 
-        return EffectResult.paused(
+        return EffectResult.propagatePause(
             stateWithCont,
-            pendingDecision,
             allEvents + pause.events
         )
     }

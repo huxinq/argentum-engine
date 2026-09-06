@@ -1,8 +1,8 @@
 package com.wingedsheep.engine.handlers.effects.permanent.counters
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.DistributeCountersContinuation
 import com.wingedsheep.engine.core.DistributeDecision
 import com.wingedsheep.engine.core.EffectResult
@@ -61,8 +61,7 @@ class DistributeCountersFromSelfExecutor : EffectExecutor<DistributeCountersFrom
 
         val sourceName = sourceEntity.get<CardComponent>()?.name ?: "Creature"
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = DistributeDecision(
+        val decision = { decisionId: String -> DistributeDecision(
             id = decisionId,
             playerId = context.controllerId,
             prompt = "Distribute up to $totalCounters ${effect.counterType} counter${if (totalCounters != 1) "s" else ""} from $sourceName onto other creatures",
@@ -75,28 +74,14 @@ class DistributeCountersFromSelfExecutor : EffectExecutor<DistributeCountersFrom
             targets = otherCreatures,
             minPerTarget = 0,
             allowPartial = true
-        )
+        ) }
 
         val continuation = DistributeCountersContinuation(
-            decisionId = decisionId,
             sourceId = sourceId,
             controllerId = context.controllerId,
             counterType = effect.counterType
         )
 
-        val newState = stateWithRoutingId
-            .withPendingDecision(decision)
-            .pushContinuation(continuation)
-
-        val events = listOf(
-            DecisionRequestedEvent(
-                decisionId = decisionId,
-                playerId = context.controllerId,
-                decisionType = "DISTRIBUTE",
-                prompt = decision.prompt
-            )
-        )
-
-        return EffectResult.paused(newState, decision, events)
+        return EffectResult.from(state.suspendForDecision(decision, continuation, eventType = "DISTRIBUTE"))
     }
 }

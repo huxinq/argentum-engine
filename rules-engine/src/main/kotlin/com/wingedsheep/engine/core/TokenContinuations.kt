@@ -21,10 +21,9 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class TokenCreationReplacementContinuation(
-    override val decisionId: String,
     val sourceId: EntityId,
     val attachedPermanentId: EntityId,
     val originalEffect: Effect,
     val tokenCount: Int,
     val effectContext: EffectContext
-) : ContinuationFrame
+) : AnswerContinuation

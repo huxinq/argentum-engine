@@ -23,18 +23,18 @@ export interface DistributionSliceState {
 export interface DistributionSliceActions {
   startDamageDistribution: (state: DamageDistributionState) => void
   updateDamageDistribution: (targetId: EntityId, amount: number) => void
-  cancelDamageDistribution: () => void
-  confirmDamageDistribution: () => void
+  cancelDamageDistribution: (interactionEpoch: string | null) => void
+  confirmDamageDistribution: (interactionEpoch: string | null) => void
   initDistribute: (state: DistributeState) => void
   incrementDistribute: (targetId: EntityId) => void
   decrementDistribute: (targetId: EntityId) => void
-  confirmDistribute: () => void
+  confirmDistribute: (decisionId: string) => void
   clearDistribute: () => void
   startCounterDistribution: (state: CounterDistributionState) => void
   incrementCounterRemoval: (entityId: EntityId, counterType: string) => void
   decrementCounterRemoval: (entityId: EntityId, counterType: string) => void
-  cancelCounterDistribution: () => void
-  confirmCounterDistribution: () => void
+  cancelCounterDistribution: (interactionEpoch: string | null) => void
+  confirmCounterDistribution: (interactionEpoch: string | null) => void
 }
 
 export type DistributionSlice = DistributionSliceState & DistributionSliceActions
@@ -65,13 +65,15 @@ export const createDistributionSlice: SliceCreator<DistributionSlice> = (set, ge
     })
   },
 
-  cancelDamageDistribution: () => {
+  cancelDamageDistribution: (interactionEpoch) => {
+    if (!interactionEpoch || interactionEpoch !== get().interactionEpoch) return
     const { pipelineState, cancelPipeline } = get()
     if (pipelineState) { cancelPipeline(); return }
     set({ damageDistributionState: null })
   },
 
-  confirmDamageDistribution: () => {
+  confirmDamageDistribution: (interactionEpoch) => {
+    if (!interactionEpoch || interactionEpoch !== get().interactionEpoch) return
     const { damageDistributionState, pipelineState } = get()
     if (!damageDistributionState || !pipelineState) return
 
@@ -124,16 +126,16 @@ export const createDistributionSlice: SliceCreator<DistributionSlice> = (set, ge
     })
   },
 
-  confirmDistribute: () => {
+  confirmDistribute: (decisionId) => {
     const { distributeState, submitDistributeDecision } = get()
-    if (!distributeState) return
+    if (!distributeState || distributeState.decisionId !== decisionId) return
     const totalAllocated = Object.values(distributeState.distribution).reduce((sum, v) => sum + v, 0)
     if (distributeState.allowPartial) {
       if (totalAllocated > distributeState.totalAmount) return
     } else {
       if (totalAllocated !== distributeState.totalAmount) return
     }
-    submitDistributeDecision(distributeState.distribution)
+    submitDistributeDecision(decisionId, distributeState.distribution)
     set({ distributeState: null })
   },
 
@@ -195,13 +197,15 @@ export const createDistributionSlice: SliceCreator<DistributionSlice> = (set, ge
     })
   },
 
-  cancelCounterDistribution: () => {
+  cancelCounterDistribution: (interactionEpoch) => {
+    if (!interactionEpoch || interactionEpoch !== get().interactionEpoch) return
     const { pipelineState, cancelPipeline } = get()
     if (pipelineState) { cancelPipeline(); return }
     set({ counterDistributionState: null })
   },
 
-  confirmCounterDistribution: () => {
+  confirmCounterDistribution: (interactionEpoch) => {
+    if (!interactionEpoch || interactionEpoch !== get().interactionEpoch) return
     const { counterDistributionState, pipelineState } = get()
     if (!counterDistributionState || !pipelineState) return
 

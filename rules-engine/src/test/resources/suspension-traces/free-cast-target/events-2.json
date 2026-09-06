@@ -1,0 +1,6 @@
+[
+    {
+        "type": "PriorityChangedEvent",
+        "playerId": "player-2"
+    }
+]

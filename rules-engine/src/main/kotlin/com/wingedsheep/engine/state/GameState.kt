@@ -1,6 +1,8 @@
 package com.wingedsheep.engine.state
 
 import com.wingedsheep.engine.core.ContinuationFrame
+import com.wingedsheep.engine.core.AutomaticContinuation
+import com.wingedsheep.engine.core.Suspension
 import com.wingedsheep.engine.event.DelayedTriggeredAbility
 import com.wingedsheep.engine.event.GlobalGrantedTriggeredAbility
 import com.wingedsheep.engine.event.GrantedActivatedAbility
@@ -28,6 +30,8 @@ import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.model.GameRng
 import com.wingedsheep.sdk.scripting.AbilityIdentity
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.KeepGeneratedSerializer
+import kotlinx.serialization.ExperimentalSerializationApi
 
 /**
  * Immutable snapshot of the entire game state.
@@ -35,7 +39,9 @@ import kotlinx.serialization.Serializable
  * The GameState is the single source of truth for the game.
  * All game operations are pure functions: (GameState, Action) -> (GameState, Events)
  */
-@Serializable
+@OptIn(ExperimentalSerializationApi::class)
+@KeepGeneratedSerializer
+@Serializable(with = GameStateSerializer::class)
 data class GameState(
     /** All entities in the game, keyed by their ID */
     val entities: Map<EntityId, ComponentContainer> = emptyMap(),
@@ -89,9 +95,6 @@ data class GameState(
 
     /** Whether the game has ended */
     val gameOver: Boolean = false,
-
-    /** Current pending decision awaiting player input (null if engine is not paused) */
-    val pendingDecision: com.wingedsheep.engine.core.PendingDecision? = null,
 
     /** Active floating effects (temporary effects from spells like Giant Growth) */
     val floatingEffects: List<ActiveFloatingEffect> = emptyList(),
@@ -1178,23 +1181,19 @@ data class GameState(
     fun isPaused(): Boolean = pendingDecision != null
 
     /**
-     * Set a pending decision (pauses the engine).
+     * The question is stored once, with its answer continuation at the top of the stack.
      */
-    fun withPendingDecision(decision: com.wingedsheep.engine.core.PendingDecision): GameState =
-        copy(pendingDecision = decision)
+    val pendingDecision: com.wingedsheep.engine.core.PendingDecision?
+        get() = (continuationStack.lastOrNull() as? Suspension)?.question
 
     /**
-     * Clear the pending decision (resumes the engine).
+     * Queue automatic work before running its nested execution. Player questions must be installed
+     * with suspendForDecision so their answer continuation cannot be separated from the question.
      */
-    fun clearPendingDecision(): GameState =
-        copy(pendingDecision = null)
-
-    /**
-     * Push a continuation frame onto the stack.
-     * Used when pausing for a decision to remember how to resume.
-     */
-    fun pushContinuation(frame: ContinuationFrame): GameState =
-        copy(continuationStack = continuationStack + frame)
+    fun pushContinuation(frame: AutomaticContinuation): GameState {
+        check(pendingDecision == null) { "Automatic work cannot cover an unanswered suspension" }
+        return copy(continuationStack = continuationStack + frame)
+    }
 
     /**
      * Pop the top continuation frame from the stack.

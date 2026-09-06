@@ -10,6 +10,7 @@ import { useGameStore } from '@/store/gameStore.ts'
 export function BlightVariableSelector() {
   const state = useGameStore((s) => s.blightVariableSelectionState)
   const updateX = useGameStore((s) => s.updateBlightVariableX)
+  const interactionEpoch = useGameStore((state) => state.interactionEpoch)
   const cancel = useGameStore((s) => s.cancelBlightVariableSelection)
   const confirm = useGameStore((s) => s.confirmBlightVariableSelection)
 
@@ -85,10 +86,10 @@ export function BlightVariableSelector() {
         </p>
 
         <div style={styles.buttonRow}>
-          <button onClick={cancel} style={styles.cancelButton}>
+          <button onClick={() => cancel(interactionEpoch)} style={styles.cancelButton}>
             Cancel
           </button>
-          <button onClick={confirm} style={styles.confirmButton}>
+          <button onClick={() => confirm(interactionEpoch)} style={styles.confirmButton}>
             {selectedX > 0 ? 'Continue' : 'Cast'}
           </button>
         </div>

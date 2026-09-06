@@ -402,9 +402,8 @@ class MoveCollectionExecutor(
             )
         }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val sourceName = context.sourceId?.let { sourceId ->
-            stateWithRoutingId.getEntity(sourceId)?.get<CardComponent>()?.name
+            state.getEntity(sourceId)?.get<CardComponent>()?.name
         }
 
         val isOwnLibrary = destPlayerId == context.controllerId
@@ -415,7 +414,7 @@ class MoveCollectionExecutor(
                 else "Look at the top ${cards.size} cards of $libraryOwner library. Put them back in any order."
         }
 
-        val decision = ReorderLibraryDecision(
+        val decision = { decisionId: String -> ReorderLibraryDecision(
             id = decisionId,
             playerId = playerId,
             prompt = promptText,
@@ -426,10 +425,9 @@ class MoveCollectionExecutor(
             ),
             cards = cards,
             cardInfo = cardInfoMap
-        )
+        ) }
 
         val continuation = MoveCollectionOrderContinuation(
-            decisionId = decisionId,
             playerId = playerId,
             sourceId = context.sourceId,
             sourceName = sourceName,
@@ -439,21 +437,7 @@ class MoveCollectionExecutor(
             placement = placement
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = playerId,
-                    decisionType = "REORDER_LIBRARY",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 
     /**
@@ -574,7 +558,6 @@ class MoveCollectionExecutor(
             )
         }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val auraName = cardComponent.name
         val requirementInfo = TargetRequirementInfo(
             index = 0,
@@ -582,7 +565,7 @@ class MoveCollectionExecutor(
             minTargets = 1,
             maxTargets = 1
         )
-        val decision = ChooseTargetsDecision(
+        val decision = { decisionId: String -> ChooseTargetsDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = "Choose what $auraName enchants",
@@ -593,10 +576,9 @@ class MoveCollectionExecutor(
             ),
             targetRequirements = listOf(requirementInfo),
             legalTargets = mapOf(0 to legalTargets)
-        )
+        ) }
 
         val continuation = MoveCollectionAuraTargetContinuation(
-            decisionId = decisionId,
             auraId = auraId,
             controllerId = controllerId,
             destPlayerId = destPlayerId,
@@ -606,14 +588,7 @@ class MoveCollectionExecutor(
             underOwnersControl = underOwnersControl
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult(
-            state = stateWithContinuation,
-            events = events,
-            pendingDecision = decision
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation, emptyList()))
     }
 
     /**

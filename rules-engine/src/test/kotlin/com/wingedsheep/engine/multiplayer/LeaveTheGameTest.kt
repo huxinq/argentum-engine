@@ -1,5 +1,7 @@
 package com.wingedsheep.engine.multiplayer
 
+import com.wingedsheep.engine.core.suspendForDecision
+import com.wingedsheep.engine.core.MayAbilityContinuation
 import com.wingedsheep.engine.core.ActionProcessor
 import com.wingedsheep.engine.core.Concede
 import com.wingedsheep.engine.core.DecisionContext
@@ -390,20 +392,26 @@ class LeaveTheGameTest : FunSpec({
     }
 
     /** Pause the game on a yes/no decision addressed to [chooser], with a resolution frame beneath it. */
-    fun GameState.pausedOn(chooser: EntityId): GameState = withPendingDecision(
-        YesNoDecision(
-            id = "leave-test-decision",
-            playerId = chooser,
-            prompt = "You may pay 2 life.",
-            context = DecisionContext()
-        )
-    ).pushContinuation(
+    fun GameState.pausedOn(chooser: EntityId): GameState = pushContinuation(
         EffectContinuation(
-            decisionId = "leave-test-decision",
             remainingEffects = emptyList(),
             effectContext = EffectContext(sourceId = null, controllerId = chooser)
         )
-    )
+    ).suspendForDecision(
+        question = { id -> YesNoDecision(
+            id = id,
+            playerId = chooser,
+            prompt = "You may pay 2 life.",
+            context = DecisionContext()
+        ) },
+        answer = MayAbilityContinuation(
+            sourceName = null,
+            effectIfNo = null,
+            playerId = chooser,
+            effectIfYes = com.wingedsheep.sdk.dsl.Effects.LoseLife(2),
+            effectContext = EffectContext(sourceId = null, controllerId = chooser)
+        )
+    ).state
 
     test("conceding while owning the pending decision abandons it instead of deadlocking the table (CR 800.4f–h)") {
         val (base, players) = initGame(4)
@@ -431,7 +439,7 @@ class LeaveTheGameTest : FunSpec({
 
         val state = processor.process(paused, Concede(players[1])).result.newState
         state.pendingDecision?.playerId shouldBe players[2]
-        state.continuationStack.size shouldBe 1
+        state.continuationStack shouldBe paused.continuationStack
     }
 
     test("the abandoned decision's priority skips an active player who has also left") {

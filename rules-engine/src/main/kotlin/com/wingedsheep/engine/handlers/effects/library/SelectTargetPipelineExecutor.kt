@@ -76,9 +76,8 @@ class SelectTargetPipelineExecutor(
         effect: SelectTargetEffect,
         legalTargets: List<EntityId>
     ): EffectResult {
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val controllerId = context.controllerId
-        val sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name }
+        val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
 
         require(effect.requirement.count == 1) {
             "SelectTargetEffect offers one target slot, but ${effect.requirement.description} asks " +
@@ -91,7 +90,7 @@ class SelectTargetPipelineExecutor(
             maxTargets = 1
         )
 
-        val decision = ChooseTargetsDecision(
+        val decision = { decisionId: String -> ChooseTargetsDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = effect.description,
@@ -102,10 +101,9 @@ class SelectTargetPipelineExecutor(
             ),
             targetRequirements = listOf(requirementInfo),
             legalTargets = mapOf(0 to legalTargets)
-        )
+        ) }
 
         val continuation = SelectTargetPipelineContinuation(
-            decisionId = decisionId,
             playerId = controllerId,
             sourceId = context.sourceId,
             sourceName = sourceName,
@@ -113,20 +111,6 @@ class SelectTargetPipelineExecutor(
             storedCollections = context.pipeline.storedCollections
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = controllerId,
-                    decisionType = "CHOOSE_TARGETS",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 }

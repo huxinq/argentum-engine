@@ -312,29 +312,13 @@ internal class AttackPhaseManager(
         val solution = manaSolver.solve(state, attackingPlayer, manaCost)
         val autoPaySuggestion = solution?.sources?.map { it.entityId } ?: emptyList()
 
-        val (decisionId, allocatedState) = state.newRoutingId()
         val attackerNames = attackers.keys.mapNotNull { state.getEntity(it)?.get<CardComponent>()?.name }
         val attackerListing = when (attackerNames.size) {
             0 -> "your attackers"
             1 -> attackerNames.single()
             else -> attackerNames.dropLast(1).joinToString(", ") + " and " + attackerNames.last()
         }
-        val decision = com.wingedsheep.engine.core.SelectManaSourcesDecision(
-            id = decisionId,
-            playerId = attackingPlayer,
-            prompt = "Pay {$totalTax} to attack with $attackerListing",
-            context = com.wingedsheep.engine.core.DecisionContext(
-                sourceId = null,
-                sourceName = "Attack tax",
-                phase = com.wingedsheep.engine.core.DecisionPhase.COMBAT,
-            ),
-            availableSources = sourceOptions,
-            requiredCost = manaCost.toString(),
-            autoPaySuggestion = autoPaySuggestion,
-            canDecline = true,
-        )
         val continuation = com.wingedsheep.engine.core.AttackTaxManaSelectionContinuation(
-            decisionId = decisionId,
             attackingPlayer = attackingPlayer,
             attackers = attackers,
             manaCost = manaCost,
@@ -342,9 +326,24 @@ internal class AttackPhaseManager(
             autoPaySuggestion = autoPaySuggestion,
             bands = bands,
         )
-        return ExecutionResult.paused(
-            allocatedState.withPendingDecision(decision).pushContinuation(continuation),
-            decision,
+        return state.suspendForDecision(
+            question = { decisionId ->
+                com.wingedsheep.engine.core.SelectManaSourcesDecision(
+                    id = decisionId,
+                    playerId = attackingPlayer,
+                    prompt = "Pay {$totalTax} to attack with $attackerListing",
+                    context = com.wingedsheep.engine.core.DecisionContext(
+                        sourceId = null,
+                        sourceName = "Attack tax",
+                        phase = com.wingedsheep.engine.core.DecisionPhase.COMBAT,
+                    ),
+                    availableSources = sourceOptions,
+                    requiredCost = manaCost.toString(),
+                    autoPaySuggestion = autoPaySuggestion,
+                    canDecline = true,
+                )
+            },
+            answer = continuation
         )
     }
 
@@ -367,22 +366,7 @@ internal class AttackPhaseManager(
             state, attackingPlayer, payingAttacker, requirement
         )
         val attackerName = state.getEntity(payingAttacker)?.get<CardComponent>()?.name ?: "your attacker"
-        val (decisionId, allocatedState) = state.newRoutingId()
-        val decision = com.wingedsheep.engine.core.SelectCardsDecision(
-            id = decisionId,
-            playerId = attackingPlayer,
-            prompt = "Sacrifice ${requirement.count} ${requirement.sacrificeFilter.description} to attack with $attackerName",
-            context = com.wingedsheep.engine.core.DecisionContext(
-                sourceId = payingAttacker,
-                sourceName = attackerName,
-                phase = com.wingedsheep.engine.core.DecisionPhase.COMBAT,
-            ),
-            options = eligible,
-            minSelections = requirement.count,
-            maxSelections = requirement.count,
-        )
         val continuation = com.wingedsheep.engine.core.AttackSacrificeSelectionContinuation(
-            decisionId = decisionId,
             attackingPlayer = attackingPlayer,
             attackers = attackers,
             payingAttacker = payingAttacker,
@@ -392,9 +376,23 @@ internal class AttackPhaseManager(
             },
             bands = bands,
         )
-        return ExecutionResult.paused(
-            allocatedState.withPendingDecision(decision).pushContinuation(continuation),
-            decision,
+        return state.suspendForDecision(
+            question = { decisionId ->
+                com.wingedsheep.engine.core.SelectCardsDecision(
+                    id = decisionId,
+                    playerId = attackingPlayer,
+                    prompt = "Sacrifice ${requirement.count} ${requirement.sacrificeFilter.description} to attack with $attackerName",
+                    context = com.wingedsheep.engine.core.DecisionContext(
+                        sourceId = payingAttacker,
+                        sourceName = attackerName,
+                        phase = com.wingedsheep.engine.core.DecisionPhase.COMBAT,
+                    ),
+                    options = eligible,
+                    minSelections = requirement.count,
+                    maxSelections = requirement.count,
+                )
+            },
+            answer = continuation
         )
     }
 
@@ -421,22 +419,7 @@ internal class AttackPhaseManager(
             state, attackingPlayer, payingAttacker, requirement
         )
         val attackerName = state.getEntity(payingAttacker)?.get<CardComponent>()?.name ?: "your attacker"
-        val (decisionId, allocatedState) = state.newRoutingId()
-        val decision = com.wingedsheep.engine.core.SelectCardsDecision(
-            id = decisionId,
-            playerId = attackingPlayer,
-            prompt = "Sacrifice $count ${requirement.sacrificeFilter.description} to attack with $attackerName",
-            context = com.wingedsheep.engine.core.DecisionContext(
-                sourceId = payingAttacker,
-                sourceName = attackerName,
-                phase = com.wingedsheep.engine.core.DecisionPhase.COMBAT,
-            ),
-            options = eligible,
-            minSelections = count,
-            maxSelections = count,
-        )
         val continuation = com.wingedsheep.engine.core.AttackSacrificeSelectionContinuation(
-            decisionId = decisionId,
             attackingPlayer = attackingPlayer,
             attackers = attackers,
             payingAttacker = payingAttacker,
@@ -444,10 +427,24 @@ internal class AttackPhaseManager(
             remaining = remaining,
             bands = bands,
         )
-        return ExecutionResult.paused(
-            allocatedState.withPendingDecision(decision).pushContinuation(continuation),
-            decision,
-            carryEvents,
+        return state.suspendForDecision(
+            question = { decisionId ->
+                com.wingedsheep.engine.core.SelectCardsDecision(
+                    id = decisionId,
+                    playerId = attackingPlayer,
+                    prompt = "Sacrifice $count ${requirement.sacrificeFilter.description} to attack with $attackerName",
+                    context = com.wingedsheep.engine.core.DecisionContext(
+                        sourceId = payingAttacker,
+                        sourceName = attackerName,
+                        phase = com.wingedsheep.engine.core.DecisionPhase.COMBAT,
+                    ),
+                    options = eligible,
+                    minSelections = count,
+                    maxSelections = count,
+                )
+            },
+            answer = continuation,
+            events = carryEvents
         )
     }
 

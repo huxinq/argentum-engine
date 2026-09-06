@@ -43,8 +43,7 @@ class CompositeEffectExecutor(
             // The EffectContinuation will be below it, and checkForMoreContinuations will
             // process it after the sub-effect's continuation is handled.
             val stateForExecution = if (remainingEffects.isNotEmpty()) {
-                val continuation = EffectContinuation(
-                    decisionId = "pending", // Will be found by checkForMoreContinuations
+                val continuation = EffectContinuation( // Will be found by checkForMoreContinuations
                     remainingEffects = remainingEffects,
                     effectContext = currentContext
                 )
@@ -87,9 +86,8 @@ class CompositeEffectExecutor(
                 // Its continuation is on top of the stack.
                 // Our pre-pushed EffectContinuation is underneath, ready to be
                 // processed by checkForMoreContinuations after the sub-effect resolves.
-                return EffectResult.paused(
+                return EffectResult.propagatePause(
                     result.state,
-                    result.pendingDecision!!,
                     allEvents + result.events
                 )
             }

@@ -209,6 +209,8 @@ export interface StateUpdateMessage {
   readonly priorityMode?: PriorityModeValue | null
   /** Monotonically increasing version — used to detect missed messages */
   readonly stateVersion?: number
+  /** Live timeline on which actions in this snapshot originate. */
+  readonly interactionEpoch?: string | null
 }
 
 /**
@@ -278,6 +280,8 @@ export interface StateDeltaUpdateMessage {
   readonly priorityMode?: PriorityModeValue | null
   /** Monotonically increasing version — used to detect missed messages */
   readonly stateVersion?: number
+  /** Live timeline on which actions in this snapshot originate. */
+  readonly interactionEpoch?: string | null
 }
 
 // ============================================================================
@@ -822,6 +826,8 @@ export interface LegalActionTargetInfo {
  * Information about a legal action the player can take.
  */
 export interface LegalActionInfo {
+  /** Client-attached snapshot origin; preserved while targets and payments are selected. */
+  readonly interactionEpoch?: string | null
   readonly actionType: string
   readonly description: string
   readonly action: GameAction
@@ -2120,6 +2126,7 @@ export interface JoinGameMessage {
 export interface SubmitActionMessage {
   readonly type: 'submitAction'
   readonly action: GameAction
+  readonly interactionEpoch: string
 }
 
 /**
@@ -2323,8 +2330,8 @@ export function createJoinGameMessage(
   }
 }
 
-export function createSubmitActionMessage(action: GameAction): SubmitActionMessage {
-  return { type: 'submitAction', action }
+export function createSubmitActionMessage(action: GameAction, interactionEpoch: string): SubmitActionMessage {
+  return { type: 'submitAction', action, interactionEpoch }
 }
 
 export function createKeepHandMessage(): KeepHandMessage {

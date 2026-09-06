@@ -32,6 +32,14 @@ class ChooseNumberThenExecutor(
     ): EffectResult {
         val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name } ?: "Unknown"
 
+        val continuation = ChooseNumberThenContinuation(
+            controllerId = context.controllerId,
+            sourceId = context.sourceId,
+            sourceName = sourceName,
+            then = effect.then,
+            baseContext = context
+        )
+
         val decisionResult = decisionHandler.createNumberDecision(
             state = state,
             playerId = context.controllerId,
@@ -40,21 +48,12 @@ class ChooseNumberThenExecutor(
             prompt = effect.prompt,
             minValue = effect.minValue,
             maxValue = effect.maxValue,
-            phase = DecisionPhase.RESOLUTION
+            phase = DecisionPhase.RESOLUTION,
+            answer = continuation
         )
 
-        val continuation = ChooseNumberThenContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
-            controllerId = context.controllerId,
-            sourceId = context.sourceId,
-            sourceName = sourceName,
-            then = effect.then,
-            baseContext = context
-        )
-
-        return EffectResult.paused(
-            decisionResult.state.pushContinuation(continuation),
-            decisionResult.pendingDecision,
+        return EffectResult.propagatePause(
+            decisionResult.state,
             decisionResult.events
         )
     }

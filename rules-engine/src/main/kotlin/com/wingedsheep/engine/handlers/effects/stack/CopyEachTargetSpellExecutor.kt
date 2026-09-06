@@ -137,17 +137,14 @@ class CopyEachTargetSpellExecutor(
                 }
 
                 val spellName = cardComponent?.name ?: "spell"
-                val (routingId, stateWithRoutingId) = currentState.newRoutingId()
-                val decisionId = "copy-each-spell-target-$routingId"
                 val continuation = CopyEachSpellContinuation(
-                    decisionId = decisionId,
                     remainingSpellIds = queue,
                     controllerId = controllerId,
                     targetRequirements = targetReqs,
                     keywordsForCopy = keywordsForCopy,
                     removeLegendary = removeLegendary
                 )
-                val decision = ChooseTargetsDecision(
+                val decision = { decisionId: String -> ChooseTargetsDecision(
                     id = decisionId,
                     playerId = controllerId,
                     prompt = "Choose new targets for copy of $spellName",
@@ -160,10 +157,9 @@ class CopyEachTargetSpellExecutor(
                         TargetRequirementInfo(index = index, description = req.description)
                     },
                     legalTargets = legalTargetsMap
-                )
+                ) }
 
-                val paused = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
-                return ExecutionResult.paused(paused, decision, allEvents)
+                return currentState.suspendForDecision(decision, continuation, allEvents)
             }
 
             return ExecutionResult.success(currentState, allEvents)

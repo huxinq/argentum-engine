@@ -1,0 +1,19 @@
+[
+    {
+        "type": "DecisionSubmittedEvent",
+        "decisionId": "r0",
+        "playerId": "player-1",
+        "description": "(Astral Slide) Chose No"
+    },
+    {
+        "type": "CardsDrawnEvent",
+        "playerId": "player-1",
+        "count": 1,
+        "cardIds": [
+            "card-1005"
+        ],
+        "cardNames": [
+            "Forest"
+        ]
+    }
+]

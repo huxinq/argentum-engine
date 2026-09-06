@@ -67,7 +67,7 @@ export function ManaSourceSelectionUI({
     startDecisionSelection(selectionState)
 
     return () => {
-      cancelDecisionSelection()
+      cancelDecisionSelection(decision.id)
     }
   }, [decision.id, suggestionKey])
 
@@ -110,21 +110,21 @@ export function ManaSourceSelectionUI({
   const floatingCoversAll = coverage.every((pip) => pip.floating || pip.symbol === 'X')
 
   const handleAutoPay = () => {
-    submitManaSourcesDecision([], true)
-    cancelDecisionSelection()
+    submitManaSourcesDecision(decision.id, [], true)
+    cancelDecisionSelection(decision.id)
   }
 
   const handleConfirm = () => {
     if (!isCostCovered) return
     // A payment made entirely from mana the player floated themselves submits no sources; the
     // server distinguishes it from a refusal by the absence of the `declined` flag.
-    submitManaSourcesDecision(selectedManaSources, false, selectedWaterbend)
-    cancelDecisionSelection()
+    submitManaSourcesDecision(decision.id, selectedManaSources, false, selectedWaterbend)
+    cancelDecisionSelection(decision.id)
   }
 
   const handleDecline = () => {
-    submitManaSourcesDecision([], false, [], true)
-    cancelDecisionSelection()
+    submitManaSourcesDecision(decision.id, [], false, [], true)
+    cancelDecisionSelection(decision.id)
   }
 
   const payLabel = floatingCoversAll && selectedManaSources.length === 0 ? 'Pay' : `Pay (${selectedManaSources.length})`

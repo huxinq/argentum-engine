@@ -42,7 +42,7 @@ function ManaDistributionUI({
   }
 
   const handleConfirm = () => {
-    submitNumberDecision(firstAmount)
+    submitNumberDecision(decision.id, firstAmount)
   }
 
   // Render a row of mana symbols for a given color and count
@@ -282,7 +282,7 @@ export function ChooseNumberDecisionUI({
   const clamp = (n: number) => Math.min(decision.maxValue, Math.max(decision.minValue, n))
 
   const handleConfirm = () => {
-    submitNumberDecision(clamp(selectedNumber))
+    submitNumberDecision(decision.id, clamp(selectedNumber))
   }
 
   // A short range is fastest to tap as a button grid; a wide range (e.g.

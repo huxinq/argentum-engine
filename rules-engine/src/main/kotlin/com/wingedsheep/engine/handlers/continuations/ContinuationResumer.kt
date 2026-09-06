@@ -1,7 +1,8 @@
 package com.wingedsheep.engine.handlers.continuations
 
-import com.wingedsheep.engine.core.ContinuationFrame
+import com.wingedsheep.engine.core.AnswerContinuation
 import com.wingedsheep.engine.core.DecisionResponse
+import com.wingedsheep.engine.core.PendingDecision
 import com.wingedsheep.engine.core.ExecutionResult
 import com.wingedsheep.engine.state.GameState
 import kotlin.reflect.KClass
@@ -15,7 +16,7 @@ import kotlin.reflect.KClass
  *
  * @param T The specific continuation frame type this resumer handles
  */
-interface ContinuationResumer<T : ContinuationFrame> {
+interface ContinuationResumer<T : AnswerContinuation> {
     /**
      * The continuation frame type this resumer handles.
      * Used for automatic registration in the resumer registry.
@@ -27,6 +28,7 @@ interface ContinuationResumer<T : ContinuationFrame> {
      *
      * @param state The game state after popping the continuation
      * @param continuation The continuation frame describing what to resume
+     * @param question The question paired with this answer in the consumed suspension
      * @param response The player's decision response
      * @param checkForMore Callback to check for more continuations on the stack
      * @return The execution result with new state and events
@@ -34,6 +36,7 @@ interface ContinuationResumer<T : ContinuationFrame> {
     fun resume(
         state: GameState,
         continuation: T,
+        question: PendingDecision,
         response: DecisionResponse,
         checkForMore: CheckForMore
     ): ExecutionResult
@@ -44,7 +47,7 @@ interface ContinuationResumer<T : ContinuationFrame> {
  *
  * Reduces boilerplate when implementing [ContinuationResumerModule.resumers].
  */
-fun <T : ContinuationFrame> resumer(
+fun <T : AnswerContinuation> resumer(
     type: KClass<T>,
     handler: (GameState, T, DecisionResponse, CheckForMore) -> ExecutionResult
 ): ContinuationResumer<T> = object : ContinuationResumer<T> {
@@ -52,7 +55,23 @@ fun <T : ContinuationFrame> resumer(
     override fun resume(
         state: GameState,
         continuation: T,
+        question: PendingDecision,
         response: DecisionResponse,
         checkForMore: CheckForMore
     ): ExecutionResult = handler(state, continuation, response, checkForMore)
+}
+
+/** A resumer that also needs the paired question's represented choices. */
+fun <T : AnswerContinuation> questionResumer(
+    type: KClass<T>,
+    handler: (GameState, T, PendingDecision, DecisionResponse, CheckForMore) -> ExecutionResult
+): ContinuationResumer<T> = object : ContinuationResumer<T> {
+    override val frameType: KClass<T> = type
+    override fun resume(
+        state: GameState,
+        continuation: T,
+        question: PendingDecision,
+        response: DecisionResponse,
+        checkForMore: CheckForMore
+    ): ExecutionResult = handler(state, continuation, question, response, checkForMore)
 }

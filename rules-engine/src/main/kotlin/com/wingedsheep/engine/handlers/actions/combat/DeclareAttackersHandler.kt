@@ -59,9 +59,8 @@ class DeclareAttackersHandler(
             val triggerResult = triggerProcessor.processTriggers(result.newState, triggers)
 
             if (triggerResult.isPaused) {
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     triggerResult.state,
-                    triggerResult.pendingDecision!!,
                     result.events + triggerResult.events
                 )
             }
@@ -78,9 +77,8 @@ class DeclareAttackersHandler(
             // belt-and-suspenders bound.
             val cascadeResult = processAttackCascade(triggerResult.newState, triggerResult.events)
             if (cascadeResult.isPaused) {
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     cascadeResult.state,
-                    cascadeResult.pendingDecision!!,
                     result.events + triggerResult.events + cascadeResult.events
                 )
             }
@@ -112,7 +110,7 @@ class DeclareAttackersHandler(
             val roundResult = triggerProcessor.processTriggers(workingState, cascadeTriggers)
             emitted.addAll(roundResult.events)
             if (roundResult.isPaused) {
-                return ExecutionResult.paused(roundResult.state, roundResult.pendingDecision!!, emitted)
+                return ExecutionResult.propagatePause(roundResult.state, emitted)
             }
             workingState = roundResult.newState
             wave = roundResult.events.filterIsInstance<AbilityTriggeredEvent>().filter { it.causedByAttack }

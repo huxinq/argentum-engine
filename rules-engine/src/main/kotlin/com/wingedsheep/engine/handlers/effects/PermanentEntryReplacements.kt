@@ -1,5 +1,7 @@
 package com.wingedsheep.engine.handlers.effects
 
+import com.wingedsheep.engine.core.suspendForDecision
+import com.wingedsheep.engine.core.AnswerContinuation
 import com.wingedsheep.engine.core.ChooseColorDecision
 import com.wingedsheep.engine.core.ChooseNumberDecision
 import com.wingedsheep.engine.core.ChooseOptionDecision
@@ -269,8 +271,7 @@ object PermanentEntryReplacements {
 
         val filterDesc = effect.copyFilter.description
         val whereDesc = if (copyFromGraveyard) "$filterDesc card in a graveyard" else filterDesc
-        val decisionId = "clone-enters-bf-${entityId.value}"
-        val decision = SelectCardsDecision(
+        val question = { decisionId: String -> SelectCardsDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = if (effect.optional) "You may choose a $whereDesc to copy" else "Choose a $whereDesc to copy",
@@ -285,9 +286,8 @@ object PermanentEntryReplacements {
             // Battlefield copies click permanents in-place; graveyard copies use the modal
             // card-list overlay (graveyards aren't on the battlefield).
             useTargetingUI = !copyFromGraveyard
-        )
+        ) }
         val continuation = CloneEntersOnBattlefieldContinuation(
-            decisionId = decisionId,
             entityId = entityId,
             controllerId = controllerId,
             fromZone = fromZone,
@@ -300,8 +300,7 @@ object PermanentEntryReplacements {
             tappedIfCopied = effect.tappedIfCopied,
             additionalCounters = effect.additionalCounters,
         )
-        val paused = state.pushContinuation(continuation).withPendingDecision(decision)
-        return ExecutionResult.paused(paused, decision, carryEvents)
+        return state.suspendForDecision(question, continuation, carryEvents)
     }
 
     /**
@@ -338,24 +337,20 @@ object PermanentEntryReplacements {
         }
         val name = cardComponent.name
 
-        fun context(decisionId: String) = DecisionContext(
+        fun context() = DecisionContext(
             sourceId = entityId,
             sourceName = name,
             phase = DecisionPhase.RESOLUTION
         )
 
-        fun pause(decision: PendingDecision, continuation: ContinuationFrame): ExecutionResult {
-            val paused = state.pushContinuation(continuation).withPendingDecision(decision)
-            return ExecutionResult.paused(paused, decision, carryEvents)
-        }
+        fun pause(question: (String) -> PendingDecision, continuation: AnswerContinuation): ExecutionResult =
+            state.suspendForDecision(question, continuation, carryEvents)
 
         return when (choice.choiceType) {
             ChoiceType.COLOR -> {
-                val id = "choose-color-enters-${entityId.value}"
                 pause(
-                    ChooseColorDecision(id, chooserId, "Choose a color", context(id)),
+                    { id -> ChooseColorDecision(id, chooserId, "Choose a color", context()) },
                     EntersWithChoiceOnBattlefieldContinuation(
-                        decisionId = id,
                         entityId = entityId,
                         controllerId = controllerId,
                         choiceType = ChoiceType.COLOR,
@@ -366,18 +361,16 @@ object PermanentEntryReplacements {
 
             ChoiceType.CREATURE_TYPE -> {
                 val options = choice.allowedCreatureTypes ?: Subtype.ALL_CREATURE_TYPES
-                val id = "choose-creature-type-enters-${entityId.value}"
                 pause(
-                    ChooseOptionDecision(
+                    { id -> ChooseOptionDecision(
                         id = id,
                         playerId = chooserId,
                         prompt = "Choose a creature type",
-                        context = context(id),
+                        context = context(),
                         options = options,
                         defaultSearch = ""
-                    ),
+                    ) },
                     EntersWithChoiceOnBattlefieldContinuation(
-                        decisionId = id,
                         entityId = entityId,
                         controllerId = controllerId,
                         choiceType = ChoiceType.CREATURE_TYPE,
@@ -394,20 +387,18 @@ object PermanentEntryReplacements {
                         state.projectedState.isCreature(eid)
                 }
                 if (creatures.isEmpty()) return null
-                val id = "choose-creature-enters-${entityId.value}"
                 pause(
-                    SelectCardsDecision(
+                    { id -> SelectCardsDecision(
                         id = id,
                         playerId = controllerId,
                         prompt = "Choose another creature you control",
-                        context = context(id),
+                        context = context(),
                         options = creatures,
                         minSelections = 1,
                         maxSelections = 1,
                         useTargetingUI = true
-                    ),
+                    ) },
                     EntersWithChoiceOnBattlefieldContinuation(
-                        decisionId = id,
                         entityId = entityId,
                         controllerId = controllerId,
                         choiceType = ChoiceType.CREATURE_ON_BATTLEFIELD,
@@ -418,23 +409,18 @@ object PermanentEntryReplacements {
 
             ChoiceType.MODE -> {
                 if (choice.modeOptions.isEmpty()) return null
-                // A permanent granted multiple riot instances re-pauses on the same entity; suffix
-                // the id with the remaining count so each instance's decision is distinct (702.136b).
-                val id = "choose-mode-enters-${entityId.value}" +
-                    if (syntheticRiot) "-riot$syntheticRiotRemaining" else ""
                 pause(
-                    ChooseOptionDecision(
+                    { id -> ChooseOptionDecision(
                         id = id,
                         playerId = chooserId,
                         prompt = "Choose for $name",
-                        context = context(id),
+                        context = context(),
                         options = choice.modeOptions.map { it.label },
                         optionMetadata = choice.modeOptions.map {
                             OptionMetadata(id = it.id, description = it.description, iconKey = it.iconKey)
                         }
-                    ),
+                    ) },
                     EntersWithChoiceOnBattlefieldContinuation(
-                        decisionId = id,
                         entityId = entityId,
                         controllerId = controllerId,
                         choiceType = ChoiceType.MODE,
@@ -448,18 +434,16 @@ object PermanentEntryReplacements {
 
             ChoiceType.BASIC_LAND_TYPE -> {
                 val options = Subtype.ALL_BASIC_LAND_TYPES.toList()
-                val id = "choose-land-type-enters-${entityId.value}"
                 pause(
-                    ChooseOptionDecision(
+                    { id -> ChooseOptionDecision(
                         id = id,
                         playerId = chooserId,
                         prompt = "Choose a basic land type",
-                        context = context(id),
+                        context = context(),
                         options = options,
                         defaultSearch = ""
-                    ),
+                    ) },
                     EntersWithChoiceOnBattlefieldContinuation(
-                        decisionId = id,
                         entityId = entityId,
                         controllerId = controllerId,
                         choiceType = ChoiceType.BASIC_LAND_TYPE,
@@ -475,17 +459,15 @@ object PermanentEntryReplacements {
                 val opponentNames = opponentIds.map { pid ->
                     state.getEntity(pid)?.get<PlayerComponent>()?.name ?: "Player ${pid.value}"
                 }
-                val id = "choose-opponent-enters-${entityId.value}"
                 pause(
-                    ChooseOptionDecision(
+                    { id -> ChooseOptionDecision(
                         id = id,
                         playerId = chooserId,
                         prompt = "Choose an opponent",
-                        context = context(id),
+                        context = context(),
                         options = opponentNames
-                    ),
+                    ) },
                     EntersWithChoiceOnBattlefieldContinuation(
-                        decisionId = id,
                         entityId = entityId,
                         controllerId = controllerId,
                         choiceType = ChoiceType.OPPONENT,
@@ -506,42 +488,37 @@ object PermanentEntryReplacements {
                 val (baseState, lookEvents) = if (choice.lookAtOpponentHand) {
                     revealOpponentHandForEntersChoice(state, controllerId)
                 } else state to emptyList()
-                val id = "choose-card-name-enters-${entityId.value}"
                 val prompt = choice.cardNamePool.prompt
-                val decision = ChooseOptionDecision(
-                    id = id,
+                val question = { decisionId: String -> ChooseOptionDecision(
+                    id = decisionId,
                     playerId = chooserId,
                     prompt = prompt,
-                    context = context(id),
+                    context = context(),
                     options = options
-                )
+                ) }
                 val continuation = EntersWithChoiceOnBattlefieldContinuation(
-                    decisionId = id,
                     entityId = entityId,
                     controllerId = controllerId,
                     choiceType = ChoiceType.CARD_NAME,
                     cardNames = options,
                     fromZone = fromZone
                 )
-                val paused = baseState.pushContinuation(continuation).withPendingDecision(decision)
-                ExecutionResult.paused(paused, decision, carryEvents + lookEvents)
+                baseState.suspendForDecision(question, continuation, carryEvents + lookEvents)
             }
 
             ChoiceType.NUMBER -> {
                 // "As this enters, choose a number between [min] and [max]" for a permanent already
                 // on the battlefield (token / blink). Stored under [ChoiceSlot.CHOSEN_NUMBER].
-                val id = "choose-number-enters-${entityId.value}"
                 pause(
-                    ChooseNumberDecision(
+                    { id -> ChooseNumberDecision(
                         id = id,
                         playerId = chooserId,
                         prompt = "Choose a number between ${choice.minValue} and ${choice.maxValue}",
-                        context = context(id),
+                        context = context(),
                         minValue = choice.minValue,
                         maxValue = choice.maxValue
-                    ),
+                    ) },
                     EntersWithChoiceOnBattlefieldContinuation(
-                        decisionId = id,
                         entityId = entityId,
                         controllerId = controllerId,
                         choiceType = ChoiceType.NUMBER,

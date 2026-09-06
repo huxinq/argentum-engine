@@ -1,9 +1,9 @@
 package com.wingedsheep.engine.handlers.effects.permanent.counters
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.ChooseNumberDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.EffectResult
 import com.wingedsheep.engine.core.PayCountersContinuation
 import com.wingedsheep.engine.handlers.EffectContext
@@ -47,8 +47,7 @@ class PayCountersExecutor : EffectExecutor<PayCountersEffect> {
 
         val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = ChooseNumberDecision(
+        val decision = { decisionId: String -> ChooseNumberDecision(
             id = decisionId,
             playerId = playerId,
             prompt = "Pay how many ${effect.counterType} counters? (0-$current)",
@@ -59,29 +58,15 @@ class PayCountersExecutor : EffectExecutor<PayCountersEffect> {
             ),
             minValue = 0,
             maxValue = current
-        )
+        ) }
 
         val continuation = PayCountersContinuation(
-            decisionId = decisionId,
             playerId = playerId,
             counterType = effect.counterType,
             storeAmountAs = effect.storeAmountAs,
             sourceId = context.sourceId
         )
 
-        val newState = stateWithRoutingId
-            .withPendingDecision(decision)
-            .pushContinuation(continuation)
-
-        val events = listOf(
-            DecisionRequestedEvent(
-                decisionId = decisionId,
-                playerId = playerId,
-                decisionType = "CHOOSE_NUMBER",
-                prompt = decision.prompt
-            )
-        )
-
-        return EffectResult.paused(newState, decision, events)
+        return EffectResult.from(state.suspendForDecision(decision, continuation, eventType = "CHOOSE_NUMBER"))
     }
 }

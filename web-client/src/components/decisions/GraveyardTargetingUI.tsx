@@ -198,7 +198,7 @@ export function GraveyardTargetingUI({
         {...(onBack
           ? { onCancel: onBack, cancelText: '← Back' }
           : decision.canCancel
-            ? { onCancel: () => submitCancelDecision() }
+            ? { onCancel: () => submitCancelDecision(decision.id) }
             : {})}
       />
     )

@@ -31,35 +31,24 @@ class DecisionHandler {
         sourceName: String,
         requirements: List<TargetRequirementInfo>,
         legalTargets: Map<Int, List<EntityId>>,
-        effectHint: String? = null
+        effectHint: String? = null,
+        answer: AnswerContinuation,
     ): ExecutionResult {
-        val (decisionId, allocatedState) = state.newRoutingId()
-        val decision = ChooseTargetsDecision(
-            id = decisionId,
-            playerId = playerId,
-            prompt = "Choose targets for $sourceName",
-            context = DecisionContext(
-                sourceId = sourceId,
-                sourceName = sourceName,
-                phase = DecisionPhase.CASTING,
-                effectHint = effectHint
-            ),
-            targetRequirements = requirements,
-            legalTargets = legalTargets
-        )
-
-        val newState = allocatedState.withPendingDecision(decision)
-        return ExecutionResult.paused(
-            newState,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decision.id,
-                    playerId = playerId,
-                    decisionType = "CHOOSE_TARGETS",
-                    prompt = decision.prompt
-                )
-            )
+        return state.suspendForDecision(
+            question = { decisionId -> ChooseTargetsDecision(
+                id = decisionId,
+                playerId = playerId,
+                prompt = "Choose targets for $sourceName",
+                context = DecisionContext(
+                    sourceId = sourceId,
+                    sourceName = sourceName,
+                    phase = DecisionPhase.CASTING,
+                    effectHint = effectHint
+                ),
+                targetRequirements = requirements,
+                legalTargets = legalTargets
+            ) },
+            answer = answer,
         )
     }
 
@@ -82,38 +71,27 @@ class DecisionHandler {
          * Floor on the summed mana value of the selection — collect evidence N (CR 701.59a).
          * See [SelectCardsDecision.minTotalManaValue].
          */
-        minTotalManaValue: Int? = null
+        minTotalManaValue: Int? = null,
+        answer: AnswerContinuation,
     ): ExecutionResult {
-        val (decisionId, allocatedState) = state.newRoutingId()
-        val decision = SelectCardsDecision(
-            id = decisionId,
-            playerId = playerId,
-            prompt = prompt,
-            context = DecisionContext(
-                sourceId = sourceId,
-                sourceName = sourceName,
-                phase = phase
-            ),
-            options = options,
-            minSelections = minSelections,
-            maxSelections = maxSelections,
-            ordered = ordered,
-            useTargetingUI = useTargetingUI,
-            minTotalManaValue = minTotalManaValue
-        )
-
-        val newState = allocatedState.withPendingDecision(decision)
-        return ExecutionResult.paused(
-            newState,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decision.id,
-                    playerId = playerId,
-                    decisionType = "SELECT_CARDS",
-                    prompt = decision.prompt
-                )
-            )
+        return state.suspendForDecision(
+            question = { decisionId -> SelectCardsDecision(
+                id = decisionId,
+                playerId = playerId,
+                prompt = prompt,
+                context = DecisionContext(
+                    sourceId = sourceId,
+                    sourceName = sourceName,
+                    phase = phase
+                ),
+                options = options,
+                minSelections = minSelections,
+                maxSelections = maxSelections,
+                ordered = ordered,
+                useTargetingUI = useTargetingUI,
+                minTotalManaValue = minTotalManaValue
+            ) },
+            answer = answer,
         )
     }
 
@@ -129,35 +107,24 @@ class DecisionHandler {
         yesText: String = "Yes",
         noText: String = "No",
         phase: DecisionPhase = DecisionPhase.RESOLUTION,
-        abilityIdentity: com.wingedsheep.sdk.scripting.AbilityIdentity? = null
+        abilityIdentity: com.wingedsheep.sdk.scripting.AbilityIdentity? = null,
+        answer: AnswerContinuation,
     ): ExecutionResult {
-        val (decisionId, allocatedState) = state.newRoutingId()
-        val decision = YesNoDecision(
-            id = decisionId,
-            playerId = playerId,
-            prompt = prompt,
-            context = DecisionContext(
-                sourceId = sourceId,
-                sourceName = sourceName,
-                phase = phase,
-                abilityIdentity = abilityIdentity
-            ),
-            yesText = yesText,
-            noText = noText
-        )
-
-        val newState = allocatedState.withPendingDecision(decision)
-        return ExecutionResult.paused(
-            newState,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decision.id,
-                    playerId = playerId,
-                    decisionType = "YES_NO",
-                    prompt = decision.prompt
-                )
-            )
+        return state.suspendForDecision(
+            question = { decisionId -> YesNoDecision(
+                id = decisionId,
+                playerId = playerId,
+                prompt = prompt,
+                context = DecisionContext(
+                    sourceId = sourceId,
+                    sourceName = sourceName,
+                    phase = phase,
+                    abilityIdentity = abilityIdentity
+                ),
+                yesText = yesText,
+                noText = noText
+            ) },
+            answer = answer,
         )
     }
 
@@ -171,35 +138,24 @@ class DecisionHandler {
         sourceName: String,
         modes: List<ModeOption>,
         minModes: Int = 1,
-        maxModes: Int = 1
+        maxModes: Int = 1,
+        answer: AnswerContinuation,
     ): ExecutionResult {
-        val (decisionId, allocatedState) = state.newRoutingId()
-        val decision = ChooseModeDecision(
-            id = decisionId,
-            playerId = playerId,
-            prompt = "Choose ${if (minModes == maxModes) minModes else "$minModes-$maxModes"} mode(s) for $sourceName",
-            context = DecisionContext(
-                sourceId = sourceId,
-                sourceName = sourceName,
-                phase = DecisionPhase.CASTING
-            ),
-            modes = modes,
-            minModes = minModes,
-            maxModes = maxModes
-        )
-
-        val newState = allocatedState.withPendingDecision(decision)
-        return ExecutionResult.paused(
-            newState,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decision.id,
-                    playerId = playerId,
-                    decisionType = "CHOOSE_MODE",
-                    prompt = decision.prompt
-                )
-            )
+        return state.suspendForDecision(
+            question = { decisionId -> ChooseModeDecision(
+                id = decisionId,
+                playerId = playerId,
+                prompt = "Choose ${if (minModes == maxModes) minModes else "$minModes-$maxModes"} mode(s) for $sourceName",
+                context = DecisionContext(
+                    sourceId = sourceId,
+                    sourceName = sourceName,
+                    phase = DecisionPhase.CASTING
+                ),
+                modes = modes,
+                minModes = minModes,
+                maxModes = maxModes
+            ) },
+            answer = answer,
         )
     }
 
@@ -213,33 +169,22 @@ class DecisionHandler {
         sourceName: String?,
         prompt: String,
         phase: DecisionPhase = DecisionPhase.RESOLUTION,
-        availableColors: Set<Color> = Color.entries.toSet()
+        availableColors: Set<Color> = Color.entries.toSet(),
+        answer: AnswerContinuation,
     ): ExecutionResult {
-        val (decisionId, allocatedState) = state.newRoutingId()
-        val decision = ChooseColorDecision(
-            id = decisionId,
-            playerId = playerId,
-            prompt = prompt,
-            context = DecisionContext(
-                sourceId = sourceId,
-                sourceName = sourceName,
-                phase = phase
-            ),
-            availableColors = availableColors
-        )
-
-        val newState = allocatedState.withPendingDecision(decision)
-        return ExecutionResult.paused(
-            newState,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decision.id,
-                    playerId = playerId,
-                    decisionType = "CHOOSE_COLOR",
-                    prompt = decision.prompt
-                )
-            )
+        return state.suspendForDecision(
+            question = { decisionId -> ChooseColorDecision(
+                id = decisionId,
+                playerId = playerId,
+                prompt = prompt,
+                context = DecisionContext(
+                    sourceId = sourceId,
+                    sourceName = sourceName,
+                    phase = phase
+                ),
+                availableColors = availableColors
+            ) },
+            answer = answer,
         )
     }
 
@@ -254,35 +199,24 @@ class DecisionHandler {
         prompt: String,
         totalAmount: Int,
         targets: List<EntityId>,
-        minPerTarget: Int = 0
+        minPerTarget: Int = 0,
+        answer: AnswerContinuation,
     ): ExecutionResult {
-        val (decisionId, allocatedState) = state.newRoutingId()
-        val decision = DistributeDecision(
-            id = decisionId,
-            playerId = playerId,
-            prompt = prompt,
-            context = DecisionContext(
-                sourceId = sourceId,
-                sourceName = sourceName,
-                phase = DecisionPhase.RESOLUTION
-            ),
-            totalAmount = totalAmount,
-            targets = targets,
-            minPerTarget = minPerTarget
-        )
-
-        val newState = allocatedState.withPendingDecision(decision)
-        return ExecutionResult.paused(
-            newState,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decision.id,
-                    playerId = playerId,
-                    decisionType = "DISTRIBUTE",
-                    prompt = decision.prompt
-                )
-            )
+        return state.suspendForDecision(
+            question = { decisionId -> DistributeDecision(
+                id = decisionId,
+                playerId = playerId,
+                prompt = prompt,
+                context = DecisionContext(
+                    sourceId = sourceId,
+                    sourceName = sourceName,
+                    phase = DecisionPhase.RESOLUTION
+                ),
+                totalAmount = totalAmount,
+                targets = targets,
+                minPerTarget = minPerTarget
+            ) },
+            answer = answer,
         )
     }
 
@@ -296,33 +230,22 @@ class DecisionHandler {
         sourceName: String?,
         prompt: String,
         objects: List<EntityId>,
-        phase: DecisionPhase = DecisionPhase.RESOLUTION
+        phase: DecisionPhase = DecisionPhase.RESOLUTION,
+        answer: AnswerContinuation,
     ): ExecutionResult {
-        val (decisionId, allocatedState) = state.newRoutingId()
-        val decision = OrderObjectsDecision(
-            id = decisionId,
-            playerId = playerId,
-            prompt = prompt,
-            context = DecisionContext(
-                sourceId = sourceId,
-                sourceName = sourceName,
-                phase = phase
-            ),
-            objects = objects
-        )
-
-        val newState = allocatedState.withPendingDecision(decision)
-        return ExecutionResult.paused(
-            newState,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decision.id,
-                    playerId = playerId,
-                    decisionType = "ORDER_OBJECTS",
-                    prompt = decision.prompt
-                )
-            )
+        return state.suspendForDecision(
+            question = { decisionId -> OrderObjectsDecision(
+                id = decisionId,
+                playerId = playerId,
+                prompt = prompt,
+                context = DecisionContext(
+                    sourceId = sourceId,
+                    sourceName = sourceName,
+                    phase = phase
+                ),
+                objects = objects
+            ) },
+            answer = answer,
         )
     }
 
@@ -336,35 +259,24 @@ class DecisionHandler {
         sourceName: String,
         cards: List<EntityId>,
         numberOfPiles: Int = 2,
-        pileLabels: List<String> = emptyList()
+        pileLabels: List<String> = emptyList(),
+        answer: AnswerContinuation,
     ): ExecutionResult {
-        val (decisionId, allocatedState) = state.newRoutingId()
-        val decision = SplitPilesDecision(
-            id = decisionId,
-            playerId = playerId,
-            prompt = "Separate cards into $numberOfPiles piles",
-            context = DecisionContext(
-                sourceId = sourceId,
-                sourceName = sourceName,
-                phase = DecisionPhase.RESOLUTION
-            ),
-            cards = cards,
-            numberOfPiles = numberOfPiles,
-            pileLabels = pileLabels
-        )
-
-        val newState = allocatedState.withPendingDecision(decision)
-        return ExecutionResult.paused(
-            newState,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decision.id,
-                    playerId = playerId,
-                    decisionType = "SPLIT_PILES",
-                    prompt = decision.prompt
-                )
-            )
+        return state.suspendForDecision(
+            question = { decisionId -> SplitPilesDecision(
+                id = decisionId,
+                playerId = playerId,
+                prompt = "Separate cards into $numberOfPiles piles",
+                context = DecisionContext(
+                    sourceId = sourceId,
+                    sourceName = sourceName,
+                    phase = DecisionPhase.RESOLUTION
+                ),
+                cards = cards,
+                numberOfPiles = numberOfPiles,
+                pileLabels = pileLabels
+            ) },
+            answer = answer,
         )
     }
 
@@ -379,34 +291,23 @@ class DecisionHandler {
         prompt: String,
         minValue: Int,
         maxValue: Int,
-        phase: DecisionPhase = DecisionPhase.RESOLUTION
+        phase: DecisionPhase = DecisionPhase.RESOLUTION,
+        answer: AnswerContinuation,
     ): ExecutionResult {
-        val (decisionId, allocatedState) = state.newRoutingId()
-        val decision = ChooseNumberDecision(
-            id = decisionId,
-            playerId = playerId,
-            prompt = prompt,
-            context = DecisionContext(
-                sourceId = sourceId,
-                sourceName = sourceName,
-                phase = phase
-            ),
-            minValue = minValue,
-            maxValue = maxValue
-        )
-
-        val newState = allocatedState.withPendingDecision(decision)
-        return ExecutionResult.paused(
-            newState,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decision.id,
-                    playerId = playerId,
-                    decisionType = "CHOOSE_NUMBER",
-                    prompt = decision.prompt
-                )
-            )
+        return state.suspendForDecision(
+            question = { decisionId -> ChooseNumberDecision(
+                id = decisionId,
+                playerId = playerId,
+                prompt = prompt,
+                context = DecisionContext(
+                    sourceId = sourceId,
+                    sourceName = sourceName,
+                    phase = phase
+                ),
+                minValue = minValue,
+                maxValue = maxValue
+            ) },
+            answer = answer,
         )
     }
 

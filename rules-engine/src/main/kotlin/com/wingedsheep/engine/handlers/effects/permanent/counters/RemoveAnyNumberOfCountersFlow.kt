@@ -1,10 +1,10 @@
 package com.wingedsheep.engine.handlers.effects.permanent.counters
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.ChooseNumberDecision
 import com.wingedsheep.engine.core.CountersRemovedEvent
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.GameEvent
 import com.wingedsheep.engine.core.RemoveAnyNumberOfCountersContinuation
 import com.wingedsheep.engine.state.GameState
@@ -100,9 +100,7 @@ object RemoveAnyNumberOfCountersFlow {
                 continue
             }
 
-            val (decisionId, stateWithRoutingId) = currentState.newRoutingId()
-            currentState = stateWithRoutingId
-            val decision = ChooseNumberDecision(
+            val decision = { decisionId: String -> ChooseNumberDecision(
                 id = decisionId,
                 playerId = controllerId,
                 prompt = "Remove how many $kind counters from $targetName? ($minHere-$maxHere)",
@@ -113,9 +111,8 @@ object RemoveAnyNumberOfCountersFlow {
                 ),
                 minValue = minHere,
                 maxValue = maxHere
-            )
+            ) }
             val continuation = RemoveAnyNumberOfCountersContinuation(
-                decisionId = decisionId,
                 targetId = targetId,
                 controllerId = controllerId,
                 currentCounterType = kind,
@@ -128,18 +125,11 @@ object RemoveAnyNumberOfCountersFlow {
                 remainingBudget = remainingBudget,
                 remainingFloor = remainingFloor
             )
-            events.add(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = controllerId,
-                    decisionType = "CHOOSE_NUMBER",
-                    prompt = decision.prompt
-                )
-            )
+            val pause = currentState.suspendForDecision(decision, continuation, events)
             return Outcome.Prompt(
-                state = currentState.withPendingDecision(decision).pushContinuation(continuation),
-                decision = decision,
-                events = events
+                state = pause.state,
+                decision = pause.pendingDecision as ChooseNumberDecision,
+                events = pause.events
             )
         }
 

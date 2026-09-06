@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.handlers.effects.composite
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.CoinFlipChoiceContinuation
 import com.wingedsheep.engine.core.EffectResult
 import com.wingedsheep.engine.handlers.DecisionHandler
@@ -47,18 +48,11 @@ class FlipCoinExecutor(
         )
 
         return when (resolution) {
-            is CoinFlipService.Resolution.NeedsChoice -> EffectResult.paused(
-                resolution.state.pushContinuation(
-                    CoinFlipChoiceContinuation(
-                        decisionId = resolution.decision.id,
+            is CoinFlipService.Resolution.NeedsChoice -> EffectResult.from(resolution.state.suspendForDecision(resolution.question, CoinFlipChoiceContinuation(
                         effect = effect,
                         effectContext = context,
                         pending = resolution.pending
-                    )
-                ),
-                resolution.decision,
-                resolution.events
-            )
+                    ), resolution.events))
 
             is CoinFlipService.Resolution.Resolved -> {
                 val subEffect = subEffectFor(effect, resolution.results)

@@ -93,7 +93,7 @@ export function ChooseOptionDecisionUI({
 
   const handleConfirm = () => {
     if (selectedIndex !== null) {
-      submitOptionDecision(selectedIndex)
+      submitOptionDecision(decision.id, selectedIndex)
     }
   }
 
@@ -239,7 +239,7 @@ export function ChooseOptionDecisionUI({
         </button>
         {decision.canCancel && (
           <button
-            onClick={() => submitCancelDecision()}
+            onClick={() => submitCancelDecision(decision.id)}
             className={styles.confirmButton}
           >
             Cancel

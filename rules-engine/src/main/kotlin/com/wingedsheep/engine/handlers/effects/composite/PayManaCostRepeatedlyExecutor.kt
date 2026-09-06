@@ -66,6 +66,13 @@ class PayManaCostRepeatedlyExecutor(
 
         val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
 
+        val continuation = PayManaCostRepeatedlyContinuation(
+            playerId = playerId,
+            cost = effect.cost,
+            maxTimes = cap,
+            storeCountAs = effect.storeCountAs
+        )
+
         val decisionResult = decisionHandler.createNumberDecision(
             state = state,
             playerId = playerId,
@@ -74,22 +81,14 @@ class PayManaCostRepeatedlyExecutor(
             prompt = "How many times do you want to pay ${effect.cost}? (1-$cap)",
             minValue = 1,
             maxValue = cap,
-            phase = DecisionPhase.RESOLUTION
+            phase = DecisionPhase.RESOLUTION,
+            answer = continuation
         )
         val decision = decisionResult.pendingDecision
             ?: return EffectResult.error(state, "Failed to create repeat-count decision")
 
-        val continuation = PayManaCostRepeatedlyContinuation(
-            decisionId = decision.id,
-            playerId = playerId,
-            cost = effect.cost,
-            maxTimes = cap,
-            storeCountAs = effect.storeCountAs
-        )
-
-        return EffectResult.paused(
-            decisionResult.state.pushContinuation(continuation),
-            decision,
+        return EffectResult.propagatePause(
+            decisionResult.state,
             decisionResult.events
         )
     }

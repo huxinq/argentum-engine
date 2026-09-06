@@ -41,9 +41,8 @@ class ConcedeHandler(
 
         val sbaResult = sbaChecker.checkAndApply(marked)
         if (sbaResult.isPaused) {
-            return ExecutionResult.paused(
+            return ExecutionResult.propagatePause(
                 sbaResult.state,
-                sbaResult.pendingDecision!!,
                 listOf(lostEvent) + sbaResult.events
             )
         }

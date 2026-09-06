@@ -69,14 +69,12 @@ sealed interface PendingGameEvent {
      * Most event domains return null (no optional replacement support), causing the
      * processor to treat the effect as mandatory via [applyReplacement].
      *
-     * @param decisionId Unique ID for the decision
      * @param gathered The matched replacement effect
      * @param state Current game state
      * @param context Execution context
      * @return An [OptionalPromptResult] with the decision and continuation, or null
      */
     fun createOptionalPrompt(
-        decisionId: String,
         gathered: GatheredReplacement,
         state: GameState,
         context: EffectContext?
@@ -92,7 +90,7 @@ sealed interface PendingGameEvent {
      * (CR 614.11a — complete the replacement, then resume the sequence).
      * Most event domains return null (no remainder concept).
      */
-    fun remainderContinuation(state: GameState): ContinuationFrame? = null
+    fun remainderContinuation(state: GameState): AutomaticContinuation? = null
 
     /**
      * Return a continuation frame that **performs this event** once every
@@ -110,7 +108,7 @@ sealed interface PendingGameEvent {
      * Called on the **modified** event, so implementations read their own
      * post-replacement fields.
      */
-    fun performContinuation(state: GameState): ContinuationFrame? = null
+    fun performContinuation(state: GameState): AutomaticContinuation? = null
 
     /**
      * Draw event: a player is about to draw cards from their library.
@@ -154,7 +152,7 @@ sealed interface PendingGameEvent {
             }
         }
 
-        override fun remainderContinuation(state: GameState): ContinuationFrame? {
+        override fun remainderContinuation(state: GameState): AutomaticContinuation? {
             if (remainingDraws > 0) {
                 return DrawReplacementRemainingDrawsContinuation(
                     drawingPlayerId = playerId,
@@ -169,8 +167,7 @@ sealed interface PendingGameEvent {
         }
 
         override fun createOptionalPrompt(
-            decisionId: String,
-            gathered: GatheredReplacement,
+                gathered: GatheredReplacement,
             state: GameState,
             context: EffectContext?
         ): OptionalPromptResult? {
@@ -192,7 +189,7 @@ sealed interface PendingGameEvent {
                 }
             }
 
-            val decision = YesNoDecision(
+            val question = { decisionId: String -> YesNoDecision(
                 id = decisionId,
                 playerId = affectedPlayerId,
                 prompt = prompt,
@@ -201,10 +198,9 @@ sealed interface PendingGameEvent {
                     sourceName = cardName,
                     phase = DecisionPhase.RESOLUTION
                 )
-            )
+            ) }
 
             val continuation = StaticDrawReplacementContinuation(
-                decisionId = decisionId,
                 drawingPlayerId = playerId,
                 sourceId = sourceEntityId ?: EntityId(""),
                 sourceName = cardName,
@@ -217,7 +213,7 @@ sealed interface PendingGameEvent {
             )
 
             return OptionalPromptResult(
-                decision = decision,
+                question = question,
                 continuation = continuation
             )
         }
@@ -272,7 +268,7 @@ sealed interface PendingGameEvent {
          * have run that loop has already returned, so the modified instruction is carried
          * forward as a draw of [totalCount] with the announcement marked as done.
          */
-        override fun performContinuation(state: GameState): ContinuationFrame? {
+        override fun performContinuation(state: GameState): AutomaticContinuation? {
             if (totalCount <= 0) return null
             return DrawReplacementRemainingDrawsContinuation(
                 drawingPlayerId = playerId,
@@ -287,12 +283,12 @@ sealed interface PendingGameEvent {
 /**
  * Result of [PendingGameEvent.createOptionalPrompt].
  *
- * @property decision The yes/no decision to present to the player
+ * @property question The unallocated yes/no question to present to the player
  * @property continuation The continuation frame to resume after the player answers
  */
 data class OptionalPromptResult(
-    val decision: PendingDecision,
-    val continuation: ContinuationFrame
+    val question: (String) -> PendingDecision,
+    val continuation: AnswerContinuation
 )
 
 private fun matchesPlayerFilter(

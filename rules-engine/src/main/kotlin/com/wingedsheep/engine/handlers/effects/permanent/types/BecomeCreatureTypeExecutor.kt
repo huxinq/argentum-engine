@@ -55,8 +55,7 @@ class BecomeCreatureTypeExecutor : EffectExecutor<BecomeCreatureTypeEffect> {
             .firstOrNull { it.value in allCreatureTypes }
             ?.value
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = ChooseOptionDecision(
+        val decision = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = context.controllerId,
             prompt = "Choose a creature type",
@@ -67,10 +66,9 @@ class BecomeCreatureTypeExecutor : EffectExecutor<BecomeCreatureTypeEffect> {
             ),
             options = allCreatureTypes,
             defaultSearch = defaultSearch
-        )
+        ) }
 
         val continuation = BecomeCreatureTypeContinuation(
-            decisionId = decisionId,
             controllerId = context.controllerId,
             sourceId = context.sourceId,
             sourceName = sourceName,
@@ -79,20 +77,6 @@ class BecomeCreatureTypeExecutor : EffectExecutor<BecomeCreatureTypeEffect> {
             duration = effect.duration
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = context.controllerId,
-                    decisionType = "CHOOSE_OPTION",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 }

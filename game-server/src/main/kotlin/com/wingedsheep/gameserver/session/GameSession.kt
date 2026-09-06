@@ -809,41 +809,68 @@ class GameSession(
     }
 
     /**
-     * Execute an action received from a browser. Validate the delivered prompt's generation
-     * before any checkpoint, replay, or idempotency bookkeeping can change, then pass only the
-     * canonical engine response to [executeAction]. Never accept an unwrapped engine ID here.
+     * Decode the browser's transport envelope. Legacy decision replies carry their origin in
+     * the prefixed ID; ordinary actions must carry an explicit origin. Neither path may borrow
+     * this session's current epoch to authorize a choice made on an unknown timeline.
      */
     fun executeClientAction(
         playerId: EntityId,
         action: GameAction,
         messageId: String? = null,
-    ): ActionResult = synchronized(stateLock) {
-        val engineAction = if (action is SubmitDecision) {
-            val pending = gameState?.pendingDecision
-                ?: return ActionResult.Failure("No pending decision")
-            if (action.response.decisionId != liveDecisionId(pending.id)) {
-                return ActionResult.Failure("Decision is no longer current")
+        interactionEpoch: String? = null,
+    ): ActionResult {
+        val submission = if (action is SubmitDecision) {
+            val wireId = action.response.decisionId
+            val separator = wireId.indexOf(':')
+            if (separator <= 0 || separator == wireId.lastIndex) {
+                return ActionResult.Failure("Decision has no originating interaction")
             }
-            action.copy(response = action.response.withDecisionId(pending.id))
+            val embeddedEpoch = wireId.substring(0, separator)
+            if (interactionEpoch != null && interactionEpoch != embeddedEpoch) {
+                return ActionResult.Failure("Decision origin does not match its envelope")
+            }
+            LiveActionSubmission(
+                action.copy(response = action.response.withDecisionId(wireId.substring(separator + 1))),
+                embeddedEpoch,
+                messageId,
+            )
         } else {
-            action
+            LiveActionSubmission(
+                action,
+                interactionEpoch ?: return ActionResult.Failure("Action has no originating interaction"),
+                messageId,
+            )
         }
-        executeAction(playerId, engineAction, messageId)
+        return executeLiveAction(playerId, submission)
+            ?: ActionResult.Failure("Action is no longer current")
     }
 
-    /**
-     * Apply a delayed AI result only on the live timeline that supplied its snapshot.
-     * Null means obsolete delivery, not an invalid game action: callers must discard it without
-     * fallbacks, rejection accounting, or a broadcast. Validation and execution share the lock.
-     */
+    /** Decode the asynchronous AI envelope without replacing its captured origin. */
     fun executeAiAction(
         playerId: EntityId,
         action: GameAction,
         interactionEpoch: String?,
-    ): ActionResult? = synchronized(stateLock) {
-        if (interactionEpoch == null || interactionEpoch != liveInteractionEpoch) return null
-        executeAction(playerId, action)
+    ): ActionResult? {
+        val origin = interactionEpoch ?: return null
+        return executeLiveAction(playerId, LiveActionSubmission(action, origin))
     }
+
+    /**
+     * Shared live ingress for both transports and AI recovery actions. Validate the origin and
+     * current decision before checkpoints, replay, or idempotency bookkeeping can change.
+     * Null is obsolete delivery, not an invalid action: asynchronous callers must discard it
+     * without fallbacks, rejection accounting, or a broadcast.
+     */
+    fun executeLiveAction(playerId: EntityId, submission: LiveActionSubmission): ActionResult? = synchronized(stateLock) {
+        if (!isCurrentInteraction(submission.interactionEpoch)) return null
+        val action = submission.action
+        if (action is SubmitDecision && action.response.decisionId != gameState?.pendingDecision?.id) return null
+        executeAction(playerId, action, submission.messageId)
+    }
+
+    /** Must be checked under [stateLock], alongside the mutation it authorizes. */
+    private fun isCurrentInteraction(interactionEpoch: String?): Boolean =
+        interactionEpoch != null && interactionEpoch == liveInteractionEpoch
 
     /**
      * Execute an immediate engine action. Browser submissions use [executeClientAction];
@@ -1038,7 +1065,7 @@ class GameSession(
         lastSentState[playerId] = stateWithLog
         val version = stateVersions.merge(playerId, 1L) { old, inc -> old + inc }!!
 
-        val interactionEpoch = if (useEngineDecisionIds) liveInteractionEpoch else null
+        val interactionEpoch = liveInteractionEpoch
         if (previous != null) {
             // Compute delta and send smaller message
             val delta = StateDiffCalculator.computeDelta(previous, stateWithLog)
@@ -1540,7 +1567,7 @@ class GameSession(
      * failed fallback. Null tells the caller to discard the obsolete recovery without broadcasting.
      */
     fun noteAiActionRejected(playerId: EntityId, interactionEpoch: String?): Boolean? = synchronized(stateLock) {
-        if (interactionEpoch == null || interactionEpoch != liveInteractionEpoch) return null
+        if (!isCurrentInteraction(interactionEpoch)) return null
         val conceded = noteActionRejected(playerId)
         if (conceded) playerConcedes(playerId)
         conceded

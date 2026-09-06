@@ -104,11 +104,11 @@ object StateProgress {
      * What is stripped, and why none of it is a game fact:
      * - `entities` — read separately by [objectHash], which drops [IGNORED_COMPONENTS].
      * - `rng`, `nextEntityId`, `timestamp` — advanced by resolving anything at all.
-     * - `nextRoutingId` — allocates decision and continuation references, not game facts.
+     * - `nextRoutingId` — allocates question, delayed-trigger, and band references, not game facts.
      * - `priorityPlayerId`, `priorityPassedBy` — whose turn it is to speak, not what is true. This
      *   is what makes an action's own resolution comparable with the position it started from.
      * - `continuationStack` — counted instead; see [digest].
-     * - `pendingDecision` — the same mid-resolution bookkeeping, and never set on a quiet state.
+     *   Its derived `pendingDecision` disappears with the stack.
      *
      * `projectedState` is a body property rather than a constructor parameter, so it is already out
      * of `hashCode` — and would be redundant anyway, being a pure function of what is left.
@@ -122,7 +122,6 @@ object StateProgress {
         priorityPlayerId = null,
         priorityPassedBy = emptySet(),
         continuationStack = emptyList(),
-        pendingDecision = null,
     )
 
     /**

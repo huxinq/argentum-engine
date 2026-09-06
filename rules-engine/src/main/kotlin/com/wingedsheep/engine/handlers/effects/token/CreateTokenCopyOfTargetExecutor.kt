@@ -329,11 +329,8 @@ class CreateTokenCopyOfTargetExecutor(
                 if (remaining > 0) {
                     // The rest of the batch resumes below the choice's continuation once this token's
                     // choice (and every granted-riot instance) has fully resolved.
-                    val (continuationId, stateWithRoutingId) = newState.newRoutingId()
-                    newState = stateWithRoutingId
-                    pausedState = stateWithRoutingId.pushContinuation(
+                    pausedState = newState.pushContinuation(
                         com.wingedsheep.engine.core.CreateTokenCopyRemainingContinuation(
-                            decisionId = "create-token-copy-remaining-$continuationId",
                             effect = effect,
                             context = context,
                             controllerId = controllerId,

@@ -30,8 +30,7 @@ class ChooseCreatureTypePipelineExecutor : EffectExecutor<ChooseCreatureTypeEffe
         val allCreatureTypes = Subtype.ALL_CREATURE_TYPES
         val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = ChooseOptionDecision(
+        val decision = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = "Choose a creature type",
@@ -41,10 +40,9 @@ class ChooseCreatureTypePipelineExecutor : EffectExecutor<ChooseCreatureTypeEffe
                 phase = DecisionPhase.RESOLUTION
             ),
             options = allCreatureTypes
-        )
+        ) }
 
         val continuation = ChooseOptionPipelineContinuation(
-            decisionId = decisionId,
             controllerId = controllerId,
             sourceId = context.sourceId,
             sourceName = sourceName,
@@ -52,21 +50,7 @@ class ChooseCreatureTypePipelineExecutor : EffectExecutor<ChooseCreatureTypeEffe
             options = allCreatureTypes
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = controllerId,
-                    decisionType = "CHOOSE_OPTION",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 
     companion object {

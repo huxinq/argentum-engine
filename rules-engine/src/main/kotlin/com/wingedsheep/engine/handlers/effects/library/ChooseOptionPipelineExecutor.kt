@@ -55,8 +55,7 @@ class ChooseOptionPipelineExecutor(
             OptionType.CARD_NAME -> "Name a card"
         }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = ChooseOptionDecision(
+        val decision = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = prompt,
@@ -66,10 +65,9 @@ class ChooseOptionPipelineExecutor(
                 phase = DecisionPhase.RESOLUTION
             ),
             options = options
-        )
+        ) }
 
         val continuation = ChooseOptionPipelineContinuation(
-            decisionId = decisionId,
             controllerId = controllerId,
             sourceId = context.sourceId,
             sourceName = sourceName,
@@ -77,20 +75,6 @@ class ChooseOptionPipelineExecutor(
             options = options
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = controllerId,
-                    decisionType = "CHOOSE_OPTION",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 }

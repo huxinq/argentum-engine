@@ -45,7 +45,7 @@ export function SplitPilesUI({
       const pileIndex = finalAssignments[cardId] ?? 0
       piles[pileIndex]?.push(cardId)
     }
-    submitSplitPilesDecision(piles)
+    submitSplitPilesDecision(decision.id, piles)
   }
 
   // For single-card surveil: clicking a pile button directly assigns and submits

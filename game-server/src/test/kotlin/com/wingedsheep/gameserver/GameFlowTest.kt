@@ -39,7 +39,9 @@ class GameFlowTest : GameServerTestBase() {
         } else {
             val state = player1.client.requireLatestState()
             val priorityPlayer = if (state.priorityPlayerId == player1.id) player1 else player2
-            priorityPlayer.client.send(ClientMessage.SubmitAction(PassPriority(priorityPlayer.id)))
+            priorityPlayer.client.send(ClientMessage.SubmitAction(
+                PassPriority(priorityPlayer.id), interactionEpoch = priorityPlayer.client.latestInteractionEpoch()
+            ))
         }
 
         eventually(5.seconds) {

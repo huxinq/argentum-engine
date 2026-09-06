@@ -725,7 +725,7 @@ export function BoardNamePlate({
       return
     }
     if (isValidDecisionTarget) {
-      submitTargetsDecision({ 0: [playerId] })
+      submitTargetsDecision(pendingDecision!.id, { 0: [playerId] })
       return
     }
     if (isValidDecisionSelection) {

@@ -1,10 +1,10 @@
 package com.wingedsheep.engine.handlers.effects.permanent.counters
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.AddCountersUpToContinuation
 import com.wingedsheep.engine.core.ChooseNumberDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.EffectResult
 import com.wingedsheep.engine.handlers.DynamicAmountEvaluator
 import com.wingedsheep.engine.handlers.EffectContext
@@ -51,8 +51,7 @@ class AddCountersUpToExecutor(
         val targetName = state.getEntity(targetId)?.get<CardComponent>()?.name ?: ""
         val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = ChooseNumberDecision(
+        val decision = { decisionId: String -> ChooseNumberDecision(
             id = decisionId,
             playerId = context.controllerId,
             prompt = "Put how many ${effect.counterType} counters on $targetName? (0-$max)",
@@ -63,29 +62,15 @@ class AddCountersUpToExecutor(
             ),
             minValue = 0,
             maxValue = max
-        )
+        ) }
 
         val continuation = AddCountersUpToContinuation(
-            decisionId = decisionId,
             targetId = targetId,
             controllerId = context.controllerId,
             counterType = effect.counterType,
             sourceId = context.sourceId
         )
 
-        val newState = stateWithRoutingId
-            .withPendingDecision(decision)
-            .pushContinuation(continuation)
-
-        val events = listOf(
-            DecisionRequestedEvent(
-                decisionId = decisionId,
-                playerId = context.controllerId,
-                decisionType = "CHOOSE_NUMBER",
-                prompt = decision.prompt
-            )
-        )
-
-        return EffectResult.paused(newState, decision, events)
+        return EffectResult.from(state.suspendForDecision(decision, continuation, eventType = "CHOOSE_NUMBER"))
     }
 }

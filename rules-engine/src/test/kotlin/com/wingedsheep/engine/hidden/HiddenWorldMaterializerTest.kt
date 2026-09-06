@@ -1,5 +1,7 @@
 package com.wingedsheep.engine.hidden
 
+import com.wingedsheep.engine.core.Suspension
+import com.wingedsheep.engine.core.SelectFromCollectionContinuation
 import com.wingedsheep.engine.core.CardEntityFactory
 import com.wingedsheep.engine.core.CardsSelectedResponse
 import com.wingedsheep.engine.core.CastSpell
@@ -646,7 +648,7 @@ class HiddenWorldMaterializerTest : ScenarioTestBase() {
                 minSelections = 0,
                 maxSelections = 0,
             )
-            val source = game.state.copy(pendingDecision = pending)
+            val source = game.state.copy(continuationStack = listOf(Suspension(pending, SelectFromCollectionContinuation(game.player1Id, null, null, emptyList(), "selected", null))))
             val sourceRng = source.rng
             val rejectingMaterializer = HiddenWorldMaterializer(
                 cardRegistry,

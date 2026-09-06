@@ -118,21 +118,15 @@ class CollectEvidenceContinuationResumer : ContinuationResumerModule {
             ordered = false,
             phase = DecisionPhase.RESOLUTION,
             minTotalManaValue = chosen,
+            answer = CollectEvidenceContinuation(
+                playerId = continuation.playerId,
+                amount = chosen,
+                sourceName = continuation.sourceName,
+                storeAmountAs = continuation.storeAmountAs,
+            ),
         )
 
-        return ExecutionResult.paused(
-            decisionResult.state.pushContinuation(
-                CollectEvidenceContinuation(
-                    decisionId = decisionResult.pendingDecision!!.id,
-                    playerId = continuation.playerId,
-                    amount = chosen,
-                    sourceName = continuation.sourceName,
-                    storeAmountAs = continuation.storeAmountAs,
-                )
-            ),
-            decisionResult.pendingDecision,
-            decisionResult.events,
-        )
+        return decisionResult
     }
 
     /**

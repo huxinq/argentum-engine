@@ -41,6 +41,13 @@ class ConvertCountersToTokensExecutor(
 
         val sourceName = sourceEntity.get<CardComponent>()?.name ?: "this permanent"
 
+        val continuation = ConvertCountersToTokensContinuation(
+            sourceId = sourceId,
+            controllerId = context.controllerId,
+            counterType = effect.counterType,
+            tokenFactory = effect.tokenFactory
+        )
+
         val decisionResult = decisionHandler.createNumberDecision(
             state = state,
             playerId = context.controllerId,
@@ -49,22 +56,14 @@ class ConvertCountersToTokensExecutor(
             prompt = "Remove how many ${effect.counterType.description} counters from $sourceName? (0-$available)",
             minValue = 0,
             maxValue = available,
-            phase = DecisionPhase.RESOLUTION
+            phase = DecisionPhase.RESOLUTION,
+            answer = continuation
         )
 
         val decision = decisionResult.pendingDecision!!
 
-        val continuation = ConvertCountersToTokensContinuation(
-            decisionId = decision.id,
-            sourceId = sourceId,
-            controllerId = context.controllerId,
-            counterType = effect.counterType,
-            tokenFactory = effect.tokenFactory
-        )
-
-        return EffectResult.paused(
-            decisionResult.state.pushContinuation(continuation),
-            decision,
+        return EffectResult.propagatePause(
+            decisionResult.state,
             decisionResult.events
         )
     }

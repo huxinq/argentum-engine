@@ -161,6 +161,15 @@ class ForceSacrificeExecutor(
             append(" to sacrifice")
         }
 
+        val continuation = SacrificeContinuation(
+            playerId = playerId,
+            sourceId = sourceId,
+            sourceName = sourceName,
+            remainingPlayers = remainingPlayers,
+            filter = filter,
+            count = count
+        )
+
         val decisionResult = decisionHandler.createCardSelectionDecision(
             state = state,
             playerId = playerId,
@@ -172,24 +181,14 @@ class ForceSacrificeExecutor(
             maxSelections = maxSelections,
             ordered = false,
             phase = DecisionPhase.RESOLUTION,
-            useTargetingUI = true
+            useTargetingUI = true,
+            answer = continuation
         )
 
-        val continuation = SacrificeContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
-            playerId = playerId,
-            sourceId = sourceId,
-            sourceName = sourceName,
-            remainingPlayers = remainingPlayers,
-            filter = filter,
-            count = count
-        )
+        val stateWithContinuation = decisionResult.state
 
-        val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
-
-        return EffectResult.paused(
+        return EffectResult.propagatePause(
             stateWithContinuation,
-            decisionResult.pendingDecision,
             priorEvents + decisionResult.events
         )
     }

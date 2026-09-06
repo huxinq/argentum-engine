@@ -10,6 +10,7 @@ import { useGameStore } from '@/store/gameStore.ts'
 export function PayXLifeSelector() {
   const state = useGameStore((s) => s.payXLifeSelectionState)
   const updateX = useGameStore((s) => s.updatePayXLifeX)
+  const interactionEpoch = useGameStore((state) => state.interactionEpoch)
   const cancel = useGameStore((s) => s.cancelPayXLifeSelection)
   const confirm = useGameStore((s) => s.confirmPayXLifeSelection)
 
@@ -85,10 +86,10 @@ export function PayXLifeSelector() {
         </p>
 
         <div style={styles.buttonRow}>
-          <button onClick={cancel} style={styles.cancelButton}>
+          <button onClick={() => cancel(interactionEpoch)} style={styles.cancelButton}>
             Cancel
           </button>
-          <button onClick={confirm} style={styles.confirmButton}>
+          <button onClick={() => confirm(interactionEpoch)} style={styles.confirmButton}>
             Cast
           </button>
         </div>

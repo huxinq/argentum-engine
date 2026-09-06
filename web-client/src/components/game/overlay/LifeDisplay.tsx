@@ -160,7 +160,7 @@ export function LifeDisplay({
     // Handle pending decision targeting
     if (isChooseTargetsDecision && isValidDecisionTarget) {
       // Submit the decision with this player as the target
-      submitTargetsDecision({ 0: [playerId] })
+      submitTargetsDecision(pendingDecision!.id, { 0: [playerId] })
       return
     }
 

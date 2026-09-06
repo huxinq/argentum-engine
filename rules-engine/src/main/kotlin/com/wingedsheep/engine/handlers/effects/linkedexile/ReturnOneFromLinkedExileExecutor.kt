@@ -72,10 +72,9 @@ class ReturnOneFromLinkedExileExecutor : EffectExecutor<ReturnOneFromLinkedExile
         }
 
         // Multiple eligible cards — create a decision
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
 
         val cardInfoMap = playerCards.associateWith { cardId ->
-            val container = stateWithRoutingId.getEntity(cardId)
+            val container = state.getEntity(cardId)
             val cardComponent = container?.get<CardComponent>()
             SearchCardInfo(
                 name = cardComponent?.name ?: "Unknown",
@@ -87,7 +86,7 @@ class ReturnOneFromLinkedExileExecutor : EffectExecutor<ReturnOneFromLinkedExile
 
         val sourceName = sourceContainer.get<CardComponent>()?.name ?: "Unknown"
 
-        val decision = SelectCardsDecision(
+        val decision = { decisionId: String -> SelectCardsDecision(
             id = decisionId,
             playerId = activePlayerId,
             prompt = "Choose a card to return to the battlefield",
@@ -101,30 +100,15 @@ class ReturnOneFromLinkedExileExecutor : EffectExecutor<ReturnOneFromLinkedExile
             maxSelections = 1,
             ordered = false,
             cardInfo = cardInfoMap
-        )
+        ) }
 
         val continuation = ReturnFromLinkedExileContinuation(
-            decisionId = decisionId,
             playerId = activePlayerId,
             sourceId = sourceId,
             eligibleCards = playerCards
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = activePlayerId,
-                    decisionType = "SELECT_CARDS",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 
     companion object {

@@ -43,14 +43,13 @@ class ChainCopyExecutor(
             ?: return EffectResult.success(state)
 
         // Step 2: Pre-push after-action continuation (sits below any inner continuations)
-        val (afterActionId, stateWithRoutingId) = state.newRoutingId()
+
         val afterActionContinuation = ChainCopyAfterActionContinuation(
-            decisionId = "chain-after-action-$afterActionId",
             effect = effect,
             recipientPlayerId = recipientPlayerId,
             sourceId = context.sourceId
         )
-        val stateWithContinuation = stateWithRoutingId.pushContinuation(afterActionContinuation)
+        val stateWithContinuation = state.pushContinuation(afterActionContinuation)
 
         // Step 3: Execute the inner action via the registry
         val actionResult = effectExecutor(stateWithContinuation, effect.action, context)
@@ -135,9 +134,8 @@ class ChainCopyExecutor(
         }
 
         // Build the yes/no decision
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val sourceName = context.sourceId?.let { sourceId ->
-            stateWithRoutingId.getEntity(sourceId)?.get<CardComponent>()?.name
+            state.getEntity(sourceId)?.get<CardComponent>()?.name
         } ?: effect.spellName
 
         val copyCost = effect.copyCost
@@ -153,7 +151,7 @@ class ChainCopyExecutor(
             copyCost.description.replaceFirstChar { it.uppercase() } to "Decline"
         }
 
-        val decision = YesNoDecision(
+        val decision = { decisionId: String -> YesNoDecision(
             id = decisionId,
             playerId = recipientPlayerId,
             prompt = prompt,
@@ -164,29 +162,15 @@ class ChainCopyExecutor(
             ),
             yesText = yesText,
             noText = noText
-        )
+        ) }
 
         val continuation = ChainCopyDecisionContinuation(
-            decisionId = decisionId,
             effect = effect,
             copyControllerId = recipientPlayerId,
             sourceId = context.sourceId
         )
 
-        val newState = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
-
-        return EffectResult.paused(
-            newState,
-            decision,
-            events + listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = recipientPlayerId,
-                    decisionType = "YES_NO",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation, events = events + emptyList()))
     }
 
     companion object {

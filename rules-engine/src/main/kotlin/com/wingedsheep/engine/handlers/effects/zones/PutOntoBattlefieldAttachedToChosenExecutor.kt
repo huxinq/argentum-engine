@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.handlers.effects.zones
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.ChooseTargetsDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
@@ -121,7 +122,6 @@ class PutOntoBattlefieldAttachedToChosenExecutor(
         }
 
         // Pause for the controller to choose a host.
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val cardName = cardComponent.name
         val requirementInfo = TargetRequirementInfo(
             index = 0,
@@ -129,33 +129,25 @@ class PutOntoBattlefieldAttachedToChosenExecutor(
             minTargets = 1,
             maxTargets = 1
         )
-        val decision = ChooseTargetsDecision(
+        val decision = { decisionId: String -> ChooseTargetsDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = "Choose what $cardName attaches to",
             context = DecisionContext(
                 sourceId = context.sourceId,
-                sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name },
+                sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name },
                 phase = DecisionPhase.RESOLUTION
             ),
             targetRequirements = listOf(requirementInfo),
             legalTargets = mapOf(0 to legalHosts)
-        )
+        ) }
 
         val continuation = PutOntoBattlefieldAttachedToChosenContinuation(
-            decisionId = decisionId,
             cardId = cardId,
             controllerId = controllerId
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult(
-            state = stateWithContinuation,
-            events = emptyList(),
-            pendingDecision = decision
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation, emptyList()))
     }
 
     private fun findCurrentZone(state: GameState, entityId: com.wingedsheep.sdk.model.EntityId): ZoneKey? {

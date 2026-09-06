@@ -16,11 +16,10 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class ChainCopyAfterActionContinuation(
-    override val decisionId: String,
     val effect: ChainCopyEffect,
     val recipientPlayerId: EntityId,
     val sourceId: EntityId?
-) : ContinuationFrame
+) : AutomaticContinuation
 
 /**
  * Resume after the affected player decides whether to copy the chain spell (yes/no).
@@ -34,11 +33,10 @@ data class ChainCopyAfterActionContinuation(
  */
 @Serializable
 data class ChainCopyDecisionContinuation(
-    override val decisionId: String,
     val effect: ChainCopyEffect,
     val copyControllerId: EntityId,
     val sourceId: EntityId?
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume after the copying player selects a cost resource (land to sacrifice / card to discard).
@@ -52,12 +50,11 @@ data class ChainCopyDecisionContinuation(
  */
 @Serializable
 data class ChainCopyCostContinuation(
-    override val decisionId: String,
     val effect: ChainCopyEffect,
     val copyControllerId: EntityId,
     val sourceId: EntityId?,
     val candidateOptions: List<EntityId>
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume after the copying player selects a target for the chain copy.
@@ -72,9 +69,8 @@ data class ChainCopyCostContinuation(
  */
 @Serializable
 data class ChainCopyTargetContinuation(
-    override val decisionId: String,
     val effect: ChainCopyEffect,
     val copyControllerId: EntityId,
     val sourceId: EntityId?,
     val candidateTargets: List<EntityId>
-) : ContinuationFrame
+) : AnswerContinuation

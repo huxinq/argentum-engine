@@ -1138,32 +1138,31 @@ internal class BlockPhaseManager(
         val solution = manaSolver.solve(state, blockingPlayer, manaCost)
         val autoPaySuggestion = solution?.sources?.map { it.entityId } ?: emptyList()
 
-        val (decisionId, allocatedState) = state.newRoutingId()
-        val decision = com.wingedsheep.engine.core.SelectManaSourcesDecision(
-            id = decisionId,
-            playerId = blockingPlayer,
-            prompt = "Pay {$totalTax} to block with the declared creatures",
-            context = com.wingedsheep.engine.core.DecisionContext(
-                sourceId = null,
-                sourceName = "Block tax",
-                phase = com.wingedsheep.engine.core.DecisionPhase.COMBAT,
-            ),
-            availableSources = sourceOptions,
-            requiredCost = manaCost.toString(),
-            autoPaySuggestion = autoPaySuggestion,
-            canDecline = true,
-        )
         val continuation = com.wingedsheep.engine.core.BlockTaxManaSelectionContinuation(
-            decisionId = decisionId,
             blockingPlayer = blockingPlayer,
             blockers = blockers,
             manaCost = manaCost,
             availableSources = sourceOptions,
             autoPaySuggestion = autoPaySuggestion,
         )
-        return ExecutionResult.paused(
-            allocatedState.withPendingDecision(decision).pushContinuation(continuation),
-            decision,
+        return state.suspendForDecision(
+            question = { decisionId ->
+                com.wingedsheep.engine.core.SelectManaSourcesDecision(
+                    id = decisionId,
+                    playerId = blockingPlayer,
+                    prompt = "Pay {$totalTax} to block with the declared creatures",
+                    context = com.wingedsheep.engine.core.DecisionContext(
+                        sourceId = null,
+                        sourceName = "Block tax",
+                        phase = com.wingedsheep.engine.core.DecisionPhase.COMBAT,
+                    ),
+                    availableSources = sourceOptions,
+                    requiredCost = manaCost.toString(),
+                    autoPaySuggestion = autoPaySuggestion,
+                    canDecline = true,
+                )
+            },
+            answer = continuation
         )
     }
 }

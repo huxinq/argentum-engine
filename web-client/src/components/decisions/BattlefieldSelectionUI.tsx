@@ -34,7 +34,7 @@ export function BattlefieldSelectionUI({
 
     // Cleanup when unmounting
     return () => {
-      cancelDecisionSelection()
+      cancelDecisionSelection(decision.id)
     }
   }, [decision.id])
 
@@ -57,14 +57,14 @@ export function BattlefieldSelectionUI({
 
   const handleConfirm = () => {
     if (canConfirm && decisionSelectionState) {
-      submitDecision(decisionSelectionState.selectedOptions)
-      cancelDecisionSelection()
+      submitDecision(decision.id, decisionSelectionState.selectedOptions)
+      cancelDecisionSelection(decision.id)
     }
   }
 
   const handleSkip = () => {
-    submitDecision([])
-    cancelDecisionSelection()
+    submitDecision(decision.id, [])
+    cancelDecisionSelection(decision.id)
   }
 
   // Side banner (similar to ChooseTargetsDecision)

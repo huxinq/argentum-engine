@@ -22,8 +22,8 @@ class CombatContinuationResumer(
         resumer(DamageAssignmentContinuation::class) { state, continuation, response, _ ->
             resumeDamageAssignment(state, continuation, response)
         },
-        resumer(CombatResolutionContinuation::class) { state, continuation, response, _ ->
-            resumeCombatResolution(state, continuation, response)
+        questionResumer(CombatResolutionContinuation::class) { state, continuation, question, response, _ ->
+            resumeCombatResolution(state, continuation, question, response)
         },
         resumer(AssignAsUnblockedContinuation::class) { state, continuation, response, _ ->
             resumeAssignAsUnblocked(state, continuation, response)
@@ -73,7 +73,7 @@ class CombatContinuationResumer(
             continuation.effectContext
         )
         if (result.isPaused) {
-            return ExecutionResult.paused(result.state, result.pendingDecision!!, result.events)
+            return ExecutionResult.propagatePause(result.state, result.events)
         }
         return checkForMore(result.state, result.events)
     }
@@ -137,7 +137,7 @@ class CombatContinuationResumer(
      * Apply a [CombatResolutionResponse] (the combat-damage board).
      *
      * The current chooser is `continuation.pendingChoosers.first()`. We honor only the edges they
-     * own (filtered by [DamageEdge.editableBy] on the cached `decisionShape`), bake those amounts
+     * own (filtered by [DamageEdge.editableBy] on the paired question), bake those amounts
      * on top of the shape's current amounts, and:
      *
      * - if more choosers remain (CR 510.1c sequencing, or the CR 702.22j/k two-actor banding case),
@@ -150,13 +150,15 @@ class CombatContinuationResumer(
     fun resumeCombatResolution(
         state: GameState,
         continuation: CombatResolutionContinuation,
+        question: PendingDecision,
         response: DecisionResponse,
     ): ExecutionResult {
         if (response !is CombatResolutionResponse) {
             return ExecutionResult.error(state, "Expected combat resolution response for combat resolution decision")
         }
 
-        val shape = continuation.decisionShape
+        val shape = question as? CombatResolutionDecision
+            ?: return ExecutionResult.error(state, "Expected paired combat resolution question")
         val submittingPlayer = continuation.pendingChoosers.firstOrNull()
         val remainingChoosers = continuation.pendingChoosers.drop(1)
 

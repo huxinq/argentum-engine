@@ -36,6 +36,7 @@ import type { ClientAttacker, EntityId } from './types'
 import { GameOverReason } from './types'
 
 export default function App() {
+  const interactionEpoch = useGameStore((state) => state.interactionEpoch)
   const connectionStatus = useGameStore((state) => state.connectionStatus)
   const gameState = useGameStore((state) => state.gameState)
   const gameOverState = useGameStore((state) => state.gameOverState)
@@ -209,6 +210,7 @@ export default function App() {
 
       // Enter combat mode — pre-select mandatory attackers
       startCombat({
+        interactionEpoch: attackersAction?.interactionEpoch ?? null,
         mode: 'declareAttackers',
         actingSeat: attackersAction?.action.type === 'DeclareAttackers' ? attackersAction.action.playerId : null,
         stickyDefenderId: soleDefenderId,
@@ -277,6 +279,7 @@ export default function App() {
 
       // Enter combat mode
       startCombat({
+        interactionEpoch: blockersAction?.interactionEpoch ?? null,
         mode: 'declareBlockers',
         actingSeat: blockersAction?.action.type === 'DeclareBlockers' ? blockersAction.action.playerId : null,
         stickyDefenderId: null,
@@ -373,32 +376,32 @@ export default function App() {
 
 
       {/* X cost selection overlay (when casting spells with X in cost) */}
-      {showGame && <XCostSelector />}
+      {showGame && <XCostSelector key={interactionEpoch} />}
 
       {/* Blight X variable additional cost overlay (e.g., Soul Immolation) */}
-      {showGame && <BlightVariableSelector />}
-      {showGame && <PayXLifeSelector />}
+      {showGame && <BlightVariableSelector key={interactionEpoch} />}
+      {showGame && <PayXLifeSelector key={interactionEpoch} />}
 
       {/* Choose-N modal (Spree / "choose one or more") mode-selection panel */}
-      {showGame && <ModalModeSelector />}
+      {showGame && <ModalModeSelector key={interactionEpoch} />}
 
       {/* Convoke selection overlay (when casting spells with Convoke) */}
-      {showGame && <ConvokeSelector />}
+      {showGame && <ConvokeSelector key={interactionEpoch} />}
 
       {/* Tap-for-generic selection overlay (improvise CR 702.126 / waterbend costs) */}
-      {showGame && <TapForGenericSelector />}
+      {showGame && <TapForGenericSelector key={interactionEpoch} />}
 
       {/* Harmonize creature-tap overlay (when casting from graveyard via Harmonize) */}
-      {showGame && <HarmonizeSelector />}
+      {showGame && <HarmonizeSelector key={interactionEpoch} />}
 
       {/* Tap-for-power selection overlay (crewing Vehicles / saddling Mounts) */}
-      {showGame && <TapForPowerSelector />}
+      {showGame && <TapForPowerSelector key={interactionEpoch} />}
 
       {/* Delve selection overlay (when casting spells with Delve) */}
-      {showGame && <DelveSelector />}
+      {showGame && <DelveSelector key={interactionEpoch} />}
 
       {/* Damage distribution overlay (for DividedDamageEffect spells like Forked Lightning) */}
-      {showGame && <DamageDistributionModal />}
+      {showGame && <DamageDistributionModal key={interactionEpoch} />}
 
       {/* Decision overlay (for pending decisions like discard to hand size) */}
       {showGame && <DecisionUI />}

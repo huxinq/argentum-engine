@@ -1,0 +1,23 @@
+[
+    {
+        "type": "DecisionSubmittedEvent",
+        "decisionId": "r0",
+        "playerId": "player-1",
+        "description": "Chose Yes"
+    },
+    {
+        "type": "LifeChangedEvent",
+        "playerId": "player-1",
+        "oldLife": 21,
+        "newLife": 22,
+        "reason": "LIFE_GAIN",
+        "firstThisTurn": false
+    },
+    {
+        "type": "DecisionRequestedEvent",
+        "decisionId": "r1",
+        "playerId": "player-1",
+        "decisionType": "YES_NO",
+        "prompt": "Gain one life again?"
+    }
+]

@@ -92,6 +92,11 @@ class TappedForManaBonusResolver(
         }
 
         val sourceName = state.getEntity(item.auraId)?.get<CardComponent>()?.name
+        val continuation = ChooseAnyColorTapBonusContinuation(
+            current = item,
+            remaining = remaining,
+        )
+
         val decision = decisionHandler.createColorDecision(
             state = state,
             playerId = item.controllerId,
@@ -100,15 +105,11 @@ class TappedForManaBonusResolver(
             prompt = "Choose a color for the additional mana",
             phase = DecisionPhase.RESOLUTION,
             availableColors = available,
+            answer = continuation
         )
-        val continuation = ChooseAnyColorTapBonusContinuation(
-            decisionId = decision.pendingDecision!!.id,
-            current = item,
-            remaining = remaining,
-        )
-        return ExecutionResult.paused(
-            decision.state.pushContinuation(continuation),
-            decision.pendingDecision,
+
+        return ExecutionResult.propagatePause(
+            decision.state,
             accumulatedEvents + decision.events,
         )
     }

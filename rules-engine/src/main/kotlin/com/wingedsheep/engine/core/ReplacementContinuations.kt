@@ -23,12 +23,11 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class ReplacementChoiceContinuation(
-    override val decisionId: String,
     val pendingEvent: PendingGameEvent,
     val options: List<GatheredReplacement>,
     val alreadyApplied: Set<ReplacementEffectIdentity>,
     val context: EffectContext? = null
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Continuation frame for resuming the original execution context after a
@@ -39,9 +38,7 @@ data class ReplacementChoiceContinuation(
  * stack. After it completes, this frame auto-resumes to carry the original
  * context forward so the caller can continue.
  *
- * This uses decisionId = "pending" for auto-resumption.
+ * Its stack position supplies the resumption relationship; it has no question ID.
  */
 @Serializable
-data class ReplacementResolveContinuation(
-    override val decisionId: String
-) : ContinuationFrame
+data object ReplacementResolveContinuation : AutomaticContinuation

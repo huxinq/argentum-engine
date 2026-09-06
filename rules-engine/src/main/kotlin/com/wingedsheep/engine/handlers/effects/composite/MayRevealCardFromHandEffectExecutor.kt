@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.handlers.effects.composite
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.CardsRevealedEvent
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
@@ -66,8 +67,7 @@ class MayRevealCardFromHandEffectExecutor(
         val sourceName = context.sourceId
             ?.let { state.getEntity(it)?.get<CardComponent>()?.name }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = SelectCardsDecision(
+        val decision = { decisionId: String -> SelectCardsDecision(
             id = decisionId,
             playerId = revealer,
             prompt = "You may reveal a ${effect.filter.description} card from your hand",
@@ -79,10 +79,9 @@ class MayRevealCardFromHandEffectExecutor(
             options = eligible,
             minSelections = 0,
             maxSelections = 1,
-        )
+        ) }
 
         val continuation = MayRevealCardFromHandContinuation(
-            decisionId = decisionId,
             revealerId = revealer,
             sourceId = context.sourceId,
             sourceName = sourceName,
@@ -90,10 +89,7 @@ class MayRevealCardFromHandEffectExecutor(
             effectContext = context,
         )
 
-        val paused = stateWithRoutingId
-            .pushContinuation(continuation)
-            .withPendingDecision(decision)
-        return EffectResult.paused(paused, decision)
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 
     private fun runOtherwise(

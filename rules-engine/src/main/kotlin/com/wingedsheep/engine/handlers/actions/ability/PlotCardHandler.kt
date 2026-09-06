@@ -272,9 +272,8 @@ class PlotCardHandler(
         if (triggers.isNotEmpty()) {
             val triggerResult = triggerProcessor.processTriggers(currentState, triggers)
             if (triggerResult.isPaused) {
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     triggerResult.state,
-                    triggerResult.pendingDecision!!,
                     events + triggerResult.events
                 )
             }

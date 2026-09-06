@@ -1,5 +1,7 @@
 package com.wingedsheep.engine.mechanics.mana
 
+import com.wingedsheep.engine.core.Suspension
+import com.wingedsheep.engine.core.restoreSuspension
 import com.wingedsheep.engine.core.ExecutionResult
 import com.wingedsheep.engine.core.ManaSourceOption
 import com.wingedsheep.engine.core.ManaSourcesSelectedResponse
@@ -53,8 +55,7 @@ object ManaPaymentWindow {
 
     /**
      * Builds a mana-payment window for [cost] — the source menu, the auto-pay suggestion, and the
-     * decision itself. The caller pushes its own continuation with the returned `decisionId` and
-     * pauses; [floatSelectedMana] applies whatever the player submits.
+     * decision itself, inside the fresh-suspension question factory; [floatSelectedMana] applies whatever the player submits.
      *
      * Sources carrying a secondary tap sub-cost (Springleaf Drum) are left out. Resolving those
      * needs a nested "which permanent do you tap?" prompt, which only the ward resumer implements —
@@ -238,14 +239,17 @@ object ManaPaymentWindow {
      * Sets the window aside so a mana ability can resolve against a decision-free state, and
      * queues its restoration.
      *
-     * The [ReopenManaPaymentDecisionContinuation] is pushed *above* the payment continuation that
-     * is already on the stack, so if the mana ability raises a decision of its own (choosing a
+     * The [ReopenManaPaymentDecisionContinuation] holds the complete payment suspension, so if the mana ability raises a decision of its own (choosing a
      * color for Birds of Paradise, a Fertile Ground tap bonus) that decision nests on top and the
      * window is re-raised only once the ability has fully resolved.
      */
-    fun suspend(state: GameState, decision: SelectManaSourcesDecision): GameState =
-        state.clearPendingDecision()
-            .pushContinuation(ReopenManaPaymentDecisionContinuation(decision.id, decision))
+    fun suspend(state: GameState, decision: SelectManaSourcesDecision): GameState {
+        val (frame, popped) = state.popContinuation()
+        check(frame is Suspension && frame.question == decision) {
+            "Mana window must own the active suspension"
+        }
+        return popped.pushContinuation(ReopenManaPaymentDecisionContinuation(frame))
+    }
 
     /**
      * Re-raises the window that [suspend] set aside, popping its continuation frame.
@@ -260,18 +264,21 @@ object ManaPaymentWindow {
     ): ExecutionResult? {
         val frame = state.peekContinuation() as? ReopenManaPaymentDecisionContinuation ?: return null
         val (_, popped) = state.popContinuation()
-        return reopen(popped, frame.decision, events, cardRegistry)
+        return reopen(popped, frame.suspension, events, cardRegistry)
     }
 
-    /** Re-raises [decision], refreshed against the post-activation board. */
+    /** Restores the same suspension, with its question refreshed against the current board. */
     fun reopen(
         state: GameState,
-        decision: SelectManaSourcesDecision,
+        suspension: Suspension,
         events: List<GameEvent>,
         cardRegistry: CardRegistry
     ): ExecutionResult {
+        val decision = suspension.question as SelectManaSourcesDecision
         val refreshed = refresh(state, decision, cardRegistry)
-        return ExecutionResult.paused(state.withPendingDecision(refreshed), refreshed, events)
+        return ExecutionResult.propagatePause(
+            state.restoreSuspension(suspension.copy(question = refreshed)), events
+        )
     }
 
     /**

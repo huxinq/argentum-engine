@@ -157,6 +157,17 @@ class AnyPlayerMayPayExecutor(
 
         val prompt = "You may sacrifice ${cost.count} ${cost.filter.description}s to cause $sourceName to be sacrificed, or skip"
 
+        val continuation = anyPlayerMayPayContinuation(
+            effect, context,
+
+            currentPlayerId = playerId,
+            remainingPlayers = playerOrder.drop(currentIndex + 1),
+            sourceId = sourceId,
+            sourceName = sourceName,
+            requiredCount = cost.count,
+            filter = cost.filter
+        )
+
         val decisionResult = decisionHandler.createCardSelectionDecision(
             state = state,
             playerId = playerId,
@@ -168,25 +179,14 @@ class AnyPlayerMayPayExecutor(
             maxSelections = cost.count,
             ordered = false,
             phase = DecisionPhase.RESOLUTION,
-            useTargetingUI = true
+            useTargetingUI = true,
+            answer = continuation
         )
 
-        val continuation = anyPlayerMayPayContinuation(
-            effect, context,
-            decisionId = decisionResult.pendingDecision!!.id,
-            currentPlayerId = playerId,
-            remainingPlayers = playerOrder.drop(currentIndex + 1),
-            sourceId = sourceId,
-            sourceName = sourceName,
-            requiredCount = cost.count,
-            filter = cost.filter
-        )
+        val stateWithContinuation = decisionResult.state
 
-        val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
-
-        return EffectResult.paused(
+        return EffectResult.propagatePause(
             stateWithContinuation,
-            decisionResult.pendingDecision,
             decisionResult.events
         )
     }
@@ -202,10 +202,9 @@ class AnyPlayerMayPayExecutor(
         playerOrder: List<EntityId>,
         currentIndex: Int
     ): EffectResult {
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val prompt = "Pay ${cost.amount} life to prevent $sourceName's effect?"
 
-        val decision = YesNoDecision(
+        val decision = { decisionId: String -> YesNoDecision(
             id = decisionId,
             playerId = playerId,
             prompt = prompt,
@@ -216,11 +215,11 @@ class AnyPlayerMayPayExecutor(
             ),
             yesText = "Pay ${cost.amount} life",
             noText = "Don't pay"
-        )
+        ) }
 
         val continuation = anyPlayerMayPayContinuation(
             effect, context,
-            decisionId = decisionId,
+
             currentPlayerId = playerId,
             remainingPlayers = playerOrder.drop(currentIndex + 1),
             sourceId = sourceId,
@@ -229,27 +228,12 @@ class AnyPlayerMayPayExecutor(
             filter = com.wingedsheep.sdk.scripting.GameObjectFilter.Any
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = playerId,
-                    decisionType = "YES_NO",
-                    prompt = prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation, emptyList()))
     }
 
     private fun anyPlayerMayPayContinuation(
         effect: AnyPlayerMayPayEffect,
         context: EffectContext,
-        decisionId: String,
         currentPlayerId: EntityId,
         remainingPlayers: List<EntityId>,
         sourceId: EntityId,
@@ -257,7 +241,6 @@ class AnyPlayerMayPayExecutor(
         requiredCount: Int,
         filter: com.wingedsheep.sdk.scripting.GameObjectFilter
     ): AnyPlayerMayPayContinuation = AnyPlayerMayPayContinuation(
-        decisionId = decisionId,
         currentPlayerId = currentPlayerId,
         remainingPlayers = remainingPlayers,
         sourceId = sourceId,

@@ -1,0 +1,9 @@
+[
+    {
+        "type": "DecisionRequestedEvent",
+        "decisionId": "r0",
+        "playerId": "player-1",
+        "decisionType": "YES_NO",
+        "prompt": "You may you may you gain 1 life"
+    }
+]

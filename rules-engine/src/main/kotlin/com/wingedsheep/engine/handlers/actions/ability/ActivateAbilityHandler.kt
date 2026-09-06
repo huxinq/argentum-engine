@@ -5,6 +5,7 @@ import com.wingedsheep.engine.state.components.battlefield.chosenColor
 import com.wingedsheep.engine.core.ActivateAbility
 import com.wingedsheep.engine.core.AbilityActivatedEvent
 import com.wingedsheep.engine.core.ExecutionResult
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.GameEvent
 import com.wingedsheep.engine.core.LoyaltyChangedEvent
 import com.wingedsheep.engine.core.ManaAddedEvent
@@ -674,7 +675,7 @@ class ActivateAbilityHandler(
             priorityPassedBy = state.priorityPassedBy
         )
         if (result.isPaused) {
-            return ExecutionResult.paused(restored, result.pendingDecision!!, result.events)
+            return ExecutionResult.propagatePause(restored, result.events)
         }
         return ManaPaymentWindow.resumeIfPending(restored, result.events, cardRegistry)
             ?: ExecutionResult.success(restored, result.events)
@@ -800,34 +801,27 @@ class ActivateAbilityHandler(
         if (tapXCost != null && action.xValue == null && !alreadyTapping) {
             val tapTargets = costHandler.findUntappedMatchingPermanentsUnified(state, action.playerId, tapXCost.filter)
             val maxX = tapTargets.size
-            val (decisionId, stateAfterRouting) = state.newRoutingId()
-            val decision = com.wingedsheep.engine.core.ChooseNumberDecision(
-                id = decisionId,
-                playerId = action.playerId,
-                prompt = "Choose X for ${sourceName} (0-$maxX)",
-                context = com.wingedsheep.engine.core.DecisionContext(
-                    sourceId = action.sourceId,
-                    sourceName = sourceName,
-                    phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
-                ),
-                minValue = 0,
-                maxValue = maxX
-            )
             val continuation = com.wingedsheep.engine.core.ActivateAbilityChooseXContinuation(
-                decisionId = decisionId,
                 action = action,
                 tapTargets = tapTargets
             )
-            val pausedState = stateAfterRouting
-                .withPendingDecision(decision)
-                .pushContinuation(continuation)
-            val event = com.wingedsheep.engine.core.DecisionRequestedEvent(
-                decisionId = decisionId,
-                playerId = action.playerId,
-                decisionType = "CHOOSE_NUMBER",
-                prompt = decision.prompt
+            return state.suspendForDecision(
+                question = { decisionId ->
+                    com.wingedsheep.engine.core.ChooseNumberDecision(
+                        id = decisionId,
+                        playerId = action.playerId,
+                        prompt = "Choose X for ${sourceName} (0-$maxX)",
+                        context = com.wingedsheep.engine.core.DecisionContext(
+                            sourceId = action.sourceId,
+                            sourceName = sourceName,
+                            phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
+                        ),
+                        minValue = 0,
+                        maxValue = maxX
+                    )
+                },
+                answer = continuation
             )
-            return ExecutionResult.paused(pausedState, decision, listOf(event))
         }
 
         // -------------------------------------------------------------------
@@ -846,33 +840,26 @@ class ActivateAbilityHandler(
             // "X can't be 0" abilities (Gogo, Master of Mimicry) set a minimum; clamp it to what the
             // player can actually pay so the decision bounds stay valid.
             val minX = ability.minimumXValue.coerceAtMost(maxX)
-            val (decisionId, stateAfterRouting) = state.newRoutingId()
-            val decision = com.wingedsheep.engine.core.ChooseNumberDecision(
-                id = decisionId,
-                playerId = action.playerId,
-                prompt = "Choose X for ${sourceName} ($minX-$maxX)",
-                context = com.wingedsheep.engine.core.DecisionContext(
-                    sourceId = action.sourceId,
-                    sourceName = sourceName,
-                    phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
-                ),
-                minValue = minX,
-                maxValue = maxX
-            )
             val continuation = com.wingedsheep.engine.core.ActivateAbilityChooseManaXContinuation(
-                decisionId = decisionId,
                 action = action
             )
-            val pausedState = stateAfterRouting
-                .withPendingDecision(decision)
-                .pushContinuation(continuation)
-            val event = com.wingedsheep.engine.core.DecisionRequestedEvent(
-                decisionId = decisionId,
-                playerId = action.playerId,
-                decisionType = "CHOOSE_NUMBER",
-                prompt = decision.prompt
+            return state.suspendForDecision(
+                question = { decisionId ->
+                    com.wingedsheep.engine.core.ChooseNumberDecision(
+                        id = decisionId,
+                        playerId = action.playerId,
+                        prompt = "Choose X for ${sourceName} ($minX-$maxX)",
+                        context = com.wingedsheep.engine.core.DecisionContext(
+                            sourceId = action.sourceId,
+                            sourceName = sourceName,
+                            phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
+                        ),
+                        minValue = minX,
+                        maxValue = maxX
+                    )
+                },
+                answer = continuation
             )
-            return ExecutionResult.paused(pausedState, decision, listOf(event))
         }
 
         // -------------------------------------------------------------------
@@ -911,7 +898,6 @@ class ActivateAbilityHandler(
             val maxSelections = fixedCount ?: exileXCandidates.size
             val isRealChoice = exileXCandidates.size > minSelections
             if (isRealChoice) {
-                val (decisionId, stateAfterRouting) = state.newRoutingId()
                 val prompt = if (fixedCount != null) {
                     "Select $fixedCount card${if (fixedCount > 1) "s" else ""} to exile from " +
                         "graveyard for ${sourceName}"
@@ -919,35 +905,29 @@ class ActivateAbilityHandler(
                     "Select any number of cards to exile from graveyard for ${sourceName} " +
                         "(X is the number you choose)"
                 }
-                val decision = com.wingedsheep.engine.core.SelectCardsDecision(
-                    id = decisionId,
-                    playerId = action.playerId,
-                    prompt = prompt,
-                    context = com.wingedsheep.engine.core.DecisionContext(
-                        sourceId = action.sourceId,
-                        sourceName = sourceName,
-                        phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
-                    ),
-                    options = exileXCandidates,
-                    minSelections = minSelections,
-                    maxSelections = maxSelections
-                )
                 val continuation = com.wingedsheep.engine.core.ActivateAbilityExileXFromGraveyardContinuation(
-                    decisionId = decisionId,
                     action = action,
                     exileCandidates = exileXCandidates,
                     fixedCount = fixedCount
                 )
-                val pausedState = stateAfterRouting
-                    .withPendingDecision(decision)
-                    .pushContinuation(continuation)
-                val event = com.wingedsheep.engine.core.DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = action.playerId,
-                    decisionType = "SELECT_CARDS",
-                    prompt = prompt
+                return state.suspendForDecision(
+                    question = { decisionId ->
+                        com.wingedsheep.engine.core.SelectCardsDecision(
+                            id = decisionId,
+                            playerId = action.playerId,
+                            prompt = prompt,
+                            context = com.wingedsheep.engine.core.DecisionContext(
+                                sourceId = action.sourceId,
+                                sourceName = sourceName,
+                                phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
+                            ),
+                            options = exileXCandidates,
+                            minSelections = minSelections,
+                            maxSelections = maxSelections
+                        )
+                    },
+                    answer = continuation
                 )
-                return ExecutionResult.paused(pausedState, decision, listOf(event))
             }
             // Not a real choice, so no prompt: either the graveyard has nothing matching (X = 0,
             // legal) or a mana-fixed X consumes every candidate, which CostHandler pays as-is.
@@ -992,37 +972,30 @@ class ActivateAbilityHandler(
                     exileCandidatesByOwner.flatten()
                 }
             if (exileCandidates.size > exileFromGraveyardCost.count) {
-                val (decisionId, stateAfterRouting) = state.newRoutingId()
                 val prompt = "Select ${exileFromGraveyardCost.count} card${if (exileFromGraveyardCost.count > 1) "s" else ""} to exile from graveyard for ${sourceName}"
-                val decision = com.wingedsheep.engine.core.SelectCardsDecision(
-                    id = decisionId,
-                    playerId = action.playerId,
-                    prompt = prompt,
-                    context = com.wingedsheep.engine.core.DecisionContext(
-                        sourceId = action.sourceId,
-                        sourceName = sourceName,
-                        phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
-                    ),
-                    options = exileCandidates,
-                    minSelections = exileFromGraveyardCost.count,
-                    maxSelections = exileFromGraveyardCost.count
-                )
                 val continuation = com.wingedsheep.engine.core.ActivateAbilityExileFromGraveyardContinuation(
-                    decisionId = decisionId,
                     action = action,
                     exileCandidates = exileCandidates,
                     exileCount = exileFromGraveyardCost.count
                 )
-                val pausedState = stateAfterRouting
-                    .withPendingDecision(decision)
-                    .pushContinuation(continuation)
-                val event = com.wingedsheep.engine.core.DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = action.playerId,
-                    decisionType = "SELECT_CARDS",
-                    prompt = prompt
+                return state.suspendForDecision(
+                    question = { decisionId ->
+                        com.wingedsheep.engine.core.SelectCardsDecision(
+                            id = decisionId,
+                            playerId = action.playerId,
+                            prompt = prompt,
+                            context = com.wingedsheep.engine.core.DecisionContext(
+                                sourceId = action.sourceId,
+                                sourceName = sourceName,
+                                phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
+                            ),
+                            options = exileCandidates,
+                            minSelections = exileFromGraveyardCost.count,
+                            maxSelections = exileFromGraveyardCost.count
+                        )
+                    },
+                    answer = continuation
                 )
-                return ExecutionResult.paused(pausedState, decision, listOf(event))
             }
         }
 
@@ -1057,38 +1030,31 @@ class ActivateAbilityHandler(
             // case auto-picks. But "with different names" is always a real choice — the player must
             // pick a distinctly-named set even when candidates == count — so always pause for it.
             if (sacrificeCandidates.size > sacrificeCost.count || sacrificeCost.distinctNames) {
-                val (decisionId, stateAfterRouting) = state.newRoutingId()
                 val prompt = "Select ${sacrificeCost.count} permanent${if (sacrificeCost.count > 1) "s" else ""} to sacrifice for ${sourceName}"
-                val decision = com.wingedsheep.engine.core.SelectCardsDecision(
-                    id = decisionId,
-                    playerId = action.playerId,
-                    prompt = prompt,
-                    context = com.wingedsheep.engine.core.DecisionContext(
-                        sourceId = action.sourceId,
-                        sourceName = sourceName,
-                        phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
-                    ),
-                    options = sacrificeCandidates,
-                    minSelections = sacrificeCost.count,
-                    maxSelections = sacrificeCost.count
-                )
                 val continuation = com.wingedsheep.engine.core.ActivateAbilitySacrificeContinuation(
-                    decisionId = decisionId,
                     action = action,
                     sacrificeCandidates = sacrificeCandidates,
                     sacrificeCount = sacrificeCost.count,
                     distinctNames = sacrificeCost.distinctNames
                 )
-                val pausedState = stateAfterRouting
-                    .withPendingDecision(decision)
-                    .pushContinuation(continuation)
-                val event = com.wingedsheep.engine.core.DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = action.playerId,
-                    decisionType = "SELECT_CARDS",
-                    prompt = prompt
+                return state.suspendForDecision(
+                    question = { decisionId ->
+                        com.wingedsheep.engine.core.SelectCardsDecision(
+                            id = decisionId,
+                            playerId = action.playerId,
+                            prompt = prompt,
+                            context = com.wingedsheep.engine.core.DecisionContext(
+                                sourceId = action.sourceId,
+                                sourceName = sourceName,
+                                phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
+                            ),
+                            options = sacrificeCandidates,
+                            minSelections = sacrificeCost.count,
+                            maxSelections = sacrificeCost.count
+                        )
+                    },
+                    answer = continuation
                 )
-                return ExecutionResult.paused(pausedState, decision, listOf(event))
             }
         }
 
@@ -1118,35 +1084,30 @@ class ActivateAbilityHandler(
             if (candidates.size < minCount) {
                 return ExecutionResult.error(state, "Not enough permanents to $verb for ${sourceName}")
             }
-            val (decisionId, stateAfterRouting) = state.newRoutingId()
             val prompt = "Choose one or more ${variablePermanentsCost.filter.description}s to $verb for ${sourceName}"
-            val decision = com.wingedsheep.engine.core.SelectCardsDecision(
-                id = decisionId,
-                playerId = action.playerId,
-                prompt = prompt,
-                context = com.wingedsheep.engine.core.DecisionContext(
-                    sourceId = action.sourceId,
-                    sourceName = sourceName,
-                    phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
-                ),
-                options = candidates,
-                minSelections = minCount,
-                maxSelections = candidates.size
-            )
             val continuation = com.wingedsheep.engine.core.ActivateAbilityVariablePermanentsContinuation(
-                decisionId = decisionId,
                 action = action,
                 candidates = candidates,
                 minCount = minCount
             )
-            val pausedState = stateAfterRouting.withPendingDecision(decision).pushContinuation(continuation)
-            val event = com.wingedsheep.engine.core.DecisionRequestedEvent(
-                decisionId = decisionId,
-                playerId = action.playerId,
-                decisionType = "SELECT_CARDS",
-                prompt = prompt
+            return state.suspendForDecision(
+                question = { decisionId ->
+                    com.wingedsheep.engine.core.SelectCardsDecision(
+                        id = decisionId,
+                        playerId = action.playerId,
+                        prompt = prompt,
+                        context = com.wingedsheep.engine.core.DecisionContext(
+                            sourceId = action.sourceId,
+                            sourceName = sourceName,
+                            phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
+                        ),
+                        options = candidates,
+                        minSelections = minCount,
+                        maxSelections = candidates.size
+                    )
+                },
+                answer = continuation
             )
-            return ExecutionResult.paused(pausedState, decision, listOf(event))
         }
 
         // -------------------------------------------------------------------
@@ -1191,33 +1152,28 @@ class ActivateAbilityHandler(
                         maxTargets = req.count
                     )
                 }
-                val (decisionId, stateAfterRouting) = state.newRoutingId()
                 val prompt = "Choose ${controllerTargetReqsExec.joinToString(" and ") { it.description }} for ${sourceName}"
-                val decision = com.wingedsheep.engine.core.ChooseTargetsDecision(
-                    id = decisionId,
-                    playerId = action.playerId,
-                    prompt = prompt,
-                    context = com.wingedsheep.engine.core.DecisionContext(
-                        sourceId = action.sourceId,
-                        sourceName = sourceName,
-                        phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
-                    ),
-                    targetRequirements = requirementInfos,
-                    legalTargets = legalTargets
-                )
                 val continuation = com.wingedsheep.engine.core.ActivateAbilityControllerTargetContinuation(
-                    decisionId = decisionId,
                     action = action,
                     requirements = controllerTargetReqsExec
                 )
-                val pausedState = stateAfterRouting.withPendingDecision(decision).pushContinuation(continuation)
-                val event = com.wingedsheep.engine.core.DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = action.playerId,
-                    decisionType = "CHOOSE_TARGETS",
-                    prompt = prompt
+                return state.suspendForDecision(
+                    question = { decisionId ->
+                        com.wingedsheep.engine.core.ChooseTargetsDecision(
+                            id = decisionId,
+                            playerId = action.playerId,
+                            prompt = prompt,
+                            context = com.wingedsheep.engine.core.DecisionContext(
+                                sourceId = action.sourceId,
+                                sourceName = sourceName,
+                                phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
+                            ),
+                            targetRequirements = requirementInfos,
+                            legalTargets = legalTargets
+                        )
+                    },
+                    answer = continuation
                 )
-                return ExecutionResult.paused(pausedState, decision, listOf(event))
             }
         }
 
@@ -1771,9 +1727,7 @@ class ActivateAbilityHandler(
                     effectResult.state, costPaymentEvents + manaAbilityActivatedEvent
                 )
                 if (deferred.isNotEmpty()) {
-                    val (routingId, stateAfterRouting) = effectResult.state.newRoutingId()
                     val pending = com.wingedsheep.engine.core.PendingTriggersContinuation(
-                        decisionId = "mana-ability-cost-triggers-$routingId",
                         remainingTriggers = deferred
                     )
                     // Insert at the BOTTOM of the continuation stack so the cost trigger is put on
@@ -1782,9 +1736,8 @@ class ActivateAbilityHandler(
                     // stack here holds only frames pushed by this activation's effect, so bottom
                     // insertion can't jump ahead of unrelated work.
                     val newStack = listOf(pending) + effectResult.state.continuationStack
-                    return ExecutionResult.paused(
-                        stateAfterRouting.copy(continuationStack = newStack),
-                        effectResult.pendingDecision!!,
+                    return ExecutionResult.propagatePause(
+                        effectResult.state.copy(continuationStack = newStack),
                         events + effectResult.events
                     )
                 }
@@ -1940,9 +1893,8 @@ class ActivateAbilityHandler(
             if (costTriggers.isNotEmpty()) {
                 val triggerResult = triggerProcessor.processTriggers(bonusResult.newState, costTriggers)
                 if (triggerResult.isPaused) {
-                    return ExecutionResult.paused(
+                    return ExecutionResult.propagatePause(
                         triggerResult.state.withPriority(action.playerId),
-                        triggerResult.pendingDecision!!,
                         resultEvents + triggerResult.events
                     )
                 }
@@ -2108,9 +2060,8 @@ class ActivateAbilityHandler(
             val triggerResult = triggerProcessor.processTriggers(currentState, triggers)
 
             if (triggerResult.isPaused) {
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     triggerResult.state.withPriority(action.playerId),
-                    triggerResult.pendingDecision!!,
                     allEvents + triggerResult.events
                 )
             }
@@ -2187,37 +2138,30 @@ class ActivateAbilityHandler(
                 ?.get<com.wingedsheep.engine.state.components.identity.PlayerComponent>()?.name
                 ?: "Player ${opponentId.value}"
         }
-        val (decisionId, stateAfterRouting) = state.newRoutingId()
         val prompt = "Choose an opponent to choose a target for $sourceName"
-        val decision = com.wingedsheep.engine.core.ChooseOptionDecision(
-            id = decisionId,
-            playerId = action.playerId,
-            prompt = prompt,
-            context = com.wingedsheep.engine.core.DecisionContext(
-                sourceId = action.sourceId,
-                sourceName = sourceName,
-                phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
-            ),
-            options = opponentNames
-        )
         val continuation = com.wingedsheep.engine.core.ActivateAbilityOpponentChooserContinuation(
-            decisionId = decisionId,
             action = action,
             sourceName = sourceName,
             opponentRequirements = opponentReqs,
             fullRequirements = fullTargetReqs,
             opponentIds = opponentIds
         )
-        val pausedState = stateAfterRouting
-            .withPendingDecision(decision)
-            .pushContinuation(continuation)
-        val event = com.wingedsheep.engine.core.DecisionRequestedEvent(
-            decisionId = decisionId,
-            playerId = action.playerId,
-            decisionType = "CHOOSE_OPTION",
-            prompt = prompt
+        return state.suspendForDecision(
+            question = { decisionId ->
+                com.wingedsheep.engine.core.ChooseOptionDecision(
+                    id = decisionId,
+                    playerId = action.playerId,
+                    prompt = prompt,
+                    context = com.wingedsheep.engine.core.DecisionContext(
+                        sourceId = action.sourceId,
+                        sourceName = sourceName,
+                        phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
+                    ),
+                    options = opponentNames
+                )
+            },
+            answer = continuation
         )
-        return ExecutionResult.paused(pausedState, decision, listOf(event))
     }
 
     internal fun pauseForOpponentChosenTargetsForDecider(
@@ -2250,41 +2194,34 @@ class ActivateAbilityHandler(
             )
         }
 
-        val (decisionId, stateAfterRouting) = state.newRoutingId()
         // The prompt is shown to the opponent who is making the choice, so the "of an opponent's
         // choice" suffix the requirement description carries is redundant noise here — strip it.
         val prompt = "Choose ${opponentReqs.joinToString(" and ") {
             it.description.removeSuffix(" of an opponent's choice")
         }} for $sourceName"
-        val decision = com.wingedsheep.engine.core.ChooseTargetsDecision(
-            id = decisionId,
-            playerId = deciderId,
-            prompt = prompt,
-            context = com.wingedsheep.engine.core.DecisionContext(
-                sourceId = action.sourceId,
-                sourceName = sourceName,
-                phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
-            ),
-            targetRequirements = requirementInfos,
-            legalTargets = legalTargets
-        )
         val continuation = com.wingedsheep.engine.core.ActivateAbilityOpponentTargetContinuation(
-            decisionId = decisionId,
             action = action,
             opponentRequirements = opponentReqs,
             fullRequirements = fullTargetReqs,
             deciderId = deciderId
         )
-        val pausedState = stateAfterRouting
-            .withPendingDecision(decision)
-            .pushContinuation(continuation)
-        val event = com.wingedsheep.engine.core.DecisionRequestedEvent(
-            decisionId = decisionId,
-            playerId = deciderId,
-            decisionType = "CHOOSE_TARGETS",
-            prompt = prompt
+        return state.suspendForDecision(
+            question = { decisionId ->
+                com.wingedsheep.engine.core.ChooseTargetsDecision(
+                    id = decisionId,
+                    playerId = deciderId,
+                    prompt = prompt,
+                    context = com.wingedsheep.engine.core.DecisionContext(
+                        sourceId = action.sourceId,
+                        sourceName = sourceName,
+                        phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
+                    ),
+                    targetRequirements = requirementInfos,
+                    legalTargets = legalTargets
+                )
+            },
+            answer = continuation
         )
-        return ExecutionResult.paused(pausedState, decision, listOf(event))
     }
 
     /**

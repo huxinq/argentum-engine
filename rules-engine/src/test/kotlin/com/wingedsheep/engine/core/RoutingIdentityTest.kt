@@ -22,8 +22,6 @@ import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
 
 /** Routing handles must reproduce without spending gameplay entropy or entity identity. */
 class RoutingIdentityTest : ScenarioTestBase() {
@@ -71,7 +69,7 @@ class RoutingIdentityTest : ScenarioTestBase() {
 
         }
 
-        test("a legacy pending UUID decision resumes before allocating the first new routing handle") {
+        test("a current-format opaque UUID decision resumes before allocating the first routing handle") {
             val game = scenario().withPlayers().build()
             val paused = EffectHandler(cardRegistry = cardRegistry).execute(
                 game.state,
@@ -81,28 +79,25 @@ class RoutingIdentityTest : ScenarioTestBase() {
             paused.error shouldBe null
             val oldId = "73b0b4a6-5d8a-4f36-9870-6c63852a1927"
             val oldDecision = paused.state.pendingDecision.shouldBeInstanceOf<YesNoDecision>().copy(id = oldId)
-            val oldContinuation = paused.state.continuationStack.single()
-                .shouldBeInstanceOf<GatedEffectContinuation>().copy(decisionId = oldId)
-            val legacyState = paused.state.copy(
-                pendingDecision = oldDecision,
-                continuationStack = listOf(oldContinuation)
+            val suspension = paused.state.continuationStack.single().shouldBeInstanceOf<Suspension>()
+            val oldContinuation = suspension.answer.shouldBeInstanceOf<GatedEffectContinuation>()
+            val current = paused.state.copy(
+                nextRoutingId = 0,
+                continuationStack = listOf(Suspension(oldDecision, oldContinuation))
             )
-            val legacy = JsonObject(
-                json.parseToJsonElement(json.encodeToString(legacyState)).jsonObject - "nextRoutingId"
-            )
-            val restoredLegacy = json.decodeFromString<GameState>(legacy.toString())
-            restoredLegacy.nextRoutingId shouldBe 0L
-            restoredLegacy.pendingDecision shouldBe oldDecision
-            restoredLegacy.continuationStack shouldBe listOf(oldContinuation)
+            val restored = json.decodeFromString<GameState>(json.encodeToString(current))
+            restored.nextRoutingId shouldBe 0L
+            restored.pendingDecision shouldBe oldDecision
+            restored.continuationStack shouldBe listOf(Suspension(oldDecision, oldContinuation))
             val oldResponse = SubmitDecision(game.player1Id, YesNoResponse(oldId, true))
-            val resumed = actionProcessor.process(restoredLegacy, oldResponse).result
+            val resumed = actionProcessor.process(restored, oldResponse).result
             resumed.error shouldBe null
             val newDecision = resumed.state.pendingDecision.shouldBeInstanceOf<YesNoDecision>()
             newDecision.id shouldBe "r0"
             newDecision.id shouldNotBe oldId
             resumed.state.nextRoutingId shouldBe 1L
-            resumed.state.rng shouldBe legacyState.rng
-            resumed.state.nextEntityId shouldBe legacyState.nextEntityId
+            resumed.state.rng shouldBe paused.state.rng
+            resumed.state.nextEntityId shouldBe paused.state.nextEntityId
             val stale = actionProcessor.process(resumed.state, oldResponse).result
             stale.error.shouldNotBeNull()
             stale.state shouldBe resumed.state

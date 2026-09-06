@@ -43,7 +43,7 @@ class EachPlayerDrawsForDamageDealtToSourceExecutor(
             currentState = result.state
             events.addAll(result.events)
             if (result.pendingDecision != null) {
-                return EffectResult.paused(currentState, result.pendingDecision, events)
+                return EffectResult.propagatePause(currentState, events)
             }
         }
         return EffectResult.success(currentState, events)

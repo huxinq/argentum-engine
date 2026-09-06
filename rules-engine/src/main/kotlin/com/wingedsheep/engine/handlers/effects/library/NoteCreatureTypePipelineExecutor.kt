@@ -51,8 +51,7 @@ class NoteCreatureTypePipelineExecutor : EffectExecutor<NoteCreatureTypeEffect> 
         val prompt = effect.prompt
             ?: if (effect.secret) "Secretly choose a creature type" else "Note a creature type"
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = ChooseOptionDecision(
+        val decision = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = prompt,
@@ -62,10 +61,9 @@ class NoteCreatureTypePipelineExecutor : EffectExecutor<NoteCreatureTypeEffect> 
                 phase = DecisionPhase.RESOLUTION
             ),
             options = options
-        )
+        ) }
 
         val continuation = NoteCreatureTypePipelineContinuation(
-            decisionId = decisionId,
             controllerId = controllerId,
             sourceId = sourceId,
             sourceName = sourceName,
@@ -74,20 +72,6 @@ class NoteCreatureTypePipelineExecutor : EffectExecutor<NoteCreatureTypeEffect> 
             secret = effect.secret
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = controllerId,
-                    decisionType = "CHOOSE_OPTION",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 }

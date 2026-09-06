@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.handlers.effects.player
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.ChooseCardTypeForSourceContinuation
 import com.wingedsheep.engine.core.ChooseOptionDecision
 import com.wingedsheep.engine.core.DecisionContext
@@ -62,8 +63,7 @@ class ChooseCardTypeForSourceExecutor : EffectExecutor<ChooseCardTypeForSourceEf
             return EffectResult.success(newState, lookEvents)
         }
 
-        val decisionId = "choose-card-type-for-source-${sourceId.value}"
-        val decision = ChooseOptionDecision(
+        val decision = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = context.controllerId,
             prompt = effect.prompt,
@@ -73,19 +73,14 @@ class ChooseCardTypeForSourceExecutor : EffectExecutor<ChooseCardTypeForSourceEf
                 phase = DecisionPhase.RESOLUTION
             ),
             options = options
-        )
+        ) }
         val continuation = ChooseCardTypeForSourceContinuation(
-            decisionId = decisionId,
             sourceId = sourceId,
             controllerId = context.controllerId,
             slot = effect.slot,
             cardTypes = options
         )
 
-        return EffectResult.paused(
-            baseState.withPendingDecision(decision).pushContinuation(continuation),
-            decision,
-            lookEvents
-        )
+        return EffectResult.from(baseState.suspendForDecision(decision, continuation, lookEvents))
     }
 }

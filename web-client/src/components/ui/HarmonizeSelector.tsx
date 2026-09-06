@@ -13,6 +13,7 @@ import { ManaSymbol } from './ManaSymbols'
  */
 export function HarmonizeSelector() {
   const harmonizeSelectionState = useGameStore((state) => state.harmonizeSelectionState)
+  const interactionEpoch = useGameStore((state) => state.interactionEpoch)
   const cancelHarmonizeSelection = useGameStore((state) => state.cancelHarmonizeSelection)
   const confirmHarmonizeSelection = useGameStore((state) => state.confirmHarmonizeSelection)
   const viewingPlayer = useViewingPlayer()
@@ -83,10 +84,10 @@ export function HarmonizeSelector() {
         </span>
       )}
       <span style={styles.divider} />
-      <button onClick={cancelHarmonizeSelection} style={styles.cancelButton}>
+      <button onClick={() => cancelHarmonizeSelection(interactionEpoch)} style={styles.cancelButton}>
         Cancel
       </button>
-      <button onClick={confirmHarmonizeSelection} style={styles.confirmButton}>
+      <button onClick={() => confirmHarmonizeSelection(interactionEpoch)} style={styles.confirmButton}>
         Cast
       </button>
     </div>

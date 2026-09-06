@@ -172,9 +172,8 @@ object DrawLoop {
         }
         allEvents.addAll(perCardEvents)
         allEvents.addAll(pauseResult.events)
-        return EffectResult.paused(
+        return EffectResult.propagatePause(
             pausedState,
-            pauseResult.pendingDecision!!,
             allEvents
         )
     }

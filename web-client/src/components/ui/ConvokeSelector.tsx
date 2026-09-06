@@ -20,6 +20,7 @@ import { ManaSymbol } from './ManaSymbols'
  */
 export function ConvokeSelector() {
   const convokeSelectionState = useGameStore((state) => state.convokeSelectionState)
+  const interactionEpoch = useGameStore((state) => state.interactionEpoch)
   const cancelConvokeSelection = useGameStore((state) => state.cancelConvokeSelection)
   const confirmConvokeSelection = useGameStore((state) => state.confirmConvokeSelection)
   const viewingPlayer = useViewingPlayer()
@@ -86,10 +87,10 @@ export function ConvokeSelector() {
         </span>
       )}
       <span style={styles.divider} />
-      <button onClick={cancelConvokeSelection} style={styles.cancelButton}>
+      <button onClick={() => cancelConvokeSelection(interactionEpoch)} style={styles.cancelButton}>
         Cancel
       </button>
-      <button onClick={confirmConvokeSelection} style={styles.confirmButton}>
+      <button onClick={() => confirmConvokeSelection(interactionEpoch)} style={styles.confirmButton}>
         {isAbility ? 'Activate' : 'Cast'}
       </button>
     </div>

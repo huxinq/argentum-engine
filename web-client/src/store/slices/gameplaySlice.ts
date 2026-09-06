@@ -1,6 +1,7 @@
 /**
  * Gameplay slice - handles game state, actions, events, and core game mechanics.
  */
+import { decisionInteractionEpoch } from '@/network/liveAction'
 import type { SliceCreator, EntityId, LogEntry, MulliganState, GameOverState, ErrorState } from './types'
 import type { ClientGameState, GameAction, LegalActionInfo, PendingDecision, OpponentDecisionStatus } from '@/types'
 import {
@@ -32,6 +33,7 @@ let errorDismissTimer: ReturnType<typeof setTimeout> | null = null
 
 export interface GameplaySliceState {
   gameState: ClientGameState | null
+  interactionEpoch: string | null
   legalActions: readonly LegalActionInfo[]
   pendingDecision: PendingDecision | null
   opponentDecisionStatus: OpponentDecisionStatus | null
@@ -58,27 +60,30 @@ export interface GameplaySliceActions {
   createGame: (deckList: Record<string, number>, setCode?: string) => void
   createAiGame: (deckList: Record<string, number>, setCode?: string) => void
   joinGame: (sessionId: string, deckList: Record<string, number>) => void
-  submitAction: (action: GameAction) => void
-  submitDecision: (selectedCards: readonly EntityId[]) => void
-  submitTargetsDecision: (selectedTargets: Record<number, readonly EntityId[]>) => void
-  submitOrderedDecision: (orderedObjects: readonly EntityId[]) => void
-  submitYesNoDecision: (choice: boolean) => void
-  submitBatchYesNoDecision: (choice: boolean, applyToAll: boolean) => void
-  submitNumberDecision: (number: number) => void
-  submitOptionDecision: (optionIndex: number) => void
-  submitReplacementDecision: (fromIndex: number, toIndex: number) => void
-  submitBudgetModalDecision: (selectedModeIndices: readonly number[]) => void
-  submitDistributeDecision: (distribution: Record<EntityId, number>) => void
-  submitDamageAssignmentDecision: (assignments: Record<EntityId, number>) => void
-  submitCombatResolutionDecision: (edges: ReadonlyArray<{ edgeId: string; amount: number }>) => void
-  submitColorDecision: (color: string) => void
+  submitAction: (action: GameAction, interactionEpoch: string | null | undefined) => void
+  /** The decision ID must come from the rendered prompt, never from a later store snapshot. */
+  submitDecision: (decisionId: string, selectedCards: readonly EntityId[]) => void
+  submitTargetsDecision: (decisionId: string, selectedTargets: Record<number, readonly EntityId[]>) => void
+  submitOrderedDecision: (decisionId: string, orderedObjects: readonly EntityId[]) => void
+  submitYesNoDecision: (decisionId: string, choice: boolean) => void
+  submitBatchYesNoDecision: (decisionId: string, choice: boolean, applyToAll: boolean) => void
+  submitNumberDecision: (decisionId: string, number: number) => void
+  submitOptionDecision: (decisionId: string, optionIndex: number) => void
+  submitReplacementDecision: (decisionId: string, fromIndex: number, toIndex: number) => void
+  submitBudgetModalDecision: (decisionId: string, selectedModeIndices: readonly number[]) => void
+  submitDistributeDecision: (decisionId: string, distribution: Record<EntityId, number>) => void
+  submitDamageAssignmentDecision: (decisionId: string, assignments: Record<EntityId, number>) => void
+  submitCombatResolutionDecision: (decisionId: string, edges: ReadonlyArray<{ edgeId: string; amount: number }>) => void
+  submitColorDecision: (decisionId: string, color: string) => void
   submitManaSourcesDecision: (
+    decisionId: string,
     selectedSources: readonly EntityId[],
     autoPay: boolean,
     waterbendPermanents?: readonly EntityId[],
+    declined?: boolean,
   ) => void
-  submitCancelDecision: () => void
-  submitSplitPilesDecision: (piles: readonly (readonly EntityId[])[]) => void
+  submitCancelDecision: (decisionId: string) => void
+  submitSplitPilesDecision: (decisionId: string, piles: readonly (readonly EntityId[])[]) => void
   keepHand: () => void
   mulligan: () => void
   chooseBottomCards: (cardIds: readonly EntityId[]) => void
@@ -108,6 +113,7 @@ export type GameplaySlice = GameplaySliceState & GameplaySliceActions
 export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
   // Initial state
   gameState: null,
+  interactionEpoch: null,
   legalActions: [],
   pendingDecision: null,
   opponentDecisionStatus: null,
@@ -143,14 +149,17 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
     getWebSocket()?.send(createJoinGameMessage(sessionId, deckList))
   },
 
-  submitAction: (action) => {
-    getWebSocket()?.send(createSubmitActionMessage(action))
+  submitAction: (action, interactionEpoch) => {
+    if (!get().sessionId || !get().gameState) return
+    if (!interactionEpoch || interactionEpoch !== get().interactionEpoch) return
+    if (action.type === 'SubmitDecision' && action.response.decisionId !== get().pendingDecision?.id) return
+    getWebSocket()?.send(createSubmitActionMessage(action, interactionEpoch))
     set({ selectedCardId: null, targetingState: null })
   },
 
-  submitDecision: (selectedCards) => {
+  submitDecision: (decisionId, selectedCards) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -160,16 +169,16 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'CardsSelectedResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
         selectedCards: [...selectedCards],
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
-  submitTargetsDecision: (selectedTargets) => {
+  submitTargetsDecision: (decisionId, selectedTargets) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -179,16 +188,16 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'TargetsResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
         selectedTargets,
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
-  submitCancelDecision: () => {
+  submitCancelDecision: (decisionId) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -198,15 +207,15 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'CancelDecisionResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
-  submitOrderedDecision: (orderedObjects) => {
+  submitOrderedDecision: (decisionId, orderedObjects) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -216,16 +225,16 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'OrderedResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
         orderedObjects: [...orderedObjects],
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
-  submitYesNoDecision: (choice) => {
+  submitYesNoDecision: (decisionId, choice) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -235,16 +244,16 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'YesNoResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
         choice,
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
-  submitBatchYesNoDecision: (choice, applyToAll) => {
+  submitBatchYesNoDecision: (decisionId, choice, applyToAll) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -254,17 +263,17 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'BatchYesNoResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
         choice,
         applyToAll,
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
-  submitNumberDecision: (number) => {
+  submitNumberDecision: (decisionId, number) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -274,16 +283,16 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'NumberChosenResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
         number,
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
-  submitOptionDecision: (optionIndex) => {
+  submitOptionDecision: (decisionId, optionIndex) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -293,16 +302,16 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'OptionChosenResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
         optionIndex,
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
-  submitReplacementDecision: (fromIndex, toIndex) => {
+  submitReplacementDecision: (decisionId, fromIndex, toIndex) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -312,17 +321,17 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'ReplacementChosenResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
         fromIndex,
         toIndex,
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
-  submitBudgetModalDecision: (selectedModeIndices) => {
+  submitBudgetModalDecision: (decisionId, selectedModeIndices) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -332,16 +341,16 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'BudgetModalResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
         selectedModeIndices,
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
-  submitDistributeDecision: (distribution) => {
+  submitDistributeDecision: (decisionId, distribution) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -351,16 +360,16 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'DistributionResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
         distribution,
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
-  submitDamageAssignmentDecision: (assignments: Record<string, number>) => {
+  submitDamageAssignmentDecision: (decisionId: string, assignments: Record<string, number>) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -370,16 +379,16 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'DamageAssignmentResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
         assignments,
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
-  submitColorDecision: (color) => {
+  submitColorDecision: (decisionId, color) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -389,16 +398,16 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'ColorChosenResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
         color,
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
-  submitCombatResolutionDecision: (edges: ReadonlyArray<{ edgeId: string; amount: number }>) => {
+  submitCombatResolutionDecision: (decisionId: string, edges: ReadonlyArray<{ edgeId: string; amount: number }>) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -408,21 +417,22 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'CombatResolutionResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
         edges,
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
   submitManaSourcesDecision: (
+    decisionId: string,
     selectedSources: readonly EntityId[],
     autoPay: boolean,
     waterbendPermanents: readonly EntityId[] = [],
     declined = false,
   ) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -432,7 +442,7 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'ManaSourcesSelectedResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
         selectedSources: [...selectedSources],
         autoPay,
         // Artifacts/creatures tapped to pay {1} each via Waterbend (Ward—Waterbend).
@@ -442,12 +452,12 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
         declined,
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
-  submitSplitPilesDecision: (piles: readonly (readonly EntityId[])[]) => {
+  submitSplitPilesDecision: (decisionId: string, piles: readonly (readonly EntityId[])[]) => {
     const { pendingDecision, playerId } = get()
-    if (!pendingDecision || !playerId) return
+    if (!pendingDecision || pendingDecision.id !== decisionId || !playerId) return
 
     const action = {
       type: 'SubmitDecision' as const,
@@ -457,11 +467,11 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       playerId: pendingDecision.playerId,
       response: {
         type: 'PilesSplitResponse' as const,
-        decisionId: pendingDecision.id,
+        decisionId,
         piles: piles.map((pile) => [...pile]),
       },
     }
-    getWebSocket()?.send(createSubmitActionMessage(action))
+    get().submitAction(action, decisionInteractionEpoch(action.response.decisionId))
   },
 
   keepHand: () => {
@@ -570,6 +580,7 @@ export const createGameplaySlice: SliceCreator<GameplaySlice> = (set, get) => ({
       sessionId: null,
       opponentName: null,
       gameState: null,
+      interactionEpoch: null,
       legalActions: [],
       pendingDecision: null,
       mulliganState: null,

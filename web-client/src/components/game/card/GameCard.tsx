@@ -1001,7 +1001,7 @@ function GameCardImpl({
 
     // Handle pending ChooseTargetsDecision clicks
     if (isChooseTargetsDecision && isValidDecisionTarget && !decisionSelectionState) {
-      submitTargetsDecision({ 0: [card.id] })
+      submitTargetsDecision(pendingDecision!.id, { 0: [card.id] })
       return
     }
 
@@ -2688,7 +2688,7 @@ function GameCardImpl({
           }}
         >
           <button
-            onClick={(e) => { e.stopPropagation(); submitYesNoDecision(true) }}
+            onClick={(e) => { e.stopPropagation(); submitYesNoDecision(pendingDecision!.id, true) }}
             style={{
               flex: 1,
               height: responsive.isMobile ? 22 : 26,
@@ -2705,7 +2705,7 @@ function GameCardImpl({
             Yes
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); submitYesNoDecision(false) }}
+            onClick={(e) => { e.stopPropagation(); submitYesNoDecision(pendingDecision!.id, false) }}
             style={{
               flex: 1,
               height: responsive.isMobile ? 22 : 26,

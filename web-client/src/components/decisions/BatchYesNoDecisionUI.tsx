@@ -83,16 +83,16 @@ export function BatchYesNoDecisionUI({
             View Battlefield
           </button>
         )}
-        <button onClick={() => submitBatchYesNoDecision(true, false)} className={styles.yesButton}>
+        <button onClick={() => submitBatchYesNoDecision(decision.id, true, false)} className={styles.yesButton}>
           <AbilityText text={decision.yesText} size={16} />
         </button>
-        <button onClick={() => submitBatchYesNoDecision(false, false)} className={styles.noButton}>
+        <button onClick={() => submitBatchYesNoDecision(decision.id, false, false)} className={styles.noButton}>
           <AbilityText text={decision.noText} size={16} />
         </button>
-        <button onClick={() => submitBatchYesNoDecision(true, true)} className={styles.yesButton}>
+        <button onClick={() => submitBatchYesNoDecision(decision.id, true, true)} className={styles.yesButton}>
           {decision.yesText} to all {decision.count}
         </button>
-        <button onClick={() => submitBatchYesNoDecision(false, true)} className={styles.noButton}>
+        <button onClick={() => submitBatchYesNoDecision(decision.id, false, true)} className={styles.noButton}>
           {decision.noText} to all {decision.count}
         </button>
       </div>

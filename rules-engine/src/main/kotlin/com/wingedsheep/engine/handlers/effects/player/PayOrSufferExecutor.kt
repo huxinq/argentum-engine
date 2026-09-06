@@ -164,22 +164,7 @@ class PayOrSufferExecutor(
         // Player has at least enough valid cards - present the decision
         val prompt = buildDiscardPrompt(cost, sourceName, effect)
 
-        val decisionResult = decisionHandler.createCardSelectionDecision(
-            state = state,
-            playerId = controllerId,
-            sourceId = sourceId,
-            sourceName = sourceName,
-            prompt = prompt,
-            options = validCards,
-            minSelections = 0,
-            maxSelections = cost.count,
-            ordered = false,
-            phase = DecisionPhase.RESOLUTION
-        )
-
-        // Push continuation to handle the response
         val continuation = PayOrSufferContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
             playerId = controllerId,
             sourceId = sourceId,
             sourceName = sourceName,
@@ -197,11 +182,27 @@ class PayOrSufferExecutor(
             iterationEntityId = context.pipeline.iterationTarget
         )
 
-        val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
+        val decisionResult = decisionHandler.createCardSelectionDecision(
+            state = state,
+            playerId = controllerId,
+            sourceId = sourceId,
+            sourceName = sourceName,
+            prompt = prompt,
+            options = validCards,
+            minSelections = 0,
+            maxSelections = cost.count,
+            ordered = false,
+            phase = DecisionPhase.RESOLUTION,
+            answer = continuation
+        )
 
-        return EffectResult.paused(
+        // Push continuation to handle the response
+
+
+        val stateWithContinuation = decisionResult.state
+
+        return EffectResult.propagatePause(
             stateWithContinuation,
-            decisionResult.pendingDecision,
             decisionResult.events
         )
     }
@@ -227,10 +228,9 @@ class PayOrSufferExecutor(
         }
 
         // Create a yes/no decision
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val prompt = "Discard ${if (cost.count == 1) "a card" else "${cost.count} cards"} at random to keep $sourceName?"
 
-        val decision = YesNoDecision(
+        val decision = { decisionId: String -> YesNoDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = prompt,
@@ -241,10 +241,9 @@ class PayOrSufferExecutor(
             ),
             yesText = "Discard",
             noText = "Accept consequence"
-        )
+        ) }
 
         val continuation = PayOrSufferContinuation(
-            decisionId = decisionId,
             playerId = controllerId,
             sourceId = sourceId,
             sourceName = sourceName,
@@ -262,21 +261,7 @@ class PayOrSufferExecutor(
             iterationEntityId = context.pipeline.iterationTarget
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = controllerId,
-                    decisionType = "YES_NO",
-                    prompt = prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 
     /**
@@ -304,23 +289,7 @@ class PayOrSufferExecutor(
         // Player has enough - present the decision
         val prompt = buildSacrificePrompt(cost, sourceName, effect)
 
-        val decisionResult = decisionHandler.createCardSelectionDecision(
-            state = state,
-            playerId = controllerId,
-            sourceId = sourceId,
-            sourceName = sourceName,
-            prompt = prompt,
-            options = validPermanents,
-            minSelections = 0,
-            maxSelections = cost.count,
-            ordered = false,
-            phase = DecisionPhase.RESOLUTION,
-            useTargetingUI = true  // Use battlefield targeting UI instead of modal
-        )
-
-        // Push continuation to handle the response
         val continuation = PayOrSufferContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
             playerId = controllerId,
             sourceId = sourceId,
             sourceName = sourceName,
@@ -338,11 +307,28 @@ class PayOrSufferExecutor(
             iterationEntityId = context.pipeline.iterationTarget
         )
 
-        val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
+        val decisionResult = decisionHandler.createCardSelectionDecision(
+            state = state,
+            playerId = controllerId,
+            sourceId = sourceId,
+            sourceName = sourceName,
+            prompt = prompt,
+            options = validPermanents,
+            minSelections = 0,
+            maxSelections = cost.count,
+            ordered = false,
+            phase = DecisionPhase.RESOLUTION,
+            useTargetingUI = true,  // Use battlefield targeting UI instead of modal
+            answer = continuation
+        )
 
-        return EffectResult.paused(
+        // Push continuation to handle the response
+
+
+        val stateWithContinuation = decisionResult.state
+
+        return EffectResult.propagatePause(
             stateWithContinuation,
-            decisionResult.pendingDecision,
             decisionResult.events
         )
     }
@@ -367,22 +353,7 @@ class PayOrSufferExecutor(
         }
 
         val consequence = effect.consequenceDescription ?: effect.suffer.description
-        val decisionResult = decisionHandler.createCardSelectionDecision(
-            state = state,
-            playerId = controllerId,
-            sourceId = sourceId,
-            sourceName = sourceName,
-            prompt = "${cost.description.replaceFirstChar { it.uppercase() }}, or $consequence?",
-            options = validPermanents,
-            minSelections = 0,
-            maxSelections = 1,
-            ordered = false,
-            phase = DecisionPhase.RESOLUTION,
-            useTargetingUI = true
-        )
-
         val continuation = PayOrSufferContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
             playerId = controllerId,
             sourceId = sourceId,
             sourceName = sourceName,
@@ -401,9 +372,23 @@ class PayOrSufferExecutor(
             iterationEntityId = context.pipeline.iterationTarget
         )
 
-        return EffectResult.paused(
-            decisionResult.state.pushContinuation(continuation),
-            decisionResult.pendingDecision,
+        val decisionResult = decisionHandler.createCardSelectionDecision(
+            state = state,
+            playerId = controllerId,
+            sourceId = sourceId,
+            sourceName = sourceName,
+            prompt = "${cost.description.replaceFirstChar { it.uppercase() }}, or $consequence?",
+            options = validPermanents,
+            minSelections = 0,
+            maxSelections = 1,
+            ordered = false,
+            phase = DecisionPhase.RESOLUTION,
+            useTargetingUI = true,
+            answer = continuation
+        )
+
+        return EffectResult.propagatePause(
+            decisionResult.state,
             decisionResult.events
         )
     }
@@ -436,22 +421,7 @@ class PayOrSufferExecutor(
 
         val prompt = buildTapPrompt(cost, sourceName, effect)
 
-        val decisionResult = decisionHandler.createCardSelectionDecision(
-            state = state,
-            playerId = controllerId,
-            sourceId = sourceId,
-            sourceName = sourceName,
-            prompt = prompt,
-            options = validPermanents,
-            minSelections = 0,
-            maxSelections = cost.count,
-            ordered = false,
-            phase = DecisionPhase.RESOLUTION,
-            useTargetingUI = true  // Click an untapped permanent in play to tap it
-        )
-
         val continuation = PayOrSufferContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
             playerId = controllerId,
             sourceId = sourceId,
             sourceName = sourceName,
@@ -469,11 +439,25 @@ class PayOrSufferExecutor(
             iterationEntityId = context.pipeline.iterationTarget
         )
 
-        val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
+        val decisionResult = decisionHandler.createCardSelectionDecision(
+            state = state,
+            playerId = controllerId,
+            sourceId = sourceId,
+            sourceName = sourceName,
+            prompt = prompt,
+            options = validPermanents,
+            minSelections = 0,
+            maxSelections = cost.count,
+            ordered = false,
+            phase = DecisionPhase.RESOLUTION,
+            useTargetingUI = true,  // Click an untapped permanent in play to tap it
+            answer = continuation
+        )
 
-        return EffectResult.paused(
+        val stateWithContinuation = decisionResult.state
+
+        return EffectResult.propagatePause(
             stateWithContinuation,
-            decisionResult.pendingDecision,
             decisionResult.events
         )
     }
@@ -510,22 +494,7 @@ class PayOrSufferExecutor(
 
         val prompt = buildReturnToHandPrompt(cost, sourceName, effect)
 
-        val decisionResult = decisionHandler.createCardSelectionDecision(
-            state = state,
-            playerId = controllerId,
-            sourceId = sourceId,
-            sourceName = sourceName,
-            prompt = prompt,
-            options = validPermanents,
-            minSelections = 0,
-            maxSelections = cost.count,
-            ordered = false,
-            phase = DecisionPhase.RESOLUTION,
-            useTargetingUI = true  // Click the permanent in play to return it
-        )
-
         val continuation = PayOrSufferContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
             playerId = controllerId,
             sourceId = sourceId,
             sourceName = sourceName,
@@ -543,11 +512,25 @@ class PayOrSufferExecutor(
             iterationEntityId = context.pipeline.iterationTarget
         )
 
-        val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
+        val decisionResult = decisionHandler.createCardSelectionDecision(
+            state = state,
+            playerId = controllerId,
+            sourceId = sourceId,
+            sourceName = sourceName,
+            prompt = prompt,
+            options = validPermanents,
+            minSelections = 0,
+            maxSelections = cost.count,
+            ordered = false,
+            phase = DecisionPhase.RESOLUTION,
+            useTargetingUI = true,  // Click the permanent in play to return it
+            answer = continuation
+        )
 
-        return EffectResult.paused(
+        val stateWithContinuation = decisionResult.state
+
+        return EffectResult.propagatePause(
             stateWithContinuation,
-            decisionResult.pendingDecision,
             decisionResult.events
         )
     }
@@ -611,9 +594,9 @@ class PayOrSufferExecutor(
             return executeSufferEffect(state, effect.suffer, context)
         }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val cards = if (cost.count == 1) "card" else "cards"
-        val decision = YesNoDecision(
+
+        val decision = { decisionId: String -> YesNoDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = "Mill ${cost.count} $cards to avoid ${describeConsequence(effect, sourceName)}?",
@@ -624,10 +607,9 @@ class PayOrSufferExecutor(
             ),
             yesText = "Mill ${cost.count} $cards",
             noText = "Accept consequence"
-        )
+        ) }
 
         val continuation = PayOrSufferContinuation(
-            decisionId = decisionId,
             playerId = controllerId,
             sourceId = sourceId,
             sourceName = sourceName,
@@ -645,11 +627,7 @@ class PayOrSufferExecutor(
             iterationEntityId = context.pipeline.iterationTarget
         )
 
-        return EffectResult.paused(
-            stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation),
-            decision,
-            listOf()
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation, events = listOf()))
     }
 
     private fun handlePayLifeCost(
@@ -671,10 +649,9 @@ class PayOrSufferExecutor(
         }
 
         // Create a yes/no decision
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val prompt = "Pay ${cost.amount} life to avoid ${describeConsequence(effect, sourceName)}?"
 
-        val decision = YesNoDecision(
+        val decision = { decisionId: String -> YesNoDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = prompt,
@@ -685,10 +662,9 @@ class PayOrSufferExecutor(
             ),
             yesText = "Pay life",
             noText = "Accept consequence"
-        )
+        ) }
 
         val continuation = PayOrSufferContinuation(
-            decisionId = decisionId,
             playerId = controllerId,
             sourceId = sourceId,
             sourceName = sourceName,
@@ -706,21 +682,7 @@ class PayOrSufferExecutor(
             iterationEntityId = context.pipeline.iterationTarget
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = controllerId,
-                    decisionType = "YES_NO",
-                    prompt = prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 
     /**
@@ -743,21 +705,7 @@ class PayOrSufferExecutor(
 
         val prompt = buildExilePrompt(cost, sourceName, effect)
 
-        val decisionResult = decisionHandler.createCardSelectionDecision(
-            state = state,
-            playerId = controllerId,
-            sourceId = sourceId,
-            sourceName = sourceName,
-            prompt = prompt,
-            options = validCards,
-            minSelections = 0,
-            maxSelections = cost.count,
-            ordered = false,
-            phase = DecisionPhase.RESOLUTION
-        )
-
         val continuation = PayOrSufferContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
             playerId = controllerId,
             sourceId = sourceId,
             sourceName = sourceName,
@@ -775,11 +723,24 @@ class PayOrSufferExecutor(
             zone = cost.zone
         )
 
-        val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
+        val decisionResult = decisionHandler.createCardSelectionDecision(
+            state = state,
+            playerId = controllerId,
+            sourceId = sourceId,
+            sourceName = sourceName,
+            prompt = prompt,
+            options = validCards,
+            minSelections = 0,
+            maxSelections = cost.count,
+            ordered = false,
+            phase = DecisionPhase.RESOLUTION,
+            answer = continuation
+        )
 
-        return EffectResult.paused(
+        val stateWithContinuation = decisionResult.state
+
+        return EffectResult.propagatePause(
             stateWithContinuation,
-            decisionResult.pendingDecision,
             decisionResult.events
         )
     }
@@ -803,11 +764,10 @@ class PayOrSufferExecutor(
         }
 
         // Create a yes/no decision
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val consequence = describeConsequence(effect, sourceName)
         val prompt = "Pay ${cost.cost} or $consequence?"
 
-        val decision = YesNoDecision(
+        val decision = { decisionId: String -> YesNoDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = prompt,
@@ -818,10 +778,9 @@ class PayOrSufferExecutor(
             ),
             yesText = "Pay ${cost.cost}",
             noText = "Accept consequence"
-        )
+        ) }
 
         val continuation = PayOrSufferContinuation(
-            decisionId = decisionId,
             playerId = controllerId,
             sourceId = sourceId,
             sourceName = sourceName,
@@ -839,21 +798,7 @@ class PayOrSufferExecutor(
             manaCost = cost.cost
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = controllerId,
-                    decisionType = "YES_NO",
-                    prompt = prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 
     /**
@@ -888,10 +833,9 @@ class PayOrSufferExecutor(
             return executeSufferEffect(state, effect.suffer, context)
         }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val prompt = "Choose one:"
 
-        val decision = ChooseOptionDecision(
+        val decision = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = payingPlayerId,
             prompt = prompt,
@@ -901,10 +845,9 @@ class PayOrSufferExecutor(
                 phase = DecisionPhase.RESOLUTION
             ),
             options = optionLabels
-        )
+        ) }
 
         val continuation = PayOrSufferChoiceContinuation(
-            decisionId = decisionId,
             playerId = payingPlayerId,
             sourceId = sourceId,
             sourceName = sourceName,
@@ -923,21 +866,7 @@ class PayOrSufferExecutor(
             storedCollections = context.pipeline.storedCollections
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = payingPlayerId,
-                    decisionType = "CHOOSE_OPTION",
-                    prompt = prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 
 
@@ -967,7 +896,7 @@ class PayOrSufferExecutor(
         )
         return when (payment) {
             is PaymentResult.Pending ->
-                EffectResult.paused(payment.state, payment.pendingDecision, payment.events)
+                EffectResult.propagatePause(payment.state, payment.events)
             is PaymentResult.Unaffordable ->
                 executeSufferEffect(state, effect.suffer, context)
             is PaymentResult.Paid ->

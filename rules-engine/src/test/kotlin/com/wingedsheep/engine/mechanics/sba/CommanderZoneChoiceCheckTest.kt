@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.mechanics.sba
 
+import com.wingedsheep.engine.core.Suspension
 import com.wingedsheep.engine.core.CommanderZoneChoiceContinuation
 import com.wingedsheep.engine.core.YesNoDecision
 import com.wingedsheep.engine.handlers.DecisionHandler
@@ -77,7 +78,7 @@ class CommanderZoneChoiceCheckTest : FunSpec({
         decision.shouldBeInstanceOf<YesNoDecision>()
         decision.playerId shouldBe ownerId
 
-        val frame = result.state.continuationStack.last()
+        val frame = result.state.continuationStack.last().shouldBeInstanceOf<Suspension>().answer
         frame.shouldBeInstanceOf<CommanderZoneChoiceContinuation>()
         frame.commanderId shouldBe cmdrId
         frame.ownerId shouldBe ownerId
@@ -88,7 +89,7 @@ class CommanderZoneChoiceCheckTest : FunSpec({
         for (zone in listOf(Zone.EXILE, Zone.HAND, Zone.LIBRARY)) {
             val result = check.check(stateWithCommanderIn(zone))
             result.isPaused shouldBe true
-            (result.state.continuationStack.last() as CommanderZoneChoiceContinuation)
+            (result.state.continuationStack.last().shouldBeInstanceOf<Suspension>().answer as CommanderZoneChoiceContinuation)
                 .currentZone shouldBe zone
         }
     }

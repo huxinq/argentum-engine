@@ -1,10 +1,10 @@
 package com.wingedsheep.engine.handlers.effects.permanent.room
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.ChooseDoorContinuation
 import com.wingedsheep.engine.core.ChooseOptionDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.EffectResult
 import com.wingedsheep.engine.core.GameEvent
 import com.wingedsheep.engine.handlers.actions.room.RoomDoorLocker
@@ -85,9 +85,9 @@ object RoomDoorResolution {
         controllerId: EntityId,
         lock: Boolean,
     ): EffectResult {
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val verb = if (lock) "lock" else "unlock"
-        val decision = ChooseOptionDecision(
+
+        val decision = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = "Choose a door to $verb${roomName?.let { " of $it" } ?: ""}",
@@ -97,26 +97,15 @@ object RoomDoorResolution {
                 phase = DecisionPhase.RESOLUTION,
             ),
             options = candidates.map { it.name },
-        )
+        ) }
+
         val continuation = ChooseDoorContinuation(
-            decisionId = decisionId,
             controllerId = controllerId,
             roomId = roomId,
             candidateFaceIds = candidates.map { it.id },
             lock = lock,
         )
-        val newState = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
-        return EffectResult.paused(
-            newState,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = controllerId,
-                    decisionType = "CHOOSE_OPTION",
-                    prompt = decision.prompt,
-                )
-            ),
-        )
+
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 }

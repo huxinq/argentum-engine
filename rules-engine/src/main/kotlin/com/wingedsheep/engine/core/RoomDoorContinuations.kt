@@ -22,9 +22,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 @SerialName("ChooseDoorContinuation")
 data class ChooseDoorContinuation(
-    override val decisionId: String,
     val controllerId: EntityId,
     val roomId: EntityId,
     val candidateFaceIds: List<RoomFaceId>,
     val lock: Boolean,
-) : ContinuationFrame
+) : AnswerContinuation

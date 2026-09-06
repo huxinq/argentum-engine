@@ -36,8 +36,7 @@ class EachPlayerChoosesCreatureTypeExecutor : EffectExecutor<EachPlayerChoosesCr
         val firstPlayer = playerOrder.first()
         val remainingPlayers = playerOrder.drop(1)
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = ChooseOptionDecision(
+        val decision = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = firstPlayer,
             prompt = "Choose a creature type",
@@ -47,10 +46,9 @@ class EachPlayerChoosesCreatureTypeExecutor : EffectExecutor<EachPlayerChoosesCr
                 phase = DecisionPhase.RESOLUTION
             ),
             options = allCreatureTypes
-        )
+        ) }
 
         val continuation = EachPlayerChoosesCreatureTypeContinuation(
-            decisionId = decisionId,
             sourceId = context.sourceId,
             sourceName = sourceName,
             controllerId = context.controllerId,
@@ -61,20 +59,6 @@ class EachPlayerChoosesCreatureTypeExecutor : EffectExecutor<EachPlayerChoosesCr
             storeAs = effect.storeAs
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = firstPlayer,
-                    decisionType = "CHOOSE_OPTION",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 }

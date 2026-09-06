@@ -56,6 +56,7 @@ export function GameBoard({ spectatorMode = false, topOffset = 0 }: GameBoardPro
   const sessionId = useGameStore((state) => state.sessionId)
   const playerId = useGameStore((state) => state.playerId)
   const submitAction = useGameStore((state) => state.submitAction)
+  const interactionEpoch = useGameStore((state) => state.interactionEpoch)
   const combatState = useGameStore((state) => state.combatState)
   const confirmCombat = useGameStore((state) => state.confirmCombat)
   const clearAttackers = useGameStore((state) => state.clearAttackers)
@@ -284,45 +285,8 @@ export function GameBoard({ spectatorMode = false, topOffset = 0 }: GameBoardPro
   // modified LegalActionInfo with Explicit payment and route through executeAction
   const handleConfirmManaSelection = useCallback(() => {
     if (!manaSelectionState) return
-    const { pipelineState, advancePipeline } = useGameStore.getState()
-    if (pipelineState) {
-      // Pipeline path: clear mana UI state directly (not via cancelManaSelection
-      // which would cancel the entire pipeline) and advance
-      useGameStore.setState({ manaSelectionState: null })
-      advancePipeline({
-        type: 'manaSource',
-        selectedSources: [...manaSelectionState.selectedSources],
-        phyrexianLifePayments: manaSelectionState.phyrexianLifePipIndices.map((pipIndex) => {
-          const pip = manaSelectionState.manaCost.match(/\{([^}]+)\}/g)?.[pipIndex]?.slice(1, -1).split('/')[0]
-          return pip === 'B' ? 'BLACK' : pip === 'W' ? 'WHITE' : pip === 'U' ? 'BLUE' : pip === 'R' ? 'RED' : 'GREEN'
-        }),
-      })
-      return
-    }
-
-    // Direct mana-button path: build Explicit payment and enter pipeline for remaining phases
-    const paymentStrategy = {
-      type: 'Explicit' as const,
-      manaAbilitiesToActivate: [...manaSelectionState.selectedSources],
-      phyrexianLifePayments: manaSelectionState.phyrexianLifePipIndices.map((pipIndex) => {
-        const symbol = manaSelectionState.manaCost.match(/\{([^}]+)\}/g)?.[pipIndex] ?? ''
-        return symbol.slice(1, -1).split('/')[0] === 'B' ? 'BLACK'
-          : symbol.slice(1, -1).split('/')[0] === 'W' ? 'WHITE'
-          : symbol.slice(1, -1).split('/')[0] === 'U' ? 'BLUE'
-          : symbol.slice(1, -1).split('/')[0] === 'R' ? 'RED' : 'GREEN'
-      }),
-    }
-    // Cast to add paymentStrategy - only actions with mana costs reach here
-    const modifiedAction = { ...manaSelectionState.action, paymentStrategy } as import('../../types').GameAction
-    // Strip mana-source fields so executeAction doesn't loop back here
-    const { availableManaSources: _, autoTapPreview: _2, ...restActionInfo } = manaSelectionState.actionInfo
-    const modifiedActionInfo: import('../../types').LegalActionInfo = {
-      ...restActionInfo,
-      action: modifiedAction,
-    }
-    cancelManaSelection()
-    executeAction(modifiedActionInfo)
-  }, [manaSelectionState, cancelManaSelection, executeAction])
+    useGameStore.getState().confirmManaSelection(interactionEpoch, manaSelectionState, executeAction)
+  }, [interactionEpoch, manaSelectionState, executeAction])
 
   const opponent = useOpponent()
   const stackCards = useStackCards()
@@ -1787,7 +1751,7 @@ export function GameBoard({ spectatorMode = false, topOffset = 0 }: GameBoardPro
                     : (youAreHijacking != null && gameState.priorityPlayerId === youAreHijacking
                       ? youAreHijacking
                       : viewingPlayer.playerId),
-                })
+                }, interactionEpoch)
               }}
               style={{
                 ...styles.floatingBarButton,
@@ -1956,7 +1920,7 @@ export function GameBoard({ spectatorMode = false, topOffset = 0 }: GameBoardPro
                 Attack All
               </button>
               <button
-                onClick={confirmCombat}
+                onClick={() => confirmCombat(interactionEpoch)}
                 style={{
                   ...styles.floatingBarButton,
                   ...styles.combatPassButton,
@@ -1973,7 +1937,7 @@ export function GameBoard({ spectatorMode = false, topOffset = 0 }: GameBoardPro
                   combatState.selectedAttackers.some((id) => !combatState.attackerTargets[id])
                 return (
                   <button
-                    onClick={confirmCombat}
+                    onClick={() => confirmCombat(interactionEpoch)}
                     disabled={awaitingDefender}
                     title={awaitingDefender ? 'Choose a defender for every attacker first' : undefined}
                     style={{
@@ -2010,7 +1974,7 @@ export function GameBoard({ spectatorMode = false, topOffset = 0 }: GameBoardPro
           {Object.keys(combatState.blockerAssignments).length === 0 ? (
             <>
               <button
-                onClick={confirmCombat}
+                onClick={() => confirmCombat(interactionEpoch)}
                 style={{
                   ...styles.floatingBarButton,
                   ...styles.combatPassButton,
@@ -2022,7 +1986,7 @@ export function GameBoard({ spectatorMode = false, topOffset = 0 }: GameBoardPro
           ) : (
             <>
               <button
-                onClick={confirmCombat}
+                onClick={() => confirmCombat(interactionEpoch)}
                 style={{
                   ...styles.floatingBarButton,
                   ...styles.combatActionButton,
@@ -2092,7 +2056,7 @@ export function GameBoard({ spectatorMode = false, topOffset = 0 }: GameBoardPro
                   </div>
                 </div>
                 <button
-                  onClick={confirmDistribute}
+                  onClick={() => confirmDistribute(distributeState.decisionId)}
                   disabled={!canConfirm}
                   style={{
                     ...styles.combatButton,
@@ -2204,7 +2168,7 @@ export function GameBoard({ spectatorMode = false, topOffset = 0 }: GameBoardPro
               backgroundColor: 'rgba(0, 0, 0, 0.2)',
             }}>
               <button
-                onClick={cancelCounterDistribution}
+                onClick={() => cancelCounterDistribution(interactionEpoch)}
                 style={{
                   flex: 1,
                   height: 30,
@@ -2230,7 +2194,7 @@ export function GameBoard({ spectatorMode = false, topOffset = 0 }: GameBoardPro
                 Cancel
               </button>
               <button
-                onClick={confirmCounterDistribution}
+                onClick={() => confirmCounterDistribution(interactionEpoch)}
                 disabled={!canConfirm}
                 style={{
                   flex: 1,
@@ -2257,10 +2221,10 @@ export function GameBoard({ spectatorMode = false, topOffset = 0 }: GameBoardPro
       {!spectatorMode && <ActionMenu />}
 
       {/* Targeting overlay for spell/ability target selection */}
-      {!spectatorMode && <TargetingOverlay />}
+      {!spectatorMode && <TargetingOverlay key={interactionEpoch} />}
 
       {/* Mana color selection overlay */}
-      {!spectatorMode && <ManaColorSelectionOverlay />}
+      {!spectatorMode && <ManaColorSelectionOverlay key={interactionEpoch} />}
 
       {/* Combat arrows for blocker assignments - rendered by SpectatorGameBoard in spectator mode to avoid stacking context issues */}
       {!spectatorMode && <CombatArrows />}
@@ -2385,7 +2349,7 @@ export function GameBoard({ spectatorMode = false, topOffset = 0 }: GameBoardPro
           {/* Confirm / Cancel buttons */}
           <div style={{ display: 'flex', gap: 8 }}>
             <button
-              onClick={cancelManaSelection}
+              onClick={() => cancelManaSelection(interactionEpoch)}
               style={{
                 padding: responsive.isMobile ? '10px 20px' : '12px 24px',
                 fontSize: responsive.fontSize.normal,

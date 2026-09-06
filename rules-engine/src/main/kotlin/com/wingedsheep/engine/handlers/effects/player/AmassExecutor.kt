@@ -1,9 +1,9 @@
 package com.wingedsheep.engine.handlers.effects.player
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.AmassContinuation
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.EffectResult
 import com.wingedsheep.engine.core.SelectCardsDecision
 import com.wingedsheep.engine.handlers.DynamicAmountEvaluator
@@ -92,8 +92,8 @@ class AmassExecutor(
         val sourceName = context.sourceId
             ?.let { state.getEntity(it)?.get<CardComponent>()?.name }
             ?: "Amass"
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = SelectCardsDecision(
+
+        val decision = { decisionId: String -> SelectCardsDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = "Amass ${subtype}s — choose an Army you control to put the counters on",
@@ -106,28 +106,17 @@ class AmassExecutor(
             minSelections = 1,
             maxSelections = 1,
             useTargetingUI = true
-        )
+        ) }
+
         val continuation = AmassContinuation(
-            decisionId = decisionId,
             controllerId = controllerId,
             subtype = subtype,
             amount = amount,
             sourceId = context.sourceId,
             candidates = armies
         )
-        val newState = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
-        return EffectResult.paused(
-            newState,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = controllerId,
-                    decisionType = "SELECT_CARDS",
-                    prompt = decision.prompt
-                )
-            )
-        )
+
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 
     private fun controlledArmies(state: GameState, controllerId: EntityId): List<EntityId> {

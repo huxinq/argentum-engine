@@ -27,7 +27,7 @@ import kotlin.reflect.KClass
  * 2. Check it has exactly one target — if not, the effect does nothing
  * 3. Find all legal new targets based on the spell/ability's target requirement
  * 4. Present a selection decision to the controller
- * 5. Push ChangeSpellTargetContinuation (reused)
+ * 5. Push ChangeSpellTargetContinuation ()
  */
 class ChangeTargetExecutor : EffectExecutor<ChangeTargetEffect> {
 
@@ -86,6 +86,11 @@ class ChangeTargetExecutor : EffectExecutor<ChangeTargetEffect> {
 
         // 4. Present selection decision to the controller
         val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
+        val continuation = ChangeSpellTargetContinuation(
+            spellEntityId = targetSpell.spellEntityId,
+            sourceId = context.sourceId
+        )
+
         val decisionResult = decisionHandler.createCardSelectionDecision(
             state = state,
             playerId = context.controllerId,
@@ -95,21 +100,17 @@ class ChangeTargetExecutor : EffectExecutor<ChangeTargetEffect> {
             options = legalNewTargets,
             minSelections = 1,
             maxSelections = 1,
-            useTargetingUI = true
+            useTargetingUI = true,
+            answer = continuation
         )
 
         // 5. Push continuation (reuse ChangeSpellTargetContinuation)
-        val continuation = ChangeSpellTargetContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
-            spellEntityId = targetSpell.spellEntityId,
-            sourceId = context.sourceId
-        )
 
-        val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
 
-        return EffectResult.paused(
+        val stateWithContinuation = decisionResult.state
+
+        return EffectResult.propagatePause(
             stateWithContinuation,
-            decisionResult.pendingDecision,
             decisionResult.events
         )
     }

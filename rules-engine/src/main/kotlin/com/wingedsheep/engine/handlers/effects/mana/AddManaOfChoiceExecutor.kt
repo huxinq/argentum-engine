@@ -75,6 +75,14 @@ class AddManaOfChoiceExecutor(
         if (color != null) return addManaToPool(state, effect, context, color, availableColors)
 
         val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
+        val continuation = ChooseManaColorContinuation(
+            controllerId = context.controllerId,
+            sourceId = context.sourceId,
+            sourceName = sourceName,
+            effect = effect,
+            baseContext = context,
+        )
+
         val decisionResult = decisionHandler.createColorDecision(
             state = state,
             playerId = context.controllerId,
@@ -83,18 +91,11 @@ class AddManaOfChoiceExecutor(
             prompt = "Choose a color of mana to add",
             phase = DecisionPhase.RESOLUTION,
             availableColors = availableColors,
+            answer = continuation
         )
-        val continuation = ChooseManaColorContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
-            controllerId = context.controllerId,
-            sourceId = context.sourceId,
-            sourceName = sourceName,
-            effect = effect,
-            baseContext = context,
-        )
-        return EffectResult.paused(
-            decisionResult.state.pushContinuation(continuation),
-            decisionResult.pendingDecision,
+
+        return EffectResult.propagatePause(
+            decisionResult.state,
             decisionResult.events,
         )
     }

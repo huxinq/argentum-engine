@@ -1,8 +1,8 @@
 package com.wingedsheep.engine.handlers.effects.token
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.EffectResult
 import com.wingedsheep.engine.core.TokenCreationReplacementContinuation
 import com.wingedsheep.engine.core.YesNoDecision
@@ -306,11 +306,9 @@ object TokenCreationReplacementHelper {
                 var newState = state.withEntity(entityId, container.with(TokenReplacementOfferedThisTurnComponent))
 
                 if (re.optional) {
-                    val (decisionId, stateWithRoutingId) = newState.newRoutingId()
-                    newState = stateWithRoutingId
                     val prompt = "Use $cardName? Create ${if (tokenCount == 1) "a token that's a copy" else "$tokenCount tokens that are copies"} of ${attachedCard.name} instead?"
 
-                    val decision = YesNoDecision(
+                    val decision = { decisionId: String -> YesNoDecision(
                         id = decisionId,
                         playerId = controllerId,
                         prompt = prompt,
@@ -319,10 +317,9 @@ object TokenCreationReplacementHelper {
                             sourceName = cardName,
                             phase = DecisionPhase.RESOLUTION
                         )
-                    )
+                    ) }
 
                     val continuation = TokenCreationReplacementContinuation(
-                        decisionId = decisionId,
                         sourceId = entityId,
                         attachedPermanentId = attachedTo.targetId,
                         originalEffect = effect,
@@ -330,21 +327,7 @@ object TokenCreationReplacementHelper {
                         effectContext = context
                     )
 
-                    newState = newState.withPendingDecision(decision)
-                    newState = newState.pushContinuation(continuation)
-
-                    return EffectResult.paused(
-                        newState,
-                        decision,
-                        listOf(
-                            DecisionRequestedEvent(
-                                decisionId = decisionId,
-                                playerId = controllerId,
-                                decisionType = "YES_NO",
-                                prompt = prompt
-                            )
-                        )
-                    )
+                    return EffectResult.from(newState.suspendForDecision(decision, continuation, emptyList()))
                 } else {
                     // Mandatory replacement — create copies directly
                     return createAttachedPermanentCopies(

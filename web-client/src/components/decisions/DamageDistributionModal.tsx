@@ -25,6 +25,7 @@ interface TargetCardInfo {
 export function DamageDistributionModal() {
   const damageDistributionState = useGameStore((s) => s.damageDistributionState)
   const updateDamageDistribution = useGameStore((s) => s.updateDamageDistribution)
+  const interactionEpoch = useGameStore((state) => state.interactionEpoch)
   const cancelDamageDistribution = useGameStore((s) => s.cancelDamageDistribution)
   const confirmDamageDistribution = useGameStore((s) => s.confirmDamageDistribution)
   const gameState = useGameStore((s) => s.gameState)
@@ -406,7 +407,7 @@ export function DamageDistributionModal() {
       {/* Action buttons */}
       <div style={{ display: 'flex', gap: 16, marginTop: responsive.isMobile ? 8 : 16 }}>
         <button
-          onClick={cancelDamageDistribution}
+          onClick={() => cancelDamageDistribution(interactionEpoch)}
           style={{
             padding: responsive.isMobile ? '12px 24px' : '16px 32px',
             fontSize: responsive.fontSize.normal,
@@ -436,7 +437,7 @@ export function DamageDistributionModal() {
           View Battlefield
         </button>
         <button
-          onClick={confirmDamageDistribution}
+          onClick={() => confirmDamageDistribution(interactionEpoch)}
           disabled={!canConfirm}
           style={{
             padding: responsive.isMobile ? '12px 32px' : '16px 48px',

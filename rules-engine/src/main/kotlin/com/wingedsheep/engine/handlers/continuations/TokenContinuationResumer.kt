@@ -11,7 +11,7 @@ import com.wingedsheep.engine.state.GameState
 
 /**
  * Handles token-related continuation resumptions:
- * - TokenCreationReplacementContinuation (Mirrormind Crown yes/no)
+ * - TokenCreationReplacementContinuation ()
  */
 class TokenContinuationResumer(
     private val services: EngineServices

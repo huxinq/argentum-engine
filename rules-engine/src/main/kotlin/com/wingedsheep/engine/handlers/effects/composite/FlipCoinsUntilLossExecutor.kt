@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.handlers.effects.composite
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.CoinFlipChoiceContinuation
 import com.wingedsheep.engine.core.DecisionPhase
 import com.wingedsheep.engine.core.EffectResult
@@ -92,19 +93,12 @@ class FlipCoinsUntilLossExecutor(
             )
 
             return when (resolution) {
-                is CoinFlipService.Resolution.NeedsChoice -> EffectResult.paused(
-                    resolution.state.pushContinuation(
-                        CoinFlipChoiceContinuation(
-                            decisionId = resolution.decision.id,
+                is CoinFlipService.Resolution.NeedsChoice -> EffectResult.from(resolution.state.suspendForDecision(resolution.question, CoinFlipChoiceContinuation(
                             effect = effect,
                             effectContext = context,
                             pending = resolution.pending,
                             winsSoFar = winsSoFar
-                        )
-                    ),
-                    resolution.decision,
-                    priorEvents + resolution.events
-                )
+                        ), priorEvents + resolution.events))
 
                 is CoinFlipService.Resolution.Resolved -> afterFlip(
                     state = resolution.state,
@@ -155,6 +149,13 @@ class FlipCoinsUntilLossExecutor(
             val sourceId = context.sourceId
             val sourceName = sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name } ?: "Unknown"
 
+            val continuation = FlipCoinsUntilLossContinuation(
+                flipperId = context.controllerId,
+                storeWinsAs = effect.storeWinsAs,
+                winsSoFar = wins,
+                sourceId = sourceId
+            )
+
             val decisionResult = decisionHandler.createYesNoDecision(
                 state = state,
                 playerId = context.controllerId,
@@ -164,22 +165,14 @@ class FlipCoinsUntilLossExecutor(
                     if (wins == 1) "flip so far." else "flips so far.",
                 yesText = "Flip again",
                 noText = "Stop flipping",
-                phase = DecisionPhase.RESOLUTION
+                phase = DecisionPhase.RESOLUTION,
+                answer = continuation
             )
             val decision = decisionResult.pendingDecision
                 ?: return EffectResult.error(state, "Failed to create continue-flipping decision")
 
-            val continuation = FlipCoinsUntilLossContinuation(
-                decisionId = decision.id,
-                flipperId = context.controllerId,
-                storeWinsAs = effect.storeWinsAs,
-                winsSoFar = wins,
-                sourceId = sourceId
-            )
-
-            return EffectResult.paused(
-                decisionResult.state.pushContinuation(continuation),
-                decision,
+            return EffectResult.propagatePause(
+                decisionResult.state,
                 priorEvents + decisionResult.events
             )
         }

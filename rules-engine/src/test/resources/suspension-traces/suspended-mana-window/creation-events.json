@@ -1,0 +1,9 @@
+[
+    {
+        "type": "DecisionRequestedEvent",
+        "decisionId": "r2",
+        "playerId": "player-1",
+        "decisionType": "CHOOSE_COLOR",
+        "prompt": "Choose a color of mana to add"
+    }
+]

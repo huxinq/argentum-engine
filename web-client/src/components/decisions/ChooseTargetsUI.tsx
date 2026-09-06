@@ -61,7 +61,7 @@ export function ChooseTargetsUI({ decision }: { decision: ChooseTargetsDecision 
   useEffect(() => {
     if (walk.submission && submittedRef.current !== walk.submission) {
       submittedRef.current = walk.submission
-      submitTargetsDecision(walk.submission)
+      submitTargetsDecision(decision.id, walk.submission)
     }
   }, [walk.submission])
 

@@ -1,5 +1,7 @@
 package com.wingedsheep.engine.scenarios
 
+import com.wingedsheep.engine.core.Suspension
+import com.wingedsheep.engine.core.MayAbilityContinuation
 import com.wingedsheep.engine.core.ActivateAbility
 import com.wingedsheep.engine.core.ChooseManaColorContinuation
 import com.wingedsheep.engine.core.DecisionPhase
@@ -331,6 +333,7 @@ class AbilityIdentityTest : FunSpec({
         ).error shouldBe null
 
         val continuation = driver.state.peekContinuation()
+            .shouldBeInstanceOf<Suspension>().answer
             .shouldBeInstanceOf<ChooseManaColorContinuation>()
         continuation.baseContext.abilityIdentity shouldBe
             AbilityIdentity("Identity Mana Source", printedManaAbilityId)
@@ -365,6 +368,7 @@ class AbilityIdentityTest : FunSpec({
         ).error shouldBe null
 
         val continuation = driver.state.peekContinuation()
+            .shouldBeInstanceOf<Suspension>().answer
             .shouldBeInstanceOf<ChooseManaColorContinuation>()
         continuation.baseContext.abilityIdentity shouldBe null
         continuation.baseContext.activatedAbilityId shouldBe grantedId
@@ -406,6 +410,7 @@ class AbilityIdentityTest : FunSpec({
         ).isPaused shouldBe true
 
         val continuation = driver.state.peekContinuation()
+            .shouldBeInstanceOf<Suspension>().answer
             .shouldBeInstanceOf<ChooseManaColorContinuation>()
         continuation.baseContext.abilityIdentity shouldBe null
         continuation.baseContext.activatedAbilityId shouldBe intrinsicId
@@ -451,7 +456,16 @@ class AbilityIdentityTest : FunSpec({
             sourceName = "Some Card",
             prompt = "You may do the thing?",
             phase = DecisionPhase.RESOLUTION,
-            abilityIdentity = identity
+            abilityIdentity = identity,
+            answer = MayAbilityContinuation(
+                sourceName = null,
+                effectIfNo = null,
+                playerId = EntityId.of("player"),
+                effectIfYes = Effects.DrawCards(1),
+                effectContext = com.wingedsheep.engine.handlers.EffectContext(
+                    sourceId = EntityId.of("source"), controllerId = EntityId.of("player")
+                )
+            )
         )
 
         val decision = result.pendingDecision as YesNoDecision

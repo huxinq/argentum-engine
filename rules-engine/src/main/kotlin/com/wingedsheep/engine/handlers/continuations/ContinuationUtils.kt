@@ -50,9 +50,8 @@ fun mergeAndContinue(
     checkForMore: CheckForMore? = null
 ): ExecutionResult {
     if (result.isPaused) {
-        return ExecutionResult.paused(
+        return ExecutionResult.propagatePause(
             result.state,
-            result.pendingDecision!!,
             events + result.events
         )
     }

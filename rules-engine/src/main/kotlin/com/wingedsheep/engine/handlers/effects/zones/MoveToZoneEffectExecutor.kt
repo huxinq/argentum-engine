@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.handlers.effects.zones
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.CardsRevealedEvent
 import com.wingedsheep.engine.core.ChooseTargetsDecision
 import com.wingedsheep.engine.core.DecisionContext
@@ -257,14 +258,13 @@ class MoveToZoneEffectExecutor(
         }
 
         val cardName = cardComponent.name
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = ChooseTargetsDecision(
+        val decision = { decisionId: String -> ChooseTargetsDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = "Choose what $cardName attaches to",
             context = DecisionContext(
                 sourceId = context.sourceId,
-                sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name },
+                sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name },
                 phase = DecisionPhase.RESOLUTION
             ),
             targetRequirements = listOf(
@@ -276,14 +276,12 @@ class MoveToZoneEffectExecutor(
                 )
             ),
             legalTargets = mapOf(0 to legalHosts)
-        )
+        ) }
         val continuation = PutOntoBattlefieldAttachedToChosenContinuation(
-            decisionId = decisionId,
             cardId = cardId,
             controllerId = controllerId
         )
-        val newState = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
-        return EffectResult(state = newState, events = emptyList(), pendingDecision = decision)
+        return EffectResult.from(state.suspendForDecision(decision, continuation, emptyList()))
     }
 
     private fun autoRevealForReturn(

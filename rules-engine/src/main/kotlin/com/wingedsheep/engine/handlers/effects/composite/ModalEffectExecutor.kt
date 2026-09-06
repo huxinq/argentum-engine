@@ -131,8 +131,7 @@ class ModalEffectExecutor(
         val basePrompt = "Choose a mode for ${sourceName ?: "modal spell"}"
         val prompt = if (effectiveChooseCount > 1) "$basePrompt (1 of $effectiveChooseCount)" else basePrompt
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = ChooseOptionDecision(
+        val decision = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = playerId,
             prompt = prompt,
@@ -142,14 +141,9 @@ class ModalEffectExecutor(
                 phase = DecisionPhase.RESOLUTION
             ),
             options = modeDescriptions
-        )
+        ) }
 
-        // Preserve outer-scope targets so no-target modes can resolve ContextTarget
-        // references to targets chosen by the enclosing spell/ability (e.g.,
-        // Manifold Mouse's BeginCombat trigger targets a Mouse, then picks a
-        // keyword mode that grants the keyword to that outer target).
         val continuation = ModalContinuation(
-            decisionId = decisionId,
             controllerId = context.controllerId,
             sourceId = context.sourceId,
             sourceName = sourceName,
@@ -167,21 +161,7 @@ class ModalEffectExecutor(
             recordChosenModesThisTurn = effect.excludeModesChosenThisTurn
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = playerId,
-                    decisionType = "CHOOSE_OPTION",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 
     /**
@@ -351,10 +331,9 @@ internal fun processPreTargetedEffectQueue(
     // Pre-push the tail continuation so that if the effect pauses, our frame sits
     // beneath the inner decision's frames and auto-resumes when they finish.
     val stateForExecution = if (tail.isNotEmpty()) {
-        val (continuationId, stateWithRoutingId) = state.newRoutingId()
-        stateWithRoutingId.pushContinuation(
+
+        state.pushContinuation(
             ModalPreChosenContinuation(
-                decisionId = "modal-pre-chosen-$continuationId",
                 controllerId = ctx.controllerId,
                 sourceId = ctx.sourceId,
                 sourceName = ctx.sourceName,
@@ -370,7 +349,7 @@ internal fun processPreTargetedEffectQueue(
     val nextEvents = accumulatedEvents + result.events
 
     if (result.isPaused) {
-        return EffectResult.paused(result.state, result.pendingDecision!!, nextEvents)
+        return EffectResult.propagatePause(result.state, nextEvents)
     }
     if (result.error != null) {
         return EffectResult(state = result.state, events = nextEvents, error = result.error)

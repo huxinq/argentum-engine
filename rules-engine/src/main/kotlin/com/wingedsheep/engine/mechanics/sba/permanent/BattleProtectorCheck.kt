@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.mechanics.sba.permanent
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.BattleProtectorChoiceContinuation
 import com.wingedsheep.engine.core.ChooseOptionDecision
 import com.wingedsheep.engine.core.DecisionContext
@@ -83,8 +84,7 @@ class BattleProtectorCheck : StateBasedActionCheck {
             }
 
             val chooserId = newState.projectedState.getController(entityId) ?: continue
-            val decisionId = "battle-protector-${entityId.value}"
-            val decision = ChooseOptionDecision(
+            val question = { decisionId: String -> ChooseOptionDecision(
                 id = decisionId,
                 playerId = chooserId,
                 prompt = "Choose a player to protect ${cardComponent.name}",
@@ -94,17 +94,12 @@ class BattleProtectorCheck : StateBasedActionCheck {
                     phase = DecisionPhase.STATE_BASED
                 ),
                 options = eligible.map { playerNameOf(newState, it) }
-            )
+            ) }
             val continuation = BattleProtectorChoiceContinuation(
-                decisionId = decisionId,
                 battleId = entityId,
                 candidateIds = eligible
             )
-            return ExecutionResult.paused(
-                newState.pushContinuation(continuation).withPendingDecision(decision),
-                decision,
-                events
-            )
+            return newState.suspendForDecision(question, continuation, events)
         }
 
         return ExecutionResult.success(newState, events)

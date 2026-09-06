@@ -60,9 +60,12 @@ data class ExecutionResult(
             ExecutionResult(state, error = message)
 
         /**
-         * Create a paused result awaiting player input.
+         * Propagate an existing suspension through an outer execution layer. Never allocates or
+         * installs a question; the state supplies the single authoritative pending decision.
          */
-        fun paused(state: GameState, decision: PendingDecision, events: List<GameEvent> = emptyList()): ExecutionResult =
-            ExecutionResult(state, events, pendingDecision = decision)
+        fun propagatePause(state: GameState, events: List<GameEvent> = emptyList()): ExecutionResult =
+            ExecutionResult(state, events, pendingDecision = requireNotNull(state.pendingDecision) {
+                "A paused result must propagate an installed suspension"
+            })
     }
 }

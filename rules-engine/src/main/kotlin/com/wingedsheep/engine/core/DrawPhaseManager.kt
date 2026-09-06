@@ -106,7 +106,7 @@ class DrawPhaseManager(
             if (skipsDrawStep(s, teammate)) continue
             val r = drawCards(s, teammate, 1)
             if (r.isPaused) {
-                return ExecutionResult.paused(r.newState, r.pendingDecision!!, teammateEvents + r.events)
+                return ExecutionResult.propagatePause(r.newState, teammateEvents + r.events)
             }
             s = r.newState
             teammateEvents.addAll(r.events)

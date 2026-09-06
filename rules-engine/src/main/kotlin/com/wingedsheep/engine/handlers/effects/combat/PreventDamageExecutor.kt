@@ -1,6 +1,7 @@
 package com.wingedsheep.engine.handlers.effects.combat
 import com.wingedsheep.engine.state.components.battlefield.chosenCreatureType
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DeflectDamageSourceChoiceContinuation
 import com.wingedsheep.engine.core.EffectResult
@@ -105,13 +106,12 @@ class PreventDamageExecutor(
 
         if (sourceIds.isEmpty()) return EffectResult.success(state)
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decisionContext = DecisionContext(
             sourceId = context.sourceId,
-            sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name }
+            sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
         )
 
-        val decision = SelectCardsDecision(
+        val decision = { decisionId: String -> SelectCardsDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = "Choose a source of damage",
@@ -120,21 +120,19 @@ class PreventDamageExecutor(
             minSelections = 1,
             maxSelections = 1,
             useTargetingUI = true
-        )
+        ) }
 
         if (effect.onPrevented != null) {
             // Reaction path (Deflecting Palm, New Way Forward): on prevention, run an arbitrary
             // follow-up effect keyed to the prevented amount (reflect, draw, …).
             val continuation = DeflectDamageSourceChoiceContinuation(
-                decisionId = decisionId,
                 controllerId = controllerId,
                 sourceId = context.sourceId,
-                sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name },
+                sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name },
                 onPrevented = effect.onPrevented,
                 preventDamage = effect.preventDamage
             )
-            val newState = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
-            return EffectResult.paused(newState, decision)
+            return EffectResult.from(state.suspendForDecision(decision, continuation))
         } else {
             // Prevention-only path: prevent N damage (or all, when amount is null) from chosen source
             //
@@ -149,25 +147,23 @@ class PreventDamageExecutor(
                 controllerId
             } else {
                 context.resolveTarget(effect.target)
-                    ?: return EffectResult.error(stateWithRoutingId, "Could not resolve target for PreventDamageEffect with ChosenSource")
+                    ?: return EffectResult.error(state, "Could not resolve target for PreventDamageEffect with ChosenSource")
             }
-            val amount = effect.amount?.let { amountEvaluator.evaluate(stateWithRoutingId, it, context) }
-            if (amount != null && amount <= 0) return EffectResult.success(stateWithRoutingId)
+            val amount = effect.amount?.let { amountEvaluator.evaluate(state, it, context) }
+            if (amount != null && amount <= 0) return EffectResult.success(state)
 
             val continuation = PreventDamageFromChosenSourceContinuation(
-                decisionId = decisionId,
                 controllerId = controllerId,
                 targetId = targetId,
                 silenceChosenSource = silenceChosenSource,
                 amount = amount,
                 gainLifeFromColors = effect.gainLifeFromColors.map { it.name }.toSet(),
                 sourceId = context.sourceId,
-                sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name },
+                sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name },
                 nextInstanceOnly = effect.nextInstanceOnly,
                 halvePreventedDamage = effect.halvePreventedDamage
             )
-            val newState = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
-            return EffectResult.paused(newState, decision)
+            return EffectResult.from(state.suspendForDecision(decision, continuation))
         }
     }
 

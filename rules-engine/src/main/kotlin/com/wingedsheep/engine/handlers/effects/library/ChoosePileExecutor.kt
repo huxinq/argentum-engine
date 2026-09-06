@@ -58,8 +58,7 @@ class ChoosePileExecutor : EffectExecutor<ChoosePileEffect> {
             )
         }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = ChooseOptionDecision(
+        val decision = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = deciderId,
             prompt = effect.prompt ?: "Choose a pile to keep",
@@ -73,10 +72,9 @@ class ChoosePileExecutor : EffectExecutor<ChoosePileEffect> {
                 0 to pileA,
                 1 to pileB
             )
-        )
+        ) }
 
         val continuation = ChoosePileContinuation(
-            decisionId = decisionId,
             playerId = deciderId,
             sourceId = context.sourceId,
             sourceName = sourceName,
@@ -89,20 +87,6 @@ class ChoosePileExecutor : EffectExecutor<ChoosePileEffect> {
             storedCollections = context.pipeline.storedCollections
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = deciderId,
-                    decisionType = "CHOOSE_OPTION",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 }

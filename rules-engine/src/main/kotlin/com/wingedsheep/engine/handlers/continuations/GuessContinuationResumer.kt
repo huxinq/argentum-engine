@@ -1,11 +1,11 @@
 package com.wingedsheep.engine.handlers.continuations
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.CardsRevealedEvent
 import com.wingedsheep.engine.core.ChooseGuessKindContinuation
 import com.wingedsheep.engine.core.ChooseOptionDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.DecisionResponse
 import com.wingedsheep.engine.core.EngineServices
 import com.wingedsheep.engine.core.ExecutionResult
@@ -103,8 +103,7 @@ class GuessContinuationResumer(
             state.getEntity(it)?.get<CardComponent>()?.name
         }
 
-        val (decisionId, stateAfterRouting) = state.newRoutingId()
-        val decision = ChooseOptionDecision(
+        val question = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = continuation.guesserId,
             prompt = "Guess whether the top card of the library is land or nonland",
@@ -114,10 +113,9 @@ class GuessContinuationResumer(
                 phase = DecisionPhase.RESOLUTION
             ),
             options = listOf("Land", "Nonland")
-        )
+        ) }
 
         val nextContinuation = GuessTopCardKindContinuation(
-            decisionId = decisionId,
             controllerLibraryOwnerId = continuation.controllerLibraryOwnerId,
             guesserId = continuation.guesserId,
             onGuessedRight = continuation.onGuessedRight,
@@ -125,20 +123,10 @@ class GuessContinuationResumer(
             effectContext = continuation.effectContext
         )
 
-        val stateWithDecision = stateAfterRouting.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(nextContinuation)
-
-        return ExecutionResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = continuation.guesserId,
-                    decisionType = "CHOOSE_OPTION",
-                    prompt = decision.prompt
-                )
-            )
+        return state.suspendForDecision(
+            question = question,
+            answer = nextContinuation,
+            events = emptyList(),
         )
     }
 
@@ -196,7 +184,7 @@ class GuessContinuationResumer(
         )
 
         if (result.isPaused) {
-            return ExecutionResult.paused(result.state, result.pendingDecision!!, events + result.events)
+            return ExecutionResult.propagatePause(result.state, events + result.events)
         }
         return checkForMore(result.state, events + result.events.toList())
     }

@@ -132,6 +132,12 @@ class CardSpecificContinuationResumer(
             val prompt = "Secretly choose a number (you will lose that much life if you have the highest bid)"
 
             val decisionHandler = DecisionHandler()
+            val newContinuation = continuation.copy(
+                currentPlayerId = nextPlayer,
+                remainingPlayers = nextRemainingPlayers,
+                chosenNumbers = newChosenNumbers
+            )
+
             val decisionResult = decisionHandler.createNumberDecision(
                 state = state,
                 playerId = nextPlayer,
@@ -140,21 +146,12 @@ class CardSpecificContinuationResumer(
                 prompt = prompt,
                 minValue = 0,
                 maxValue = 99,
-                phase = DecisionPhase.RESOLUTION
+                phase = DecisionPhase.RESOLUTION,
+                answer = newContinuation,
             )
 
-            val newContinuation = continuation.copy(
-                decisionId = decisionResult.pendingDecision!!.id,
-                currentPlayerId = nextPlayer,
-                remainingPlayers = nextRemainingPlayers,
-                chosenNumbers = newChosenNumbers
-            )
-
-            val stateWithContinuation = decisionResult.state.pushContinuation(newContinuation)
-
-            return ExecutionResult.paused(
-                stateWithContinuation,
-                decisionResult.pendingDecision,
+            return ExecutionResult.propagatePause(
+                decisionResult.state,
                 decisionResult.events
             )
         }

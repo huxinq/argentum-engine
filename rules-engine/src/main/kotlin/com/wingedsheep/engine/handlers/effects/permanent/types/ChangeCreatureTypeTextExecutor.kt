@@ -78,8 +78,7 @@ class ChangeCreatureTypeTextExecutor(
         val excludedNote = if (effect.excludedTypes.isNotEmpty())
             " (can't be ${effect.excludedTypes.joinToString(" or ")})" else ""
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = ChooseReplacementDecision(
+        val decision = { decisionId: String -> ChooseReplacementDecision(
             id = decisionId,
             playerId = context.controllerId,
             prompt = (if (targetName != null) "Change a creature type in $targetName's text" else "Change a creature type") + excludedNote,
@@ -92,10 +91,9 @@ class ChangeCreatureTypeTextExecutor(
             toOptions = toOptions,
             fromMetadata = fromMetadata,
             defaultFromIndex = defaultFromIndex
-        )
+        ) }
 
         val continuation = ChooseReplacementContinuation(
-            decisionId = decisionId,
             controllerId = context.controllerId,
             sourceId = context.sourceId,
             sourceName = sourceName,
@@ -106,20 +104,6 @@ class ChangeCreatureTypeTextExecutor(
             duration = Duration.Permanent
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = context.controllerId,
-                    decisionType = "CHOOSE_REPLACEMENT",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 }

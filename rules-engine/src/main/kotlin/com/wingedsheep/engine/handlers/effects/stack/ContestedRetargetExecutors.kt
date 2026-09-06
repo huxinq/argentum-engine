@@ -128,6 +128,17 @@ object ContestedRetargetLogic {
             }
 
             val sourceName = sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
+            val continuation = ContestedRetargetContinuation(
+                stackObjectId = stackObjectId,
+                chooserId = chooserId,
+                ownerControllerId = ownerControllerId,
+                perSlotRequirements = perSlotRequirements,
+                originalTargets = originalTargets,
+                newTargets = acc,
+                currentSlot = slot,
+                sourceId = sourceId
+            )
+
             val decisionResult = decisionHandler.createCardSelectionDecision(
                 state = state,
                 playerId = chooserId,
@@ -141,24 +152,12 @@ object ContestedRetargetLogic {
                 options = options,
                 minSelections = 1,
                 maxSelections = 1,
-                useTargetingUI = true
+                useTargetingUI = true,
+                answer = continuation
             )
 
-            val continuation = ContestedRetargetContinuation(
-                decisionId = decisionResult.pendingDecision!!.id,
-                stackObjectId = stackObjectId,
-                chooserId = chooserId,
-                ownerControllerId = ownerControllerId,
-                perSlotRequirements = perSlotRequirements,
-                originalTargets = originalTargets,
-                newTargets = acc,
-                currentSlot = slot,
-                sourceId = sourceId
-            )
-
-            return EffectResult.paused(
-                decisionResult.state.pushContinuation(continuation),
-                decisionResult.pendingDecision,
+            return EffectResult.propagatePause(
+                decisionResult.state,
                 decisionResult.events
             )
         }

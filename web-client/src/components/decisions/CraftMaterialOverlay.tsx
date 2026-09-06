@@ -32,6 +32,7 @@ export function CraftMaterialOverlay({
   const gameState = useGameStore((s) => s.gameState)
   const addTarget = useGameStore((s) => s.addTarget)
   const removeTarget = useGameStore((s) => s.removeTarget)
+  const interactionEpoch = useGameStore((state) => state.interactionEpoch)
   const confirmTargeting = useGameStore((s) => s.confirmTargeting)
   const cancelTargeting = useGameStore((s) => s.cancelTargeting)
 
@@ -131,11 +132,11 @@ export function CraftMaterialOverlay({
       </div>
 
       <div className={styles.optionButtonRow}>
-        <button onClick={cancelTargeting} className={styles.viewBattlefieldButton}>
+        <button onClick={() => cancelTargeting(interactionEpoch)} className={styles.viewBattlefieldButton}>
           Cancel
         </button>
         <button
-          onClick={confirmTargeting}
+          onClick={() => confirmTargeting(interactionEpoch)}
           disabled={!canConfirm}
           className={styles.confirmButton}
         >

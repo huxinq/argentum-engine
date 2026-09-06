@@ -1,9 +1,9 @@
 package com.wingedsheep.engine.handlers.effects.player
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.ChooseNumberDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.EffectResult
 import com.wingedsheep.engine.core.PayAnyAmountOfLifeAsEntersContinuation
 import com.wingedsheep.engine.handlers.DynamicAmountEvaluator
@@ -51,8 +51,7 @@ class PayAnyAmountOfLifeAsEntersExecutor(
         }
 
         val permanentName = state.getEntity(permanentId)?.get<CardComponent>()?.name ?: "it"
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = ChooseNumberDecision(
+        val decision = { decisionId: String -> ChooseNumberDecision(
             id = decisionId,
             playerId = context.controllerId,
             prompt = "Pay how much life as $permanentName enters? (0-$max)",
@@ -63,30 +62,14 @@ class PayAnyAmountOfLifeAsEntersExecutor(
             ),
             minValue = 0,
             maxValue = max
-        )
+        ) }
 
-        val newState = stateWithRoutingId
-            .withPendingDecision(decision)
-            .pushContinuation(
-                PayAnyAmountOfLifeAsEntersContinuation(
-                    decisionId = decisionId,
+        val continuation = PayAnyAmountOfLifeAsEntersContinuation(
                     permanentId = permanentId,
                     controllerId = context.controllerId
                 )
-            )
 
-        return EffectResult.paused(
-            newState,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = context.controllerId,
-                    decisionType = "CHOOSE_NUMBER",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation, emptyList()))
     }
 
     companion object {

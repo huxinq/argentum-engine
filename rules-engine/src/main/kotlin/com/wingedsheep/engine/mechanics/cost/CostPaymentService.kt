@@ -1,5 +1,7 @@
 package com.wingedsheep.engine.mechanics.cost
 
+import com.wingedsheep.engine.core.suspendForDecision
+import com.wingedsheep.engine.core.AnswerContinuation
 import com.wingedsheep.engine.core.CardsDiscardedEvent
 import com.wingedsheep.engine.core.CardsRevealedEvent
 import com.wingedsheep.engine.core.CountersRemovedEvent
@@ -231,11 +233,11 @@ class CostPaymentService(private val services: EngineServices) {
             prompt = prompt,
             yesText = yesText,
             noText = "Don't pay",
-            phase = DecisionPhase.RESOLUTION
+            phase = DecisionPhase.RESOLUTION,
+            answer = continuation(payerId, sourceId, sourceName, cost, ctx)
         )
         val decision = result.pendingDecision!!
-        val stateWithContinuation = result.state.pushContinuation(continuation(decision.id, payerId, sourceId, sourceName, cost, ctx))
-        return PaymentResult.Pending(stateWithContinuation, decision, result.events)
+        return PaymentResult.Pending(result.state, decision, result.events)
     }
 
     private fun selectionPrompt(
@@ -268,11 +270,11 @@ class CostPaymentService(private val services: EngineServices) {
             ordered = false,
             phase = DecisionPhase.RESOLUTION,
             useTargetingUI = useTargetingUI,
-            minTotalManaValue = minTotalManaValue
+            minTotalManaValue = minTotalManaValue,
+            answer = continuation(payerId, sourceId, sourceName, cost, ctx)
         )
         val decision = result.pendingDecision!!
-        val stateWithContinuation = result.state.pushContinuation(continuation(decision.id, payerId, sourceId, sourceName, cost, ctx))
-        return PaymentResult.Pending(stateWithContinuation, decision, result.events)
+        return PaymentResult.Pending(result.state, decision, result.events)
     }
 
     private fun choicePrompt(
@@ -287,34 +289,28 @@ class CostPaymentService(private val services: EngineServices) {
         // and the trailing "Don't pay" option means decline.
         val affordable = cost.options.filter { canAfford(state, payerId, it, sourceId) }
         val labels = affordable.map { it.description.replaceFirstChar { ch -> ch.uppercase() } } + "Don't pay"
-        val (decisionId, allocatedState) = state.newRoutingId()
-        val decision = ChooseOptionDecision(
-            id = decisionId,
-            playerId = payerId,
-            prompt = "Choose one:",
-            context = DecisionContext(sourceId = sourceId, sourceName = sourceName, phase = DecisionPhase.RESOLUTION),
-            options = labels
-        )
         // Store the reduced (affordable-only) Choice so the resumer can map the option index directly.
         val reduced = PayCost.Choice(affordable)
-        val stateWithContinuation = allocatedState.withPendingDecision(decision)
-            .pushContinuation(continuation(decisionId, payerId, sourceId, sourceName, reduced, ctx))
-        return PaymentResult.Pending(
-            stateWithContinuation,
-            decision,
-            listOf(DecisionRequestedEvent(decisionId, payerId, "CHOOSE_OPTION", decision.prompt))
+        val result = state.suspendForDecision(
+            question = { id -> ChooseOptionDecision(
+                id = id,
+                playerId = payerId,
+                prompt = "Choose one:",
+                context = DecisionContext(sourceId = sourceId, sourceName = sourceName, phase = DecisionPhase.RESOLUTION),
+                options = labels
+            ) },
+            answer = continuation(payerId, sourceId, sourceName, reduced, ctx)
         )
+        return PaymentResult.Pending(result.state, result.pendingDecision!!, result.events)
     }
 
     private fun continuation(
-        decisionId: String,
         payerId: EntityId,
         sourceId: EntityId,
         sourceName: String,
         cost: PayCost,
         ctx: CostPaymentContext
     ): CostPaymentContinuation = CostPaymentContinuation(
-        decisionId = decisionId,
         payerId = payerId,
         sourceId = sourceId,
         sourceName = sourceName,

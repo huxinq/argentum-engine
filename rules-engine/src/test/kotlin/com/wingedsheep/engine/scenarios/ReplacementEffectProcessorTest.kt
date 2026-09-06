@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.scenarios
 
+import com.wingedsheep.engine.core.Suspension
 import com.wingedsheep.engine.core.CastSpell
 import com.wingedsheep.engine.core.ReplacementChoiceContinuation
 import com.wingedsheep.engine.replacement.PendingGameEvent
@@ -151,7 +152,8 @@ class ReplacementEffectProcessorTest : ScenarioTestBase() {
             val paused = result as ProcessorResult.Paused
 
             val continuation = paused.state.continuationStack
-                .filterIsInstance<ReplacementChoiceContinuation>()
+                .filterIsInstance<Suspension>().map { it.answer }
+            .filterIsInstance<ReplacementChoiceContinuation>()
                 .firstOrNull()
             continuation shouldNotBe null
             continuation!!.options.size shouldBe 2

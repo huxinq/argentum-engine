@@ -61,6 +61,12 @@ class CreateTokenCopyOfChosenPermanentExecutor(
         }
 
         // Present choice to the player
+        val continuation = CreateTokenCopyOfChosenContinuation(
+            controllerId = controllerId,
+            sourceId = sourceId,
+            sourceName = sourceName
+        )
+
         val decisionResult = decisionHandler.createCardSelectionDecision(
             state = state,
             playerId = controllerId,
@@ -72,21 +78,14 @@ class CreateTokenCopyOfChosenPermanentExecutor(
             maxSelections = 1,
             ordered = false,
             phase = DecisionPhase.RESOLUTION,
-            useTargetingUI = true
+            useTargetingUI = true,
+            answer = continuation
         )
 
-        val continuation = CreateTokenCopyOfChosenContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
-            controllerId = controllerId,
-            sourceId = sourceId,
-            sourceName = sourceName
-        )
+        val stateWithContinuation = decisionResult.state
 
-        val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
-
-        return EffectResult.paused(
+        return EffectResult.propagatePause(
             stateWithContinuation,
-            decisionResult.pendingDecision,
             decisionResult.events
         )
     }

@@ -28,7 +28,9 @@ sealed interface ProcessorResult {
      * Replacements are still being resolved. The caller should return this
      * paused result to the engine so it waits for player input.
      */
-    data class Paused(val state: GameState, val decision: PendingDecision) : ProcessorResult
+    data class Paused(val state: GameState, val events: List<GameEvent>) : ProcessorResult {
+        val decision: PendingDecision get() = requireNotNull(state.pendingDecision)
+    }
 
     /**
      * All matching replacements have been applied. The outcome tells the
@@ -313,9 +315,8 @@ class ReplacementEffectProcessor {
         context: EffectContext?
     ): ProcessorResult.Paused {
         val playerId = event.affectedPlayerId
-        val (decisionId, allocatedState) = state.newRoutingId()
 
-        val decision = ChooseOptionDecision(
+        val question = { decisionId: String -> ChooseOptionDecision(
             id = decisionId,
             playerId = playerId,
             prompt = "Choose which replacement effect to apply",
@@ -326,20 +327,17 @@ class ReplacementEffectProcessor {
             ),
             options = disambiguate(options.map { it.description }),
             canCancel = false
-        )
+        ) }
 
         val continuation = ReplacementChoiceContinuation(
-            decisionId = decisionId,
             pendingEvent = event,
             options = options,
             alreadyApplied = alreadyApplied,
             context = context
         )
 
-        val stateWithDecision = allocatedState.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return ProcessorResult.Paused(stateWithContinuation, decision)
+        val pause = state.suspendForDecision(question, continuation)
+        return ProcessorResult.Paused(pause.state, pause.events)
     }
 
     /**
@@ -358,17 +356,14 @@ class ReplacementEffectProcessor {
         alreadyApplied: Set<ReplacementEffectIdentity>,
         context: EffectContext?
     ): ProcessorResult {
-        val (decisionId, allocatedState) = state.newRoutingId()
         val promptResult = event.createOptionalPrompt(
-            decisionId, gathered, state.copy(activeReplacementChain = alreadyApplied), context
+            gathered, state.copy(activeReplacementChain = alreadyApplied), context
         )
             ?: // Event doesn't support optional prompts — treat as mandatory
             return applySingle(state, gathered, event, alreadyApplied)
 
-        val stateWithDecision = allocatedState.withPendingDecision(promptResult.decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(promptResult.continuation)
-
-        return ProcessorResult.Paused(stateWithContinuation, promptResult.decision)
+        val pause = state.suspendForDecision(promptResult.question, promptResult.continuation)
+        return ProcessorResult.Paused(pause.state, pause.events)
     }
 
     /**

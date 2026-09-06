@@ -1,9 +1,9 @@
 package com.wingedsheep.engine.handlers.effects.library
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.CastAnyNumberFromCollectionContinuation
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.EffectResult
 import com.wingedsheep.engine.core.SearchCardInfo
 import com.wingedsheep.engine.core.SelectCardsDecision
@@ -58,10 +58,9 @@ class CastAnyNumberFromCollectionWithoutPayingCostExecutor :
 
         val controllerId = context.controllerId
         val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
 
         val cardInfo = candidates.associateWith { cardId ->
-            val cardComponent = stateWithRoutingId.getEntity(cardId)?.get<CardComponent>()
+            val cardComponent = state.getEntity(cardId)?.get<CardComponent>()
             SearchCardInfo(
                 name = cardComponent?.name ?: "Unknown",
                 manaCost = cardComponent?.manaCost?.toString() ?: "",
@@ -71,7 +70,7 @@ class CastAnyNumberFromCollectionWithoutPayingCostExecutor :
             )
         }
 
-        val decision = SelectCardsDecision(
+        val decision = { decisionId: String -> SelectCardsDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = buildString {
@@ -89,7 +88,7 @@ class CastAnyNumberFromCollectionWithoutPayingCostExecutor :
             minSelections = 0,
             maxSelections = 1,
             cardInfo = cardInfo,
-        )
+        ) }
 
         // Normalize the collection to the still-castable set so the resumer's bookkeeping
         // (remaining = collection − chosen) matches exactly what was offered.
@@ -100,30 +99,13 @@ class CastAnyNumberFromCollectionWithoutPayingCostExecutor :
         )
 
         val continuation = CastAnyNumberFromCollectionContinuation(
-            decisionId = decisionId,
             from = effect.from,
             effectContext = normalizedContext,
             payManaCost = effect.payManaCost,
             maxCasts = effect.maxCasts,
         )
 
-        val pausedState = stateWithRoutingId
-            .pushContinuation(continuation)
-            .withPendingDecision(decision)
-            .withPriority(controllerId)
-
-        return EffectResult.paused(
-            pausedState,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = controllerId,
-                    decisionType = "SELECT_CARDS",
-                    prompt = decision.prompt,
-                )
-            ),
-        )
+        return EffectResult.from(state.withPriority(controllerId).suspendForDecision(decision, continuation, emptyList()))
     }
 
     /** Cards from the collection that are still in their owner's exile (castable from there). */

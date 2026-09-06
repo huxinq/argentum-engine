@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.handlers.effects.token
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.CardEntityFactory
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.DecisionPhase
@@ -99,8 +100,7 @@ object TokenFromDefinition {
                 state, controllerId, devour, enteringId = null
             )
             if (candidates.isNotEmpty()) {
-                val decisionId = "devour-minted-token-${cardDef.name}-${controllerId.value}"
-                val decision = SelectCardsDecision(
+                val decision = { decisionId: String -> SelectCardsDecision(
                     id = decisionId,
                     playerId = controllerId,
                     prompt = "${devour.description.substringBefore(" (")}: sacrifice any number of " +
@@ -114,19 +114,15 @@ object TokenFromDefinition {
                     minSelections = 0,
                     maxSelections = candidates.size,
                     useTargetingUI = true
+                ) }
+                val continuation = DevourMintedTokenContinuation(
+                    cardDefinitionId = cardDef.name,
+                    controllerId = controllerId,
+                    multiplier = devour.multiplier,
+                    counterType = devour.counterType.description
                 )
-                val paused = state
-                    .pushContinuation(
-                        DevourMintedTokenContinuation(
-                            decisionId = decisionId,
-                            cardDefinitionId = cardDef.name,
-                            controllerId = controllerId,
-                            multiplier = devour.multiplier,
-                            counterType = devour.counterType.description
-                        )
-                    )
-                    .withPendingDecision(decision)
-                return EffectResult.paused(paused, decision)
+
+                return EffectResult.from(state.suspendForDecision(decision, continuation, emptyList()))
             }
         }
 

@@ -413,6 +413,9 @@ abstract class ProtocolTestBase : FunSpec() {
         @Volatile
         private var resolvedPendingDecision: com.wingedsheep.engine.core.PendingDecision? = null
 
+        @Volatile
+        private var resolvedInteractionEpoch: String? = null
+
         val isOpen: Boolean get() = session?.isOpen == true && !closed.get()
 
         fun stateUpdateCount(): Int = stateUpdateCounter.get()
@@ -436,6 +439,7 @@ abstract class ProtocolTestBase : FunSpec() {
                                         resolvedState = serverMessage.state
                                         resolvedLegalActions = serverMessage.legalActions
                                         resolvedPendingDecision = serverMessage.pendingDecision
+                                        resolvedInteractionEpoch = serverMessage.interactionEpoch
                                         stateUpdateCounter.incrementAndGet()
                                     }
                                     is ServerMessage.StateDeltaUpdate -> {
@@ -444,6 +448,7 @@ abstract class ProtocolTestBase : FunSpec() {
                                             resolvedState = applyDelta(prev, serverMessage.delta)
                                             resolvedLegalActions = serverMessage.legalActions
                                             resolvedPendingDecision = serverMessage.pendingDecision
+                                            resolvedInteractionEpoch = serverMessage.interactionEpoch
                                         }
                                         stateUpdateCounter.incrementAndGet()
                                     }
@@ -500,9 +505,11 @@ abstract class ProtocolTestBase : FunSpec() {
 
         fun latestPendingDecision(): com.wingedsheep.engine.core.PendingDecision? = resolvedPendingDecision
 
+        fun latestInteractionEpoch(): String? = resolvedInteractionEpoch
+
         suspend fun submitAndWait(action: GameAction): ClientGameState {
             val countBefore = stateUpdateCount()
-            send(ClientMessage.SubmitAction(action))
+            send(ClientMessage.SubmitAction(action, interactionEpoch = resolvedInteractionEpoch))
             eventually(5.seconds) {
                 stateUpdateCount() shouldBeGreaterThan countBefore
             }

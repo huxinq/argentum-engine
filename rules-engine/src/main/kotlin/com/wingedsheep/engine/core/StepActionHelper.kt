@@ -24,9 +24,8 @@ object StepActionHelper {
     ): ExecutionResult {
         val sbaResult = sbaChecker.checkAndApply(state)
         if (sbaResult.isPaused) {
-            return ExecutionResult.paused(
+            return ExecutionResult.propagatePause(
                 sbaResult.state,
-                sbaResult.pendingDecision!!,
                 priorEvents + sbaResult.events
             )
         }

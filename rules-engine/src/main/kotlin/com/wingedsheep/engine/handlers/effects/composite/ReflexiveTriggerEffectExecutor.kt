@@ -97,8 +97,7 @@ class ReflexiveTriggerEffectExecutor(
             state.getEntity(sourceId)?.get<CardComponent>()?.name
         }
 
-        val (decisionId, stateWithRoutingId) = state.newRoutingId()
-        val decision = YesNoDecision(
+        val decision = { decisionId: String -> YesNoDecision(
             id = decisionId,
             playerId = playerId,
             prompt = effect.description,
@@ -110,10 +109,9 @@ class ReflexiveTriggerEffectExecutor(
             yesText = "Yes",
             noText = "No",
             hint = effect.hint
-        )
+        ) }
 
         val continuation = MayAbilityContinuation(
-            decisionId = decisionId,
             playerId = playerId,
             sourceName = sourceName,
             effectIfYes = effect.copy(optional = false),
@@ -121,21 +119,7 @@ class ReflexiveTriggerEffectExecutor(
             effectContext = context
         )
 
-        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-        val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-        return EffectResult.paused(
-            stateWithContinuation,
-            decision,
-            listOf(
-                DecisionRequestedEvent(
-                    decisionId = decisionId,
-                    playerId = playerId,
-                    decisionType = "YES_NO",
-                    prompt = decision.prompt
-                )
-            )
-        )
+        return EffectResult.from(state.suspendForDecision(decision, continuation))
     }
 
     /**
@@ -405,7 +389,6 @@ class ReflexiveTriggerEffectExecutor(
         context: EffectContext
     ): EffectResult {
         val continuation = ReflexiveTriggerTargetContinuation(
-            decisionId = "pending",
             reflexiveEffect = effect.reflexiveEffect,
             reflexiveTargetRequirements = effect.reflexiveTargetRequirements,
             effectContext = context,

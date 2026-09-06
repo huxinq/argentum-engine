@@ -17,13 +17,12 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class ChooseColorThenContinuation(
-    override val decisionId: String,
     val controllerId: EntityId,
     val sourceId: EntityId?,
     val sourceName: String?,
     val then: Effect,
     val baseContext: EffectContext
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume after the controller chooses a number for a
@@ -36,13 +35,12 @@ data class ChooseColorThenContinuation(
  */
 @Serializable
 data class ChooseNumberThenContinuation(
-    override val decisionId: String,
     val controllerId: EntityId,
     val sourceId: EntityId?,
     val sourceName: String?,
     val then: Effect,
     val baseContext: EffectContext
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume after the controller of an [com.wingedsheep.sdk.scripting.effects.AddManaOfChoiceEffect]
@@ -51,13 +49,12 @@ data class ChooseNumberThenContinuation(
  */
 @Serializable
 data class ChooseManaColorContinuation(
-    override val decisionId: String,
     val controllerId: EntityId,
     val sourceId: EntityId?,
     val sourceName: String?,
     val effect: Effect,
     val baseContext: EffectContext
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * One pending "additional one mana of any color" bonus from a [com.wingedsheep.sdk.scripting.AdditionalManaOnTap]
@@ -81,22 +78,20 @@ data class AnyColorTapBonus(
  */
 @Serializable
 data class ChooseAnyColorTapBonusContinuation(
-    override val decisionId: String,
     val current: AnyColorTapBonus,
     val remaining: List<AnyColorTapBonus>
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume after a player chooses a color to store on a permanent.
  */
 @Serializable
 data class ChooseColorForTargetContinuation(
-    override val decisionId: String,
     val controllerId: EntityId,
     val sourceId: EntityId?,
     val sourceName: String?,
     val targetEntityId: EntityId
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Which text-changing family a [ChooseReplacementContinuation] belongs to, so the resumer knows the
@@ -118,7 +113,6 @@ enum class ReplacementMode { WORD, CREATURE_TYPE }
  */
 @Serializable
 data class ChooseReplacementContinuation(
-    override val decisionId: String,
     val controllerId: EntityId,
     val sourceId: EntityId?,
     val sourceName: String?,
@@ -127,7 +121,7 @@ data class ChooseReplacementContinuation(
     val toOptions: List<String>,
     val mode: ReplacementMode,
     val duration: Duration
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume after player chooses a creature type for a "becomes the creature type
@@ -142,14 +136,13 @@ data class ChooseReplacementContinuation(
  */
 @Serializable
 data class BecomeCreatureTypeContinuation(
-    override val decisionId: String,
     val controllerId: EntityId,
     val sourceId: EntityId?,
     val sourceName: String?,
     val targetId: EntityId,
     val creatureTypes: List<String>,
     val duration: Duration
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume after the controller chooses a card type for
@@ -166,14 +159,13 @@ data class BecomeCreatureTypeContinuation(
  */
 @Serializable
 data class ChooseCardTypeForProtectionContinuation(
-    override val decisionId: String,
     val controllerId: EntityId,
     val sourceId: EntityId?,
     val sourceName: String?,
     val targetId: EntityId,
     val cardTypes: List<String>,
     val duration: Duration
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume after a player chose a creature type for "each player chooses a creature type" effects.
@@ -192,7 +184,6 @@ data class ChooseCardTypeForProtectionContinuation(
  */
 @Serializable
 data class EachPlayerChoosesCreatureTypeContinuation(
-    override val decisionId: String,
     val sourceId: EntityId?,
     val sourceName: String?,
     val controllerId: EntityId,
@@ -201,7 +192,7 @@ data class EachPlayerChoosesCreatureTypeContinuation(
     val chosenTypes: List<String>,
     val creatureTypes: List<String>,
     val storeAs: String
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume casting a spell after the player chooses a creature type during casting.
@@ -220,7 +211,6 @@ data class EachPlayerChoosesCreatureTypeContinuation(
  */
 @Serializable
 data class CastWithCreatureTypeContinuation(
-    override val decisionId: String,
     val cardId: EntityId,
     val casterId: EntityId,
     val targets: List<ChosenTarget> = emptyList(),
@@ -229,4 +219,4 @@ data class CastWithCreatureTypeContinuation(
     val targetRequirements: List<TargetRequirement> = emptyList(),
     val count: Int,
     val creatureTypes: List<String>
-) : ContinuationFrame
+) : AnswerContinuation

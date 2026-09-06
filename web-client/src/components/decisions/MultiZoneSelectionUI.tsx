@@ -103,12 +103,12 @@ export function MultiZoneSelectionUI({
   }
 
   const handleConfirm = () => {
-    submitDecision(selectedCards)
+    submitDecision(decision.id, selectedCards)
     setSelectedCards([])
   }
 
   const handleSkip = () => {
-    submitDecision([])
+    submitDecision(decision.id, [])
     setSelectedCards([])
   }
 

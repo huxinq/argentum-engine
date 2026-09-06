@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.handlers.effects.stack
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.CounterUnlessCollectEvidenceContinuation
 import com.wingedsheep.engine.core.CounterUnlessDiscardContinuation
 import com.wingedsheep.engine.core.CounterUnlessPaysLifeContinuation
@@ -10,7 +11,6 @@ import com.wingedsheep.engine.core.ChooseOptionDecision
 import com.wingedsheep.engine.core.DecisionContext
 import com.wingedsheep.engine.core.WardCostChoiceContinuation
 import com.wingedsheep.engine.core.DecisionPhase
-import com.wingedsheep.engine.core.DecisionRequestedEvent
 import com.wingedsheep.engine.core.EffectResult
 import com.wingedsheep.engine.core.ManaSourceOption
 import com.wingedsheep.engine.core.SelectManaSourcesDecision
@@ -272,8 +272,8 @@ class WardCounterEffectExecutor(
         ): EffectResult {
             val label = WardCost.PlayerCounters(counterType, amount).clause
                 .replaceFirstChar { it.uppercase() }
-            val (decisionId, stateWithRoutingId) = state.newRoutingId()
-            val decision = YesNoDecision(
+
+            val decision = { decisionId: String -> YesNoDecision(
                 id = decisionId,
                 playerId = payingPlayerId,
                 prompt = "$label or your spell will be countered",
@@ -284,10 +284,9 @@ class WardCounterEffectExecutor(
                 ),
                 yesText = label,
                 noText = "Counter spell"
-            )
+            ) }
 
             val continuation = CounterUnlessPlayerCountersContinuation(
-                decisionId = decisionId,
                 payingPlayerId = payingPlayerId,
                 spellEntityId = spellEntityId,
                 counterType = counterType,
@@ -297,20 +296,7 @@ class WardCounterEffectExecutor(
                 wardSourceId = wardSourceId
             )
 
-            val stateWithContinuation = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
-
-            return EffectResult.paused(
-                stateWithContinuation,
-                decision,
-                listOf(
-                    DecisionRequestedEvent(
-                        decisionId = decisionId,
-                        playerId = payingPlayerId,
-                        decisionType = "YES_NO",
-                        prompt = decision.prompt
-                    )
-                )
-            )
+            return EffectResult.from(state.suspendForDecision(decision, continuation))
         }
 
         /**
@@ -347,8 +333,8 @@ class WardCounterEffectExecutor(
 
             val labels = payable.map { it.clause.replaceFirstChar { ch -> ch.uppercase() } } +
                 "Counter spell"
-            val (decisionId, stateWithRoutingId) = state.newRoutingId()
-            val decision = ChooseOptionDecision(
+
+            val decision = { decisionId: String -> ChooseOptionDecision(
                 id = decisionId,
                 playerId = payingPlayerId,
                 prompt = "Choose one to pay for ward, or your spell will be countered",
@@ -358,12 +344,9 @@ class WardCounterEffectExecutor(
                     phase = DecisionPhase.RESOLUTION
                 ),
                 options = labels
-            )
+            ) }
 
-            // Store the reduced (payable-only) option list so the resumer maps the chosen index
-            // directly — the same trick CostPaymentService uses for PayCost.Choice.
             val continuation = WardCostChoiceContinuation(
-                decisionId = decisionId,
                 payingPlayerId = payingPlayerId,
                 spellEntityId = spellEntityId,
                 options = payable,
@@ -372,20 +355,7 @@ class WardCounterEffectExecutor(
                 wardSourceId = wardSourceId
             )
 
-            val stateWithContinuation = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
-
-            return EffectResult.paused(
-                stateWithContinuation,
-                decision,
-                listOf(
-                    DecisionRequestedEvent(
-                        decisionId = decisionId,
-                        playerId = payingPlayerId,
-                        decisionType = "CHOOSE_OPTION",
-                        prompt = decision.prompt
-                    )
-                )
-            )
+            return EffectResult.from(state.suspendForDecision(decision, continuation))
         }
 
         /**
@@ -488,6 +458,16 @@ class WardCounterEffectExecutor(
                 "Sacrifice $count ${fodderLabel}s or your spell will be countered"
             }
 
+            val continuation = CounterUnlessSacrificeContinuation(
+                payingPlayerId = payingPlayerId,
+                spellEntityId = spellEntityId,
+                filter = filter,
+                count = count,
+                controllerId = controllerId,
+                remainingWardParts = remainingParts,
+                wardSourceId = wardSourceId
+            )
+
             val decisionResult = DecisionHandler().createCardSelectionDecision(
                 state = state,
                 playerId = payingPlayerId,
@@ -499,25 +479,14 @@ class WardCounterEffectExecutor(
                 maxSelections = count,
                 ordered = false,
                 phase = DecisionPhase.RESOLUTION,
-                useTargetingUI = true
+                useTargetingUI = true,
+                answer = continuation
             )
 
-            val continuation = CounterUnlessSacrificeContinuation(
-                decisionId = decisionResult.pendingDecision!!.id,
-                payingPlayerId = payingPlayerId,
-                spellEntityId = spellEntityId,
-                filter = filter,
-                count = count,
-                controllerId = controllerId,
-                remainingWardParts = remainingParts,
-                wardSourceId = wardSourceId
-            )
+            val stateWithContinuation = decisionResult.state
 
-            val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
-
-            return EffectResult.paused(
+            return EffectResult.propagatePause(
                 stateWithContinuation,
-                decisionResult.pendingDecision,
                 decisionResult.events
             )
         }
@@ -557,6 +526,15 @@ class WardCounterEffectExecutor(
                 return counterSpellOrAbility(state, cardRegistry, spellEntityId)
             }
 
+            val continuation = CounterUnlessCollectEvidenceContinuation(
+                payingPlayerId = payingPlayerId,
+                spellEntityId = spellEntityId,
+                amount = amount,
+                controllerId = controllerId,
+                remainingWardParts = remainingParts,
+                wardSourceId = wardSourceId
+            )
+
             val decisionResult = DecisionHandler().createCardSelectionDecision(
                 state = state,
                 playerId = payingPlayerId,
@@ -569,22 +547,12 @@ class WardCounterEffectExecutor(
                 maxSelections = candidates.cards.size,
                 ordered = false,
                 phase = DecisionPhase.RESOLUTION,
-                minTotalManaValue = amount
+                minTotalManaValue = amount,
+                answer = continuation
             )
 
-            val continuation = CounterUnlessCollectEvidenceContinuation(
-                decisionId = decisionResult.pendingDecision!!.id,
-                payingPlayerId = payingPlayerId,
-                spellEntityId = spellEntityId,
-                amount = amount,
-                controllerId = controllerId,
-                remainingWardParts = remainingParts,
-                wardSourceId = wardSourceId
-            )
-
-            return EffectResult.paused(
-                decisionResult.state.pushContinuation(continuation),
-                decisionResult.pendingDecision,
+            return EffectResult.propagatePause(
+                decisionResult.state,
                 decisionResult.events
             )
         }
@@ -616,8 +584,8 @@ class WardCounterEffectExecutor(
                 if (count == 1) "a card" else "$count cards"
             }
             val randomSuffix = if (random) " at random" else ""
-            val (decisionId, stateWithRoutingId) = state.newRoutingId()
-            val decision = YesNoDecision(
+
+            val decision = { decisionId: String -> YesNoDecision(
                 id = decisionId,
                 playerId = payingPlayerId,
                 prompt = "Discard $cardsLabel$randomSuffix or your spell will be countered",
@@ -628,10 +596,9 @@ class WardCounterEffectExecutor(
                 ),
                 yesText = "Discard $cardsLabel$randomSuffix",
                 noText = "Counter spell"
-            )
+            ) }
 
             val continuation = CounterUnlessDiscardContinuation(
-                decisionId = decisionId,
                 payingPlayerId = payingPlayerId,
                 spellEntityId = spellEntityId,
                 count = count,
@@ -642,21 +609,7 @@ class WardCounterEffectExecutor(
                 wardSourceId = wardSourceId
             )
 
-            val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-            val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-            return EffectResult.paused(
-                stateWithContinuation,
-                decision,
-                listOf(
-                    DecisionRequestedEvent(
-                        decisionId = decisionId,
-                        playerId = payingPlayerId,
-                        decisionType = "YES_NO",
-                        prompt = decision.prompt
-                    )
-                )
-            )
+            return EffectResult.from(state.suspendForDecision(decision, continuation))
         }
 
         private fun handleManaCost(
@@ -714,13 +667,13 @@ class WardCounterEffectExecutor(
                 WaterbendPermanentChoice(it.entityId, it.name, it.isCreature)
             }
 
-            val (decisionId, stateWithRoutingId) = state.newRoutingId()
             val payPrompt = if (waterbend) {
                 "Pay $manaCost for ward (tap artifacts/creatures to help) or your spell will be countered"
             } else {
                 "Pay $manaCost for ward or your spell will be countered"
             }
-            val decision = SelectManaSourcesDecision(
+
+            val decision = { decisionId: String -> SelectManaSourcesDecision(
                 id = decisionId,
                 playerId = payingPlayerId,
                 prompt = payPrompt,
@@ -734,10 +687,9 @@ class WardCounterEffectExecutor(
                 autoPaySuggestion = autoPaySuggestion,
                 canDecline = true,
                 waterbendPermanents = waterbendOptions
-            )
+            ) }
 
             val continuation = CounterUnlessPaysManaSelectionContinuation(
-                decisionId = decisionId,
                 payingPlayerId = payingPlayerId,
                 spellEntityId = spellEntityId,
                 manaCost = manaCost,
@@ -749,21 +701,7 @@ class WardCounterEffectExecutor(
                 waterbend = waterbend
             )
 
-            val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-            val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-            return EffectResult.paused(
-                stateWithContinuation,
-                decision,
-                listOf(
-                    DecisionRequestedEvent(
-                        decisionId = decisionId,
-                        playerId = payingPlayerId,
-                        decisionType = "SELECT_MANA_SOURCES",
-                        prompt = decision.prompt
-                    )
-                )
-            )
+            return EffectResult.from(state.suspendForDecision(decision, continuation))
         }
 
         private fun handleLifeCost(
@@ -786,8 +724,7 @@ class WardCounterEffectExecutor(
                 return counterSpellOrAbility(state, cardRegistry, spellEntityId)
             }
 
-            val (decisionId, stateWithRoutingId) = state.newRoutingId()
-            val decision = YesNoDecision(
+            val decision = { decisionId: String -> YesNoDecision(
                 id = decisionId,
                 playerId = payingPlayerId,
                 prompt = "Pay $lifeCost life or your spell will be countered",
@@ -798,10 +735,9 @@ class WardCounterEffectExecutor(
                 ),
                 yesText = "Pay $lifeCost life",
                 noText = "Counter spell"
-            )
+            ) }
 
             val continuation = CounterUnlessPaysLifeContinuation(
-                decisionId = decisionId,
                 payingPlayerId = payingPlayerId,
                 spellEntityId = spellEntityId,
                 lifeCost = lifeCost,
@@ -810,21 +746,7 @@ class WardCounterEffectExecutor(
                 wardSourceId = wardSourceId
             )
 
-            val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
-            val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
-
-            return EffectResult.paused(
-                stateWithContinuation,
-                decision,
-                listOf(
-                    DecisionRequestedEvent(
-                        decisionId = decisionId,
-                        playerId = payingPlayerId,
-                        decisionType = "YES_NO",
-                        prompt = decision.prompt
-                    )
-                )
-            )
+            return EffectResult.from(state.suspendForDecision(decision, continuation))
         }
 
         /**

@@ -110,7 +110,7 @@ export function CombatResolutionBoard({ decision }: { decision: CombatResolution
   const handleConfirm = () => {
     // Submit only the edges this player owns; the engine merges them with the rest.
     const owned = decision.edges.filter((e) => e.editableBy === playerId)
-    submit(owned.map((e) => ({ edgeId: e.id, amount: amounts[e.id] ?? 0 })))
+    submit(decision.id, owned.map((e) => ({ edgeId: e.id, amount: amounts[e.id] ?? 0 })))
   }
 
   // ── Display helpers ─────────────────────────────────────────────────────

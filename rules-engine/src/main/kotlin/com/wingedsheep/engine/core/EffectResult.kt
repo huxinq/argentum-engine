@@ -66,7 +66,8 @@ data class EffectResult(
         fun error(state: GameState, message: String): EffectResult =
             EffectResult(state, error = message)
 
-        fun paused(state: GameState, decision: PendingDecision, events: List<GameEvent> = emptyList()): EffectResult =
-            EffectResult(state, events, pendingDecision = decision)
+        /** Propagate an existing suspension without allocating or installing another question. */
+        fun propagatePause(state: GameState, events: List<GameEvent> = emptyList()): EffectResult =
+            from(ExecutionResult.propagatePause(state, events))
     }
 }

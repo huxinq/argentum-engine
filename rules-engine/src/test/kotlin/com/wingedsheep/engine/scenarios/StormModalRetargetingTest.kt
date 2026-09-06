@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.scenarios
 
+import com.wingedsheep.engine.core.Suspension
 import com.wingedsheep.engine.core.ChooseTargetsDecision
 import com.wingedsheep.engine.core.StormCopyModalTargetContinuation
 import com.wingedsheep.engine.handlers.EffectContext
@@ -107,7 +108,7 @@ class StormModalRetargetingTest : FunSpec({
         decision.playerId shouldBe p1
         decision.targetRequirements.size shouldBe 1
 
-        val frame = result.state.continuationStack.last()
+        val frame = result.state.continuationStack.last().shouldBeInstanceOf<Suspension>().answer
         frame.shouldBeInstanceOf<StormCopyModalTargetContinuation>()
         frame.remainingCopies shouldBe 1
         frame.totalCopies shouldBe 1

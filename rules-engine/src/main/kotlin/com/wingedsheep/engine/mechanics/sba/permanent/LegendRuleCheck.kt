@@ -111,20 +111,19 @@ class LegendRuleCheck(
                         maxSelections = 1,
                         ordered = false,
                         phase = DecisionPhase.STATE_BASED,
-                        useTargetingUI = true
+                        useTargetingUI = true,
+                        answer = LegendRuleContinuation(
+                            playerId = playerId,
+                            allDuplicates = entityIds
+                        ),
                     )
 
-                    val continuation = LegendRuleContinuation(
-                        decisionId = decisionResult.pendingDecision!!.id,
-                        playerId = playerId,
-                        allDuplicates = entityIds
-                    )
 
-                    val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
 
-                    return ExecutionResult.paused(
+                    val stateWithContinuation = decisionResult.state
+
+                    return ExecutionResult.propagatePause(
                         stateWithContinuation,
-                        decisionResult.pendingDecision,
                         decisionResult.events
                     )
                 }

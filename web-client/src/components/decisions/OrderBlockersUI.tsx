@@ -101,7 +101,7 @@ export function OrderBlockersUI({ decision, responsive }: OrderBlockersUIProps) 
   }, [orderedBlockers.length])
 
   const handleConfirm = () => {
-    submitOrderedDecision(orderedBlockers)
+    submitOrderedDecision(decision.id, orderedBlockers)
   }
 
   if (minimized) {

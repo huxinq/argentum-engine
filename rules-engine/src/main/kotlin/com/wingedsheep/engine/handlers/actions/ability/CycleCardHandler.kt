@@ -5,6 +5,7 @@ import com.wingedsheep.engine.core.CardsDiscardedEvent
 import com.wingedsheep.engine.core.CycleCard
 import com.wingedsheep.engine.core.CycleDrawContinuation
 import com.wingedsheep.engine.core.ExecutionResult
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.GameEvent
 import com.wingedsheep.engine.core.ManaSpentEvent
 import com.wingedsheep.engine.core.PaymentStrategy
@@ -130,34 +131,26 @@ class CycleCardHandler(
             val fixedMana = cyclingAbility.cost.withXAs(0).cmc
             val maxX = ((manaSolver.getAvailableManaCount(state, action.playerId) - fixedMana) /
                 cyclingAbility.cost.xCount.coerceAtLeast(1)).coerceAtLeast(0)
-            val (decisionId, stateAfterRouting) = state.newRoutingId()
-            val decision = com.wingedsheep.engine.core.ChooseNumberDecision(
-                id = decisionId,
-                playerId = action.playerId,
-                prompt = "Choose X for cycling ${cardComponent.name} (0-$maxX)",
-                context = com.wingedsheep.engine.core.DecisionContext(
-                    sourceId = action.cardId,
-                    sourceName = cardComponent.name,
-                    phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
-                ),
-                minValue = 0,
-                maxValue = maxX
+            val continuation = com.wingedsheep.engine.core.CycleCardChooseXContinuation(
+                action = action
             )
-            val pausedState = stateAfterRouting
-                .withPendingDecision(decision)
-                .pushContinuation(
-                    com.wingedsheep.engine.core.CycleCardChooseXContinuation(
-                        decisionId = decisionId,
-                        action = action
+            return state.suspendForDecision(
+                question = { decisionId ->
+                    com.wingedsheep.engine.core.ChooseNumberDecision(
+                        id = decisionId,
+                        playerId = action.playerId,
+                        prompt = "Choose X for cycling ${cardComponent.name} (0-$maxX)",
+                        context = com.wingedsheep.engine.core.DecisionContext(
+                            sourceId = action.cardId,
+                            sourceName = cardComponent.name,
+                            phase = com.wingedsheep.engine.core.DecisionPhase.CASTING
+                        ),
+                        minValue = 0,
+                        maxValue = maxX
                     )
-                )
-            val event = com.wingedsheep.engine.core.DecisionRequestedEvent(
-                decisionId = decisionId,
-                playerId = action.playerId,
-                decisionType = "CHOOSE_NUMBER",
-                prompt = decision.prompt
+                },
+                answer = continuation
             )
-            return ExecutionResult.paused(pausedState, decision, listOf(event))
         }
 
         // X is settled from here on. Substituting it into the cost leaves an ordinary X-free cost,
@@ -284,9 +277,8 @@ class CycleCardHandler(
                 // detectTriggers here. Without the flag, SubmitDecisionHandler re-scans this
                 // result's events when the cycle was resumed from a decision (an {X} cycling
                 // cost's ChooseNumber) and queues the cycling trigger a second time.
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     triggerResult.state,
-                    triggerResult.pendingDecision!!,
                     events + triggerResult.events
                 ).copy(triggersAlreadyProcessed = true)
             }
@@ -307,9 +299,8 @@ class CycleCardHandler(
         )
         val drawResult = drawExecutor.executeDraws(currentState, action.playerId, 1)
         if (drawResult.isPaused) {
-            return ExecutionResult.paused(
+            return ExecutionResult.propagatePause(
                 drawResult.state,
-                drawResult.pendingDecision!!,
                 events + drawResult.events
             ).copy(triggersAlreadyProcessed = true)
         }

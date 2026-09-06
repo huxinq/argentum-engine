@@ -1,5 +1,6 @@
 package com.wingedsheep.gym.trainer.search
 
+import com.wingedsheep.engine.core.suspendForDecision
 import com.wingedsheep.engine.core.CardsSelectedResponse
 import com.wingedsheep.engine.core.ChooseTargetsDecision
 import com.wingedsheep.engine.core.DecisionContext
@@ -171,27 +172,25 @@ class StructuredDecisionSearchTest : FunSpec({
         orders.size shouldBe 6
         val favoured = orders[4]
 
-        val decision = ReorderLibraryDecision(
-            id = "search-ordering",
-            playerId = player,
-            prompt = "Put them back in any order",
-            context = DecisionContext(),
-            cards = cards,
-            cardInfo = emptyMap(),
-        )
-        val rootState = driver.state
-            .withPendingDecision(decision)
-            .pushContinuation(
-                MoveCollectionOrderContinuation(
-                    decisionId = decision.id,
-                    playerId = player,
-                    sourceId = null,
-                    sourceName = "Search ordering probe",
-                    cards = cards,
-                    destinationZone = Zone.LIBRARY,
-                    destinationPlayerId = player,
-                )
+        val rootState = driver.state.suspendForDecision(
+            question = { id -> ReorderLibraryDecision(
+                id = id,
+                playerId = player,
+                prompt = "Put them back in any order",
+                context = DecisionContext(),
+                cards = cards,
+                cardInfo = emptyMap(),
+            ) },
+            answer = MoveCollectionOrderContinuation(
+                playerId = player,
+                sourceId = null,
+                sourceName = "Search ordering probe",
+                cards = cards,
+                destinationZone = Zone.LIBRARY,
+                destinationPlayerId = player,
             )
+        ).state
+        val decision = rootState.pendingDecision.shouldBeInstanceOf<ReorderLibraryDecision>()
         val env = GameEnvironment.create(driver.cardRegistry).also {
             it.restore(rootState, listOf(driver.player1, driver.player2))
         }

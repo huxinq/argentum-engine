@@ -104,7 +104,6 @@ class ForEachCapturedControllerExecutor(
 
             val stateForExecution = if (remaining.isNotEmpty()) {
                 val continuation = ForEachContinuation(
-                    decisionId = "pending",
                     remainingItems = remaining.map { ForEachItem.OfPlayer(it) },
                     effect = ForEachEffect(
                         // Resume-only carrier: the items are already enumerated, so the
@@ -122,9 +121,8 @@ class ForEachCapturedControllerExecutor(
             val result = executeSubEffects(stateForExecution, effect.effects, perIterationContext)
 
             if (result.isPaused) {
-                return EffectResult.paused(
+                return EffectResult.propagatePause(
                     result.state,
-                    result.pendingDecision!!,
                     allEvents + result.events
                 )
             }
@@ -155,7 +153,6 @@ class ForEachCapturedControllerExecutor(
 
             val stateForExecution = if (remainingEffects.isNotEmpty()) {
                 val continuation = EffectContinuation(
-                    decisionId = "pending",
                     remainingEffects = remainingEffects,
                     effectContext = currentContext
                 )
@@ -178,9 +175,8 @@ class ForEachCapturedControllerExecutor(
             }
 
             if (result.isPaused) {
-                return EffectResult.paused(
+                return EffectResult.propagatePause(
                     result.state,
-                    result.pendingDecision!!,
                     allEvents + result.events
                 )
             }

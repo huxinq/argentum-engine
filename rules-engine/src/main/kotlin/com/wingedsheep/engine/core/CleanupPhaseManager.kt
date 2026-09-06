@@ -158,20 +158,19 @@ class CleanupPhaseManager(
                 minSelections = cardsToDiscard,
                 maxSelections = cardsToDiscard,
                 ordered = false,
-                phase = DecisionPhase.STATE_BASED
+                phase = DecisionPhase.STATE_BASED,
+                answer = HandSizeDiscardContinuation(
+                    playerId = activePlayer
+                ),
             )
 
             // Push continuation to handle the response
-            val continuation = HandSizeDiscardContinuation(
-                decisionId = decisionResult.pendingDecision!!.id,
-                playerId = activePlayer
-            )
 
-            val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
 
-            return ExecutionResult.paused(
+            val stateWithContinuation = decisionResult.state
+
+            return ExecutionResult.propagatePause(
                 stateWithContinuation,
-                decisionResult.pendingDecision,
                 events + decisionResult.events
             )
         }

@@ -15,7 +15,7 @@ export function PlayerTargetingUI({
   const submitCancelDecision = useGameStore((s) => s.submitCancelDecision)
 
   const handleCancel = () => {
-    submitCancelDecision()
+    submitCancelDecision(decision.id)
   }
 
   return (

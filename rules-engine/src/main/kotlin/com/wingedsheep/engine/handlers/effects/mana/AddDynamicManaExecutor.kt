@@ -73,19 +73,7 @@ class AddDynamicManaExecutor(
         val firstColor = colors[0]
         val secondColor = colors[1]
 
-        val decisionResult = decisionHandler.createNumberDecision(
-            state = state,
-            playerId = context.controllerId,
-            sourceId = context.sourceId,
-            sourceName = sourceName,
-            prompt = "Choose how much {${firstColor.symbol}} mana to add (rest will be {${secondColor.symbol}}). Total: $amount",
-            minValue = 0,
-            maxValue = amount,
-            phase = DecisionPhase.RESOLUTION
-        )
-
         val continuation = AddDynamicManaContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
             playerId = context.controllerId,
             sourceId = context.sourceId,
             sourceName = sourceName,
@@ -95,11 +83,22 @@ class AddDynamicManaExecutor(
             restriction = effect.restriction
         )
 
-        val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
+        val decisionResult = decisionHandler.createNumberDecision(
+            state = state,
+            playerId = context.controllerId,
+            sourceId = context.sourceId,
+            sourceName = sourceName,
+            prompt = "Choose how much {${firstColor.symbol}} mana to add (rest will be {${secondColor.symbol}}). Total: $amount",
+            minValue = 0,
+            maxValue = amount,
+            phase = DecisionPhase.RESOLUTION,
+            answer = continuation
+        )
 
-        return EffectResult.paused(
+        val stateWithContinuation = decisionResult.state
+
+        return EffectResult.propagatePause(
             stateWithContinuation,
-            decisionResult.pendingDecision,
             decisionResult.events
         )
     }
@@ -121,17 +120,7 @@ class AddDynamicManaExecutor(
             restriction: ManaRestriction?,
             decisionHandler: DecisionHandler = DecisionHandler()
         ): EffectResult {
-            val decisionResult = decisionHandler.createColorDecision(
-                state = state,
-                playerId = playerId,
-                sourceId = sourceId,
-                sourceName = sourceName,
-                prompt = "Choose a color of mana to add ($remainingPips remaining)",
-                phase = DecisionPhase.RESOLUTION,
-                availableColors = allowedColors
-            )
             val continuation = AddManaPipsContinuation(
-                decisionId = decisionResult.pendingDecision!!.id,
                 playerId = playerId,
                 sourceId = sourceId,
                 sourceName = sourceName,
@@ -139,9 +128,20 @@ class AddDynamicManaExecutor(
                 allowedColors = allowedColors,
                 restriction = restriction
             )
-            return EffectResult.paused(
-                decisionResult.state.pushContinuation(continuation),
-                decisionResult.pendingDecision,
+
+            val decisionResult = decisionHandler.createColorDecision(
+                state = state,
+                playerId = playerId,
+                sourceId = sourceId,
+                sourceName = sourceName,
+                prompt = "Choose a color of mana to add ($remainingPips remaining)",
+                phase = DecisionPhase.RESOLUTION,
+                availableColors = allowedColors,
+                answer = continuation
+            )
+
+            return EffectResult.propagatePause(
+                decisionResult.state,
                 decisionResult.events
             )
         }

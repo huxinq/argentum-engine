@@ -83,12 +83,10 @@ class RepeatWhileExecutor(
         ): EffectResult {
             // Pre-push AFTER_BODY continuation
             val afterBodyContinuation = RepeatWhileContinuation(
-                decisionId = "pending",
                 body = body,
                 repeatCondition = repeatCondition,
                 resolvedDeciderId = resolvedDeciderId,
                 sourceName = sourceName,
-                phase = RepeatWhilePhase.AFTER_BODY,
                 effectContext = context
             )
 
@@ -100,9 +98,8 @@ class RepeatWhileExecutor(
             if (result.isPaused) {
                 // Body paused — AFTER_BODY continuation is below body's continuation on the stack.
                 // checkForMoreContinuations will handle AFTER_BODY after the body's decision resolves.
-                return EffectResult.paused(
+                return EffectResult.propagatePause(
                     result.state,
-                    result.pendingDecision!!,
                     priorEvents + result.events
                 )
             }
@@ -232,6 +229,14 @@ class RepeatWhileExecutor(
             priorEvents: List<GameEvent>
         ): EffectResult {
             val decisionHandler = DecisionHandler()
+            val continuation = RepeatWhileDecisionContinuation(loop = RepeatWhileContinuation(
+                body = body,
+                repeatCondition = repeatCondition,
+                resolvedDeciderId = resolvedDeciderId,
+                sourceName = sourceName,
+                effectContext = context
+            ))
+
             val decisionResult = decisionHandler.createYesNoDecision(
                 state = state,
                 playerId = resolvedDeciderId,
@@ -240,24 +245,14 @@ class RepeatWhileExecutor(
                 prompt = repeatCondition.prompt,
                 yesText = repeatCondition.yesText,
                 noText = repeatCondition.noText,
-                phase = DecisionPhase.RESOLUTION
+                phase = DecisionPhase.RESOLUTION,
+                answer = continuation
             )
 
-            val continuation = RepeatWhileContinuation(
-                decisionId = decisionResult.pendingDecision!!.id,
-                body = body,
-                repeatCondition = repeatCondition,
-                resolvedDeciderId = resolvedDeciderId,
-                sourceName = sourceName,
-                phase = RepeatWhilePhase.AFTER_DECISION,
-                effectContext = context
-            )
+            val stateWithContinuation = decisionResult.state
 
-            val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
-
-            return EffectResult.paused(
+            return EffectResult.propagatePause(
                 stateWithContinuation,
-                decisionResult.pendingDecision,
                 priorEvents + decisionResult.events
             )
         }

@@ -25,14 +25,13 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class AttackTaxManaSelectionContinuation(
-    override val decisionId: String,
     val attackingPlayer: EntityId,
     val attackers: Map<EntityId, EntityId>,
     val manaCost: ManaCost,
     val availableSources: List<ManaSourceOption>,
     val autoPaySuggestion: List<EntityId>,
     val bands: List<Set<EntityId>> = emptyList(),
-) : ContinuationFrame
+) : AnswerContinuation
 
 /**
  * Resume after the attacking player chooses which permanents to sacrifice to declare an attacker
@@ -54,14 +53,13 @@ data class AttackTaxManaSelectionContinuation(
  */
 @Serializable
 data class AttackSacrificeSelectionContinuation(
-    override val decisionId: String,
     val attackingPlayer: EntityId,
     val attackers: Map<EntityId, EntityId>,
     val payingAttacker: EntityId,
     val count: Int,
     val remaining: List<PendingAttackSacrifice> = emptyList(),
     val bands: List<Set<EntityId>> = emptyList(),
-) : ContinuationFrame
+) : AnswerContinuation
 
 /** One still-unpaid sacrifice cost in an [AttackSacrificeSelectionContinuation]'s queue. */
 @Serializable
@@ -79,10 +77,9 @@ data class PendingAttackSacrifice(
  */
 @Serializable
 data class BlockTaxManaSelectionContinuation(
-    override val decisionId: String,
     val blockingPlayer: EntityId,
     val blockers: Map<EntityId, List<EntityId>>,
     val manaCost: ManaCost,
     val availableSources: List<ManaSourceOption>,
     val autoPaySuggestion: List<EntityId>,
-) : ContinuationFrame
+) : AnswerContinuation

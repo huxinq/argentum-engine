@@ -153,11 +153,8 @@ class CreateTokenCopyOfSourceExecutor(
                 val remaining = cappedCount - (index + 1)
                 var pausedState = newState
                 if (remaining > 0) {
-                    val (continuationId, stateWithRoutingId) = newState.newRoutingId()
-                    newState = stateWithRoutingId
-                    pausedState = stateWithRoutingId.pushContinuation(
+                    pausedState = newState.pushContinuation(
                         com.wingedsheep.engine.core.CreateTokenCopyRemainingContinuation(
-                            decisionId = "create-token-copy-remaining-$continuationId",
                             effect = effect,
                             context = context,
                             controllerId = controllerId,

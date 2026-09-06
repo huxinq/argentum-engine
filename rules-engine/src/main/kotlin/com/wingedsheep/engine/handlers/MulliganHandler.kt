@@ -392,22 +392,9 @@ class MulliganHandler(
         val nextLeyline = getNextLeylineChoice(stateWithLeylineScan)
         if (nextLeyline != null) {
             val (playerId, cardId) = nextLeyline
-            val (decisionId, allocatedState) = stateWithLeylineScan.newRoutingId()
-            val (decision, continuation) = createLeylineDecision(allocatedState, playerId, cardId, decisionId)
+            val result = createLeylineDecision(stateWithLeylineScan, playerId, cardId)
                 ?: return ExecutionResult.success(stateWithLeylineScan, events)
-            val pausedState = allocatedState
-                .pushContinuation(continuation)
-                .withPendingDecision(decision)
-            return ExecutionResult.paused(
-                pausedState,
-                decision,
-                events + DecisionRequestedEvent(
-                    decisionId = decision.id,
-                    playerId = playerId,
-                    decisionType = "YES_NO",
-                    prompt = decision.prompt
-                )
-            )
+            return ExecutionResult.propagatePause(result.state, events + result.events)
         }
 
         val advanceResult = turnManager.advanceStep(stateWithLeylineScan)
@@ -418,15 +405,14 @@ class MulliganHandler(
     }
 
     /**
-     * Build the [YesNoDecision] + [LeylineDecisionContinuation] pair for a specific leyline
-     * card in a player's opening hand. The caller is responsible for pushing the continuation
-     * and setting the pending decision on the state returned by [GameState.newRoutingId].
+     * Suspend for a specific leyline card in a player's opening hand, retaining the operation
+     * that consumes the answer together with the question.
      *
      * Returns null when the card no longer has a [CardComponent] (defensive — shouldn't happen).
      */
-    fun createLeylineDecision(state: GameState, playerId: EntityId, leylineCardId: EntityId, decisionId: String): Pair<YesNoDecision, LeylineDecisionContinuation>? {
+    fun createLeylineDecision(state: GameState, playerId: EntityId, leylineCardId: EntityId): ExecutionResult? {
         val cardName = state.getEntity(leylineCardId)?.get<CardComponent>()?.name ?: return null
-        val decision = YesNoDecision(
+        val question = { decisionId: String -> YesNoDecision(
             id = decisionId,
             playerId = playerId,
             prompt = "Begin the game with $cardName on the battlefield?",
@@ -438,13 +424,12 @@ class MulliganHandler(
             yesText = "Yes",
             noText = "No",
             hint = "Leyline — If this card is in your opening hand, you may begin the game with it on the battlefield."
-        )
+        ) }
         val continuation = LeylineDecisionContinuation(
-            decisionId = decisionId,
             playerId = playerId,
             leylineCardId = leylineCardId,
             cardName = cardName
         )
-        return decision to continuation
+        return state.suspendForDecision(question, continuation)
     }
 }

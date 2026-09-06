@@ -62,6 +62,12 @@ class CollectEvidenceExecutor(
             return applyCollection(state, playerId, effect.amount, candidates.cards, sourceName)
         }
 
+        val continuation = CollectEvidenceContinuation(
+            playerId = playerId,
+            amount = effect.amount,
+            sourceName = sourceName,
+        )
+
         val decisionResult = decisionHandler.createCardSelectionDecision(
             state = state,
             playerId = playerId,
@@ -74,19 +80,12 @@ class CollectEvidenceExecutor(
             maxSelections = candidates.cards.size,
             ordered = false,
             phase = DecisionPhase.RESOLUTION,
-            minTotalManaValue = effect.amount
+            minTotalManaValue = effect.amount,
+            answer = continuation
         )
 
-        val continuation = CollectEvidenceContinuation(
-            decisionId = decisionResult.pendingDecision!!.id,
-            playerId = playerId,
-            amount = effect.amount,
-            sourceName = sourceName,
-        )
-
-        return EffectResult.paused(
-            decisionResult.state.pushContinuation(continuation),
-            decisionResult.pendingDecision,
+        return EffectResult.propagatePause(
+            decisionResult.state,
             decisionResult.events
         )
     }

@@ -63,21 +63,20 @@ class CommanderZoneChoiceCheck(
                     prompt = "Put $cardName into the command zone instead of leaving it in $zoneLabel?",
                     yesText = "Command zone",
                     noText = "Leave in $zoneLabel",
-                    phase = DecisionPhase.STATE_BASED
+                    phase = DecisionPhase.STATE_BASED,
+                    answer = CommanderZoneChoiceContinuation(
+                        commanderId = entityId,
+                        ownerId = playerId,
+                        currentZone = zoneKey.zoneType
+                    ),
                 )
 
-                val continuation = CommanderZoneChoiceContinuation(
-                    decisionId = decisionResult.pendingDecision!!.id,
-                    commanderId = entityId,
-                    ownerId = playerId,
-                    currentZone = zoneKey.zoneType
-                )
 
-                val stateWithContinuation = decisionResult.state.pushContinuation(continuation)
 
-                return ExecutionResult.paused(
+                val stateWithContinuation = decisionResult.state
+
+                return ExecutionResult.propagatePause(
                     stateWithContinuation,
-                    decisionResult.pendingDecision,
                     decisionResult.events
                 )
             }

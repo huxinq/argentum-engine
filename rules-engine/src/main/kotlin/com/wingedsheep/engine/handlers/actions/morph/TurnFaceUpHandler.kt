@@ -402,7 +402,7 @@ class TurnFaceUpHandler(
                     )
                 ) {
                     is PaymentResult.Pending ->
-                        ExecutionResult.paused(result.state, result.pendingDecision, events + result.events)
+                        ExecutionResult.propagatePause(result.state, events + result.events)
                     is PaymentResult.Unaffordable ->
                         ExecutionResult.error(currentState, "Cannot pay the morph cost to turn this creature face up")
                     // Selection / yes-no payments never settle synchronously — they always pause first.
@@ -457,9 +457,8 @@ class TurnFaceUpHandler(
             val triggerResult = triggerProcessor.processTriggers(currentState, triggers)
 
             if (triggerResult.isPaused) {
-                return ExecutionResult.paused(
+                return ExecutionResult.propagatePause(
                     triggerResult.state.withPriority(action.playerId),
-                    triggerResult.pendingDecision!!,
                     events + triggerResult.events
                 )
             }
