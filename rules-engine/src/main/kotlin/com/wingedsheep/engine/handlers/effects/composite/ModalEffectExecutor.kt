@@ -12,7 +12,6 @@ import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.engine.state.components.stack.SpellOnStackComponent
 import com.wingedsheep.sdk.scripting.effects.Effect
 import com.wingedsheep.sdk.scripting.effects.ModalEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -132,7 +131,7 @@ class ModalEffectExecutor(
         val basePrompt = "Choose a mode for ${sourceName ?: "modal spell"}"
         val prompt = if (effectiveChooseCount > 1) "$basePrompt (1 of $effectiveChooseCount)" else basePrompt
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = ChooseOptionDecision(
             id = decisionId,
             playerId = playerId,
@@ -168,7 +167,7 @@ class ModalEffectExecutor(
             recordChosenModesThisTurn = effect.excludeModesChosenThisTurn
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(
@@ -352,9 +351,10 @@ internal fun processPreTargetedEffectQueue(
     // Pre-push the tail continuation so that if the effect pauses, our frame sits
     // beneath the inner decision's frames and auto-resumes when they finish.
     val stateForExecution = if (tail.isNotEmpty()) {
-        state.pushContinuation(
+        val (continuationId, stateWithRoutingId) = state.newRoutingId()
+        stateWithRoutingId.pushContinuation(
             ModalPreChosenContinuation(
-                decisionId = "modal-pre-chosen-${UUID.randomUUID()}",
+                decisionId = "modal-pre-chosen-$continuationId",
                 controllerId = ctx.controllerId,
                 sourceId = ctx.sourceId,
                 sourceName = ctx.sourceName,

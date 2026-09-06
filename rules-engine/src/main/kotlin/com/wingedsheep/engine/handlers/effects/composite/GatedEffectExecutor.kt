@@ -47,7 +47,6 @@ import com.wingedsheep.sdk.scripting.effects.SelectionMode
 import com.wingedsheep.sdk.scripting.effects.SuccessCriterion
 import com.wingedsheep.sdk.scripting.references.Player
 import com.wingedsheep.sdk.scripting.targets.EffectTarget
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -243,7 +242,7 @@ class GatedEffectExecutor(
         // player confirms a number, not a formula.
         val payLabel = (gate as? Gate.MayPay)?.let { computedCostLabel(state, it.cost, context) }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = YesNoDecision(
             id = decisionId,
             playerId = playerId,
@@ -266,7 +265,7 @@ class GatedEffectExecutor(
             effectContext = context
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(
@@ -300,7 +299,7 @@ class GatedEffectExecutor(
             state.getEntity(sourceId)?.get<CardComponent>()?.name
         }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = YesNoDecision(
             id = decisionId,
             playerId = playerId,
@@ -319,7 +318,7 @@ class GatedEffectExecutor(
             effectContext = context
         )
 
-        val stateWithContinuation = state.withPendingDecision(decision).pushContinuation(continuation)
+        val stateWithContinuation = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
 
         return EffectResult.paused(
             stateWithContinuation,
@@ -384,7 +383,7 @@ class GatedEffectExecutor(
             WaterbendPermanentChoice(it.entityId, it.name, it.isCreature)
         }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val declineText = otherwise?.description?.replaceFirstChar { it.lowercase() }
         val decision = SelectManaSourcesDecision(
             id = decisionId,
@@ -415,7 +414,7 @@ class GatedEffectExecutor(
             otherwise = otherwise
         )
 
-        val stateWithContinuation = state.withPendingDecision(decision).pushContinuation(continuation)
+        val stateWithContinuation = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
 
         return EffectResult.paused(
             stateWithContinuation,
@@ -513,7 +512,7 @@ class GatedEffectExecutor(
             state.getEntity(sourceId)?.get<CardComponent>()?.name
         }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = ChooseNumberDecision(
             id = decisionId,
             playerId = playerId,
@@ -532,7 +531,7 @@ class GatedEffectExecutor(
             effectContext = context
         )
 
-        val stateWithContinuation = state.withPendingDecision(decision).pushContinuation(continuation)
+        val stateWithContinuation = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
 
         return EffectResult.paused(
             stateWithContinuation,

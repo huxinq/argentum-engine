@@ -313,7 +313,7 @@ class ReplacementEffectProcessor {
         context: EffectContext?
     ): ProcessorResult.Paused {
         val playerId = event.affectedPlayerId
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, allocatedState) = state.newRoutingId()
 
         val decision = ChooseOptionDecision(
             id = decisionId,
@@ -336,7 +336,7 @@ class ReplacementEffectProcessor {
             context = context
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = allocatedState.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return ProcessorResult.Paused(stateWithContinuation, decision)
@@ -358,14 +358,14 @@ class ReplacementEffectProcessor {
         alreadyApplied: Set<ReplacementEffectIdentity>,
         context: EffectContext?
     ): ProcessorResult {
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, allocatedState) = state.newRoutingId()
         val promptResult = event.createOptionalPrompt(
             decisionId, gathered, state.copy(activeReplacementChain = alreadyApplied), context
         )
             ?: // Event doesn't support optional prompts — treat as mandatory
             return applySingle(state, gathered, event, alreadyApplied)
 
-        val stateWithDecision = state.withPendingDecision(promptResult.decision)
+        val stateWithDecision = allocatedState.withPendingDecision(promptResult.decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(promptResult.continuation)
 
         return ProcessorResult.Paused(stateWithContinuation, promptResult.decision)

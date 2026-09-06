@@ -758,7 +758,9 @@ class QuickGameLobbyHandler(
             aiGameManager.createAiOpponent(
                 gameSession = gameSession,
                 setCode = aiSetCode,
-                onActionReady = { id, action -> gamePlayHandler.handleAiAction(gameSession, id, action) },
+                onActionReady = { id, action, interactionEpoch ->
+                    gamePlayHandler.handleAiAction(gameSession, id, action, interactionEpoch)
+                },
                 onMulliganKeep = { id -> gamePlayHandler.handleAiMulliganKeep(gameSession, id) },
                 onMulliganTake = { id -> gamePlayHandler.handleAiMulliganTake(gameSession, id) },
                 onBottomCards = { id, cardIds -> gamePlayHandler.handleAiBottomCards(gameSession, id, cardIds) },

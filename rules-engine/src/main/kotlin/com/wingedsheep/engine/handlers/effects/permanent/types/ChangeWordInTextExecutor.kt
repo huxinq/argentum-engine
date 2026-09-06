@@ -10,7 +10,6 @@ import com.wingedsheep.sdk.core.Color
 import com.wingedsheep.sdk.core.Subtype
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.effects.ChangeWordInTextEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -142,7 +141,7 @@ class ChangeWordInTextExecutor(
         // Pre-select the first on-card word so the common single-relevant case is one click.
         val defaultFromIndex = fromOptions.indexOfFirst { it in relevant }.takeIf { it >= 0 }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = ChooseReplacementDecision(
             id = decisionId,
             playerId = context.controllerId,
@@ -172,7 +171,7 @@ class ChangeWordInTextExecutor(
             duration = effect.duration
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(

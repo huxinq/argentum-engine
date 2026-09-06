@@ -122,8 +122,10 @@ class TriggerProcessor(
                 // after this trigger's target selection is resolved
                 var stateWithContinuations = result.state
                 if (remainingTriggers.isNotEmpty()) {
+                    val (pendingId, pendingState) = stateWithContinuations.newRoutingId()
+                    stateWithContinuations = pendingState
                     val pendingContinuation = PendingTriggersContinuation(
-                        decisionId = "pending-triggers-${java.util.UUID.randomUUID()}",
+                        decisionId = pendingId,
                         remainingTriggers = remainingTriggers
                     )
                     // Push BELOW the TriggeredAbilityContinuation that was just pushed
@@ -249,7 +251,7 @@ class TriggerProcessor(
     ): ExecutionResult {
         val first = run.first()
         val ability = first.ability
-        val decisionId = "batch-may-${java.util.UUID.randomUUID()}"
+        val (decisionId, allocatedState) = state.newRoutingId()
         val decision = BatchYesNoDecision(
             id = decisionId,
             // Same player the BatchKey was built on, so the auto-answer store is keyed identically
@@ -267,11 +269,12 @@ class TriggerProcessor(
 
         // Queue the triggers after the run first (deepest), then the batch frame on top, so the
         // batch resolves before the trailing triggers (APNAP order preserved).
-        var stateWithContinuations = state.withPendingDecision(decision)
+        var stateWithContinuations = allocatedState.withPendingDecision(decision)
         if (remainingTriggers.isNotEmpty()) {
-            stateWithContinuations = stateWithContinuations.pushContinuation(
+            val (pendingId, pendingState) = stateWithContinuations.newRoutingId()
+            stateWithContinuations = pendingState.pushContinuation(
                 PendingTriggersContinuation(
-                    decisionId = "pending-triggers-${java.util.UUID.randomUUID()}",
+                    decisionId = pendingId,
                     remainingTriggers = remainingTriggers
                 )
             )
@@ -1068,7 +1071,7 @@ class TriggerProcessor(
         val optionLabels = offerIndices.map { modal.modes[it].description } +
             (if (doneOffered) listOf(ModalEffectExecutor.DECLINE_MODE_LABEL) else emptyList())
 
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, allocatedState) = state.newRoutingId()
         val pickNumber = selectedModeIndices.size + 1
         val alreadyPicked = if (selectedModeIndices.isEmpty()) "" else {
             "\nAlready picked: ${selectedModeIndices.joinToString("; ") { modal.modes[it].description }}"
@@ -1112,7 +1115,7 @@ class TriggerProcessor(
         )
 
         return ExecutionResult.paused(
-            state.pushContinuation(continuation).withPendingDecision(decision),
+            allocatedState.pushContinuation(continuation).withPendingDecision(decision),
             decision,
             listOf(
                 DecisionRequestedEvent(
@@ -1176,7 +1179,7 @@ class TriggerProcessor(
                 continue
             }
 
-            val decisionId = java.util.UUID.randomUUID().toString()
+            val (decisionId, allocatedState) = state.newRoutingId()
             val pickNumber = ordinal + 1
             val prompt = if (chosenModeIndices.size > 1) {
                 "Choose targets for ${ability.sourceName} — ${mode.description} ($pickNumber of ${chosenModeIndices.size})"
@@ -1213,7 +1216,7 @@ class TriggerProcessor(
             )
 
             return ExecutionResult.paused(
-                state.pushContinuation(continuation).withPendingDecision(decision),
+                allocatedState.pushContinuation(continuation).withPendingDecision(decision),
                 decision,
                 listOf(
                     DecisionRequestedEvent(

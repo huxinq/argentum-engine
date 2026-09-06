@@ -15,7 +15,6 @@ import com.wingedsheep.engine.state.components.identity.RingBearerComponent
 import com.wingedsheep.engine.state.components.player.TheRingComponent
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.effects.TheRingTemptsYouEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -68,7 +67,8 @@ class TheRingTemptsYouExecutor : EffectExecutor<TheRingTemptsYouEffect> {
             )
         }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = newState.newRoutingId()
+        newState = stateWithRoutingId
         val decision = SelectCardsDecision(
             id = decisionId,
             playerId = temptedId,

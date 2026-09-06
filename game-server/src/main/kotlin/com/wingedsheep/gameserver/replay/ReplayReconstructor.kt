@@ -253,10 +253,10 @@ private class ReplayEngine(
     }
 
     /**
-     * Re-bind a recorded action to the current reconstructed state. Decision ids are minted from a
-     * UUID each run, so a recorded [SubmitDecision] carries the *original* run's id; we retarget it
-     * at the id the freshly created pending decision actually has. The choice payload (targets,
-     * cards, numbers — all by deterministic entity id) is untouched, so the outcome is identical.
+     * Re-bind a recorded action to the current reconstructed state. Historical recordings used
+     * random or clock-based decision IDs; current engine routing IDs reproduce from game state.
+     * Keep the fallback for those historical [SubmitDecision] records, retargeting only the
+     * correlation token. The recorded choice payload (targets, cards, numbers) is untouched.
      */
     private fun rebind(action: GameAction, state: GameState): GameAction {
         if (action !is SubmitDecision) return action

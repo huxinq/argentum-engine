@@ -39,6 +39,7 @@ class StateProgressTest : FunSpec({
         // inert action look like progress — the exact misreading the guard exists to avoid.
         withClue("rng") { StateProgress.digest(base.copy(rng = GameRng(0x5EED))) shouldBe here }
         withClue("nextEntityId") { StateProgress.digest(base.copy(nextEntityId = 9_999L)) shouldBe here }
+        withClue("nextRoutingId") { StateProgress.digest(base.copy(nextRoutingId = 1L)) shouldBe here }
         withClue("timestamp") { StateProgress.digest(base.copy(timestamp = 9_999L)) shouldBe here }
 
         // Whose turn it is to speak is not what is true of the board. Being blind to it is what

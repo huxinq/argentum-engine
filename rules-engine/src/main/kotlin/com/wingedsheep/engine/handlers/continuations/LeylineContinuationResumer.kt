@@ -165,10 +165,11 @@ class LeylineContinuationResumer(
         val nextLeyline = services.mulliganHandler.getNextLeylineChoice(state)
         if (nextLeyline != null) {
             val (nextPlayerId, nextCardId) = nextLeyline
-            val nextDecision = services.mulliganHandler.createLeylineDecision(state, nextPlayerId, nextCardId)
+            val (decisionId, allocatedState) = state.newRoutingId()
+            val nextDecision = services.mulliganHandler.createLeylineDecision(allocatedState, nextPlayerId, nextCardId, decisionId)
             if (nextDecision != null) {
                 val (decision, nextContinuation) = nextDecision
-                val pausedState = state.pushContinuation(nextContinuation).withPendingDecision(decision)
+                val pausedState = allocatedState.pushContinuation(nextContinuation).withPendingDecision(decision)
                 return ExecutionResult.paused(
                     pausedState,
                     decision,

@@ -10,7 +10,6 @@ import com.wingedsheep.engine.state.components.identity.OwnerComponent
 import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.effects.ReturnOneFromLinkedExileEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -73,10 +72,10 @@ class ReturnOneFromLinkedExileExecutor : EffectExecutor<ReturnOneFromLinkedExile
         }
 
         // Multiple eligible cards — create a decision
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
 
         val cardInfoMap = playerCards.associateWith { cardId ->
-            val container = state.getEntity(cardId)
+            val container = stateWithRoutingId.getEntity(cardId)
             val cardComponent = container?.get<CardComponent>()
             SearchCardInfo(
                 name = cardComponent?.name ?: "Unknown",
@@ -111,7 +110,7 @@ class ReturnOneFromLinkedExileExecutor : EffectExecutor<ReturnOneFromLinkedExile
             eligibleCards = playerCards
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(

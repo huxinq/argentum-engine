@@ -16,7 +16,6 @@ import com.wingedsheep.engine.state.components.identity.OwnerComponent
 import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.effects.CastAnyNumberFromCollectionWithoutPayingCostEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -59,10 +58,10 @@ class CastAnyNumberFromCollectionWithoutPayingCostExecutor :
 
         val controllerId = context.controllerId
         val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
 
         val cardInfo = candidates.associateWith { cardId ->
-            val cardComponent = state.getEntity(cardId)?.get<CardComponent>()
+            val cardComponent = stateWithRoutingId.getEntity(cardId)?.get<CardComponent>()
             SearchCardInfo(
                 name = cardComponent?.name ?: "Unknown",
                 manaCost = cardComponent?.manaCost?.toString() ?: "",
@@ -108,7 +107,7 @@ class CastAnyNumberFromCollectionWithoutPayingCostExecutor :
             maxCasts = effect.maxCasts,
         )
 
-        val pausedState = state
+        val pausedState = stateWithRoutingId
             .pushContinuation(continuation)
             .withPendingDecision(decision)
             .withPriority(controllerId)

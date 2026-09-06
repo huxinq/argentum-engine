@@ -643,9 +643,30 @@ from a state-threaded counter (never a UUID), `ReplayReconstructor` rebuilds the
 deltas}` stream the viewer consumes. This is kilobytes per game instead of a masked snapshot + a
 per-frame delta + a full unmasked `GameState` per frame.
 
-Decision ids are minted afresh each run (they are not part of the deterministic state), so a
-recorded `SubmitDecision` is re-bound to the freshly created decision's id during reconstruction;
-the choice payload (entity-id targets/cards) is unchanged, so the outcome is identical.
+Decision IDs now come from the serialized `GameState.nextRoutingId` counter, independently of
+entity allocation and gameplay RNG. Repeating the same execution reproduces those IDs, so current
+`SubmitDecision` records already address the reconstructed decision. Historical recordings used
+random or clock-based IDs; reconstruction retains rebinding for those records while preserving
+the recorded choice payload (entity-id targets/cards). Routing IDs are game-local correlation
+tokens and must not be interpreted as globally unique identifiers or semantic action identity.
+
+The live browser protocol wraps each pending decision ID with a session epoch. Clients continue
+to echo the opaque `pendingDecision.id` in `SubmitDecision`; no new envelope field is needed.
+`GameSession.executeClientAction` rejects a cancelled generation before changing game state,
+undo checkpoints, replay inputs, or message-id bookkeeping, then rebinds a valid response to the
+engine ID for execution and recording. Successful undo rotates the epoch without changing the
+restored engine checkpoint. Full and delta updates share the same token while that prompt is
+outstanding, including after reconnect; a new session instance starts a fresh epoch.
+
+In-process AI updates retain raw decision IDs for engine simulations and carry the same live
+generation separately in `interactionEpoch`. Both full and delta updates capture it under the
+session lock. The AI carries that originating value through thinking and approval delays into
+its callback; `GameSession.executeAiAction` validates it atomically with action execution.
+Missing or obsolete generations are discarded before fallback actions, rejection accounting,
+or broadcasts. Fallback execution rechecks the originating generation, and rejection accounting
+plus any resulting concession share one guarded operation, so undo between recovery steps cannot
+apply them to the replacement branch. Replay continues to record only canonical engine IDs.
+
 
 #### One store
 

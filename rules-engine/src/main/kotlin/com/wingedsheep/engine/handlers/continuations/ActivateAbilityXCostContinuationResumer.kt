@@ -107,7 +107,7 @@ class ActivateAbilityXCostContinuationResumer(
         // the frontend renders "Select N/N" with a hard count (this is the assertion the
         // SecludedStarforgeTest UI-flow case pins).
         val sourceName = state.getEntity(action.sourceId)?.get<CardComponent>()?.name
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, stateAfterRouting) = state.newRoutingId()
         val prompt = "Select $chosenX permanents to tap for ${sourceName ?: "this ability"}"
         val decision = SelectCardsDecision(
             id = decisionId,
@@ -129,7 +129,7 @@ class ActivateAbilityXCostContinuationResumer(
             chosenX = chosenX,
             tapTargets = continuation.tapTargets
         )
-        val pausedState = state
+        val pausedState = stateAfterRouting
             .withPendingDecision(decision)
             .pushContinuation(nextFrame)
         val event: GameEvent = DecisionRequestedEvent(

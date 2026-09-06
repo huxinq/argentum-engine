@@ -18,7 +18,6 @@ import com.wingedsheep.sdk.scripting.costs.PayCost
 import com.wingedsheep.sdk.scripting.effects.ChainCopyEffect
 import com.wingedsheep.sdk.scripting.effects.CopyRecipient
 import com.wingedsheep.sdk.scripting.effects.Effect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -44,13 +43,14 @@ class ChainCopyExecutor(
             ?: return EffectResult.success(state)
 
         // Step 2: Pre-push after-action continuation (sits below any inner continuations)
+        val (afterActionId, stateWithRoutingId) = state.newRoutingId()
         val afterActionContinuation = ChainCopyAfterActionContinuation(
-            decisionId = "chain-after-action-${UUID.randomUUID()}",
+            decisionId = "chain-after-action-$afterActionId",
             effect = effect,
             recipientPlayerId = recipientPlayerId,
             sourceId = context.sourceId
         )
-        val stateWithContinuation = state.pushContinuation(afterActionContinuation)
+        val stateWithContinuation = stateWithRoutingId.pushContinuation(afterActionContinuation)
 
         // Step 3: Execute the inner action via the registry
         val actionResult = effectExecutor(stateWithContinuation, effect.action, context)
@@ -135,9 +135,9 @@ class ChainCopyExecutor(
         }
 
         // Build the yes/no decision
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val sourceName = context.sourceId?.let { sourceId ->
-            state.getEntity(sourceId)?.get<CardComponent>()?.name
+            stateWithRoutingId.getEntity(sourceId)?.get<CardComponent>()?.name
         } ?: effect.spellName
 
         val copyCost = effect.copyCost
@@ -173,7 +173,7 @@ class ChainCopyExecutor(
             sourceId = context.sourceId
         )
 
-        val newState = state.withPendingDecision(decision).pushContinuation(continuation)
+        val newState = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
 
         return EffectResult.paused(
             newState,

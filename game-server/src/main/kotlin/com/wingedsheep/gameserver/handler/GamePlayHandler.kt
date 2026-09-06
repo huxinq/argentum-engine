@@ -185,8 +185,8 @@ class GamePlayHandler(
             aiGameManager.createAiOpponent(
                 gameSession = gameSession,
                 setCode = quickGameSetCode,
-                onActionReady = { aiPlayerId, action ->
-                    handleAiAction(gameSession, aiPlayerId, action)
+                onActionReady = { aiPlayerId, action, interactionEpoch ->
+                    handleAiAction(gameSession, aiPlayerId, action, interactionEpoch)
                 },
                 onMulliganKeep = { aiPlayerId ->
                     handleAiMulliganKeep(gameSession, aiPlayerId)
@@ -400,7 +400,9 @@ class GamePlayHandler(
             gameSession = gameSession,
             aiPlayerId = aiPlayerId,
             deckList = deck,
-            onActionReady = { id, action -> handleAiAction(gameSession, id, action) },
+            onActionReady = { id, action, interactionEpoch ->
+                handleAiAction(gameSession, id, action, interactionEpoch)
+            },
             onMulliganKeep = { id -> handleAiMulliganKeep(gameSession, id) },
             onMulliganTake = { id -> handleAiMulliganTake(gameSession, id) },
             onBottomCards = { id, cardIds -> handleAiBottomCards(gameSession, id, cardIds) }
@@ -545,7 +547,7 @@ class GamePlayHandler(
             return
         }
 
-        val result = gameSession.executeAction(playerSession.playerId, message.action, message.messageId)
+        val result = gameSession.executeClientAction(playerSession.playerId, message.action, message.messageId)
         when (result) {
             is GameSession.ActionResult.Success -> {
                 logger.debug("Action executed successfully")
@@ -899,7 +901,10 @@ class GamePlayHandler(
 
         try {
             sessionPlayers.forEach { session ->
-                val update = gameSession.createStateUpdate(session.playerId, allEvents)
+                val update = gameSession.createStateUpdate(
+                    session.playerId, allEvents,
+                    useEngineDecisionIds = session.webSocketSession is AiWebSocketSession,
+                )
                 if (update != null) sender.send(session.webSocketSession, update)
                 else logger.warn("createStateUpdate returned null for player ${session.playerId.value}")
             }
@@ -1216,7 +1221,9 @@ class GamePlayHandler(
                 gameSession = gameSession,
                 aiPlayerId = aiPlayerId,
                 deckList = deckList,
-                onActionReady = { id, action -> handleAiAction(gameSession, id, action) },
+                onActionReady = { id, action, interactionEpoch ->
+                    handleAiAction(gameSession, id, action, interactionEpoch)
+                },
                 onMulliganKeep = { id -> handleAiMulliganKeep(gameSession, id) },
                 onMulliganTake = { id -> handleAiMulliganTake(gameSession, id) },
                 onBottomCards = { id, cardIds -> handleAiBottomCards(gameSession, id, cardIds) }
@@ -1286,9 +1293,14 @@ class GamePlayHandler(
     // AI opponent callbacks (invoked async from AiWebSocketSession coroutine)
     // =========================================================================
 
-    fun handleAiAction(gameSession: GameSession, aiPlayerId: EntityId, action: com.wingedsheep.engine.core.GameAction) {
+    fun handleAiAction(
+        gameSession: GameSession,
+        aiPlayerId: EntityId,
+        action: com.wingedsheep.engine.core.GameAction,
+        interactionEpoch: String?
+    ) {
         try {
-            val result = gameSession.executeAction(aiPlayerId, action)
+            val result = gameSession.executeAiAction(aiPlayerId, action, interactionEpoch) ?: return
             when (result) {
                 is GameSession.ActionResult.Success -> {
                     logger.debug("AI action executed successfully")
@@ -1310,7 +1322,9 @@ class GamePlayHandler(
                     logger.warn("AI action failed: {} — trying safe fallbacks", result.reason)
                     var recovered = false
                     for (fallback in safeFallbackActions(gameSession, aiPlayerId)) {
-                        when (val fb = gameSession.executeAction(aiPlayerId, fallback)) {
+                        // Undo can occur after the original rejection or between fallback attempts.
+                        val fb = gameSession.executeAiAction(aiPlayerId, fallback, interactionEpoch) ?: return
+                        when (fb) {
                             is GameSession.ActionResult.Success -> {
                                 broadcastStateUpdate(gameSession, fb.events)
                                 if (gameSession.isGameOver()) handleGameOver(gameSession, events = fb.events)
@@ -1332,7 +1346,8 @@ class GamePlayHandler(
                         // it re-chooses the same rejected action, and nothing was applied for the
                         // stall guard to notice — so the seat gets a bounded number of chances and
                         // is then conceded. See [GameStallGuard.onActionRejected].
-                        if (gameSession.noteActionRejected(aiPlayerId)) {
+                        val conceded = gameSession.noteAiActionRejected(aiPlayerId, interactionEpoch) ?: return
+                        if (conceded) {
                             logger.error(
                                 "AI seat {} has had {} actions in a row rejected with no legal " +
                                     "fallback in game {} — conceding the seat rather than " +
@@ -1341,7 +1356,6 @@ class GamePlayHandler(
                                 com.wingedsheep.gameserver.session.GameStallGuard.MAX_CONSECUTIVE_REJECTIONS,
                                 gameSession.sessionId,
                             )
-                            gameSession.playerConcedes(aiPlayerId)
                             broadcastStateUpdate(gameSession, emptyList())
                             if (gameSession.isGameOver()) {
                                 handleGameOver(gameSession, GameOverReason.CONCESSION)

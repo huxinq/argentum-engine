@@ -358,6 +358,14 @@ data class GameState(
     val nextEntityId: Long = 0L,
 
     /**
+     * Game-local correlation IDs for decisions, continuations, delayed triggers, and combat bands.
+     * Independent of entity allocation and gameplay RNG; persisted so restore and replay resume
+     * the same sequence. Older snapshots omit this field and start the new sequence at zero;
+     * their existing UUID routing IDs remain valid and cannot collide with the `r` namespace.
+     */
+    val nextRoutingId: Long = 0L,
+
+    /**
      * Per-player persistent "yield" preferences keyed by [com.wingedsheep.sdk.scripting.AbilityIdentity]
      * (MTGO right-click yields — see `backlog/stack-collapse-and-batch-decisions.md` §C). Lives on
      * [GameState] (not the server session) so it survives serialization, replays deterministically,
@@ -1121,6 +1129,16 @@ data class GameState(
      */
     fun newEntity(): Pair<EntityId, GameState> =
         EntityId("e$nextEntityId") to copy(nextEntityId = nextEntityId + 1)
+
+    /**
+     * Allocate an opaque, game-local routing token and carry the returned state forward.
+     * Equal snapshots allocate equal tokens; distinct allocations along one timeline are unique.
+     * These tokens are neither globally unique game IDs nor semantic action identities.
+     */
+    fun newRoutingId(): Pair<String, GameState> {
+        check(nextRoutingId >= 0 && nextRoutingId < Long.MAX_VALUE) { "Routing ID counter exhausted" }
+        return "r$nextRoutingId" to copy(nextRoutingId = nextRoutingId + 1)
+    }
 
     /**
      * Set the priority player (returns new state).

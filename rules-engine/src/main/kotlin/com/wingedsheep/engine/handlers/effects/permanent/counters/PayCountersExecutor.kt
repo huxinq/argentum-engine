@@ -14,7 +14,6 @@ import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.battlefield.CountersComponent
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.scripting.effects.PayCountersEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -48,7 +47,7 @@ class PayCountersExecutor : EffectExecutor<PayCountersEffect> {
 
         val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = ChooseNumberDecision(
             id = decisionId,
             playerId = playerId,
@@ -70,7 +69,7 @@ class PayCountersExecutor : EffectExecutor<PayCountersEffect> {
             sourceId = context.sourceId
         )
 
-        val newState = state
+        val newState = stateWithRoutingId
             .withPendingDecision(decision)
             .pushContinuation(continuation)
 

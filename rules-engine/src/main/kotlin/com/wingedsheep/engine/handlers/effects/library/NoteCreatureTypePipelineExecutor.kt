@@ -8,7 +8,6 @@ import com.wingedsheep.engine.state.components.battlefield.NotedCreatureTypesCom
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.core.Subtype
 import com.wingedsheep.sdk.scripting.effects.NoteCreatureTypeEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -52,7 +51,7 @@ class NoteCreatureTypePipelineExecutor : EffectExecutor<NoteCreatureTypeEffect> 
         val prompt = effect.prompt
             ?: if (effect.secret) "Secretly choose a creature type" else "Note a creature type"
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = ChooseOptionDecision(
             id = decisionId,
             playerId = controllerId,
@@ -75,7 +74,7 @@ class NoteCreatureTypePipelineExecutor : EffectExecutor<NoteCreatureTypeEffect> 
             secret = effect.secret
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(

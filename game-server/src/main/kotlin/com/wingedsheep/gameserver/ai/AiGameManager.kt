@@ -246,7 +246,7 @@ class AiGameManager(
         aiPlayerId: EntityId,
         controller: AiPlayerController,
         gameSession: GameSession?,
-        onActionReady: (EntityId, GameAction) -> Unit = { _, _ -> },
+        onActionReady: (EntityId, GameAction, String?) -> Unit = { _, _, _ -> },
         onMulliganKeep: (EntityId) -> Unit = { _ -> },
         onMulliganTake: (EntityId) -> Unit = { _ -> },
         onBottomCards: (EntityId, List<EntityId>) -> Unit = { _, _ -> },
@@ -275,7 +275,7 @@ class AiGameManager(
         playerName: String,
         controller: AiPlayerController,
         modelOverride: String? = null,
-        onActionReady: (EntityId, GameAction) -> Unit,
+        onActionReady: (EntityId, GameAction, String?) -> Unit,
         onMulliganKeep: (EntityId) -> Unit,
         onMulliganTake: (EntityId) -> Unit,
         onBottomCards: (EntityId, List<EntityId>) -> Unit,
@@ -316,7 +316,7 @@ class AiGameManager(
      * Create an AI opponent and add it to the game session.
      *
      * @param gameSession The game session to add the AI to.
-     * @param onActionReady Callback invoked (async) when the AI wants to submit an action.
+     * @param onActionReady Callback invoked (async) with the action and its snapshot interaction epoch.
      *        This MUST NOT be called while holding stateLock.
      * @param onMulliganKeep Callback for AI keeping hand.
      * @param onMulliganTake Callback for AI taking mulligan.
@@ -326,7 +326,7 @@ class AiGameManager(
     fun createAiOpponent(
         gameSession: GameSession,
         setCode: String? = null,
-        onActionReady: (EntityId, GameAction) -> Unit,
+        onActionReady: (EntityId, GameAction, String?) -> Unit,
         onMulliganKeep: (EntityId) -> Unit,
         onMulliganTake: (EntityId) -> Unit,
         onBottomCards: (EntityId, List<EntityId>) -> Unit,
@@ -392,7 +392,7 @@ class AiGameManager(
         gameSession: GameSession,
         aiPlayerId: EntityId,
         playerName: String,
-        onActionReady: (EntityId, GameAction) -> Unit,
+        onActionReady: (EntityId, GameAction, String?) -> Unit,
         onMulliganKeep: (EntityId) -> Unit,
         onMulliganTake: (EntityId) -> Unit,
         onBottomCards: (EntityId, List<EntityId>) -> Unit
@@ -532,7 +532,7 @@ class AiGameManager(
         gameSession: GameSession,
         aiPlayerId: EntityId,
         deckList: Map<String, Int>?,
-        onActionReady: (EntityId, GameAction) -> Unit,
+        onActionReady: (EntityId, GameAction, String?) -> Unit,
         onMulliganKeep: (EntityId) -> Unit,
         onMulliganTake: (EntityId) -> Unit,
         onBottomCards: (EntityId, List<EntityId>) -> Unit

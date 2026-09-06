@@ -81,8 +81,9 @@ class CopyTargetTriggeredAbilityExecutor(
             return EffectResult.success(state)
         }
 
-        val decisionId = "copy-triggered-ability-target-${System.nanoTime()}"
-        val sourceName = state.getEntity(abilityEntityId)
+        val (routingId, stateWithRoutingId) = state.newRoutingId()
+        val decisionId = "copy-triggered-ability-target-$routingId"
+        val sourceName = stateWithRoutingId.getEntity(abilityEntityId)
             ?.get<TriggeredAbilityOnStackComponent>()?.sourceName ?: "ability"
 
         val continuation = CopyTriggeredAbilityTargetContinuation(
@@ -109,7 +110,7 @@ class CopyTargetTriggeredAbilityExecutor(
             legalTargets = legalTargetsMap
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(stateWithContinuation, decision)

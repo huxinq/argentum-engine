@@ -15,7 +15,6 @@ import com.wingedsheep.sdk.scripting.effects.ChooseActionEffect
 import com.wingedsheep.sdk.scripting.effects.Effect
 import com.wingedsheep.sdk.scripting.effects.EffectChoice
 import com.wingedsheep.sdk.scripting.effects.FeasibilityCheck
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -64,7 +63,7 @@ class ChooseActionEffectExecutor(
             state.getEntity(sourceId)?.get<CardComponent>()?.name
         }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = ChooseOptionDecision(
             id = decisionId,
             playerId = choosingPlayerId,
@@ -89,7 +88,7 @@ class ChooseActionEffectExecutor(
             triggeringEntityId = context.triggeringEntityId
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(

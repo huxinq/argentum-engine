@@ -8,7 +8,6 @@ import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.effects.SelectTargetEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -77,9 +76,9 @@ class SelectTargetPipelineExecutor(
         effect: SelectTargetEffect,
         legalTargets: List<EntityId>
     ): EffectResult {
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val controllerId = context.controllerId
-        val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
+        val sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name }
 
         require(effect.requirement.count == 1) {
             "SelectTargetEffect offers one target slot, but ${effect.requirement.description} asks " +
@@ -114,7 +113,7 @@ class SelectTargetPipelineExecutor(
             storedCollections = context.pipeline.storedCollections
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(

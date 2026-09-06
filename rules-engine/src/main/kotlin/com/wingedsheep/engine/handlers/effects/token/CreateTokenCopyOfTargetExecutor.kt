@@ -37,7 +37,6 @@ import com.wingedsheep.sdk.scripting.effects.GatedEffect
 import com.wingedsheep.sdk.scripting.effects.MoveToZoneEffect
 import com.wingedsheep.sdk.scripting.effects.SacrificeTargetEffect
 import com.wingedsheep.sdk.scripting.targets.EffectTarget
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -330,9 +329,11 @@ class CreateTokenCopyOfTargetExecutor(
                 if (remaining > 0) {
                     // The rest of the batch resumes below the choice's continuation once this token's
                     // choice (and every granted-riot instance) has fully resolved.
-                    pausedState = pausedState.pushContinuation(
+                    val (continuationId, stateWithRoutingId) = newState.newRoutingId()
+                    newState = stateWithRoutingId
+                    pausedState = stateWithRoutingId.pushContinuation(
                         com.wingedsheep.engine.core.CreateTokenCopyRemainingContinuation(
-                            decisionId = "create-token-copy-remaining-${UUID.randomUUID()}",
+                            decisionId = "create-token-copy-remaining-$continuationId",
                             effect = effect,
                             context = context,
                             controllerId = controllerId,
@@ -397,8 +398,10 @@ class CreateTokenCopyOfTargetExecutor(
             val sourceId = context.sourceId ?: controllerId
             val sourceName = state.getEntity(sourceId)?.get<CardComponent>()?.name ?: "Unknown"
             for (tokenId in createdTokens) {
+                val (delayedTriggerId, stateWithRoutingId) = newState.newRoutingId()
+                newState = stateWithRoutingId
                 val delayedTrigger = DelayedTriggeredAbility(
-                    id = UUID.randomUUID().toString(),
+                    id = delayedTriggerId,
                     effect = SacrificeTargetEffect(EffectTarget.SpecificEntity(tokenId)),
                     fireAtStep = sacrificeStep,
                     sourceId = sourceId,
@@ -434,8 +437,10 @@ class CreateTokenCopyOfTargetExecutor(
                 } else {
                     exileEffect
                 }
+                val (delayedTriggerId, stateWithRoutingId) = newState.newRoutingId()
+                newState = stateWithRoutingId
                 val delayedTrigger = DelayedTriggeredAbility(
-                    id = UUID.randomUUID().toString(),
+                    id = delayedTriggerId,
                     effect = delayedEffect,
                     fireAtStep = exileStep,
                     sourceId = sourceId,

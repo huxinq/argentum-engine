@@ -16,7 +16,6 @@ import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.effects.AmassEffect
 import com.wingedsheep.sdk.scripting.effects.CreateTokenEffect
 import com.wingedsheep.sdk.scripting.effects.Effect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -93,7 +92,7 @@ class AmassExecutor(
         val sourceName = context.sourceId
             ?.let { state.getEntity(it)?.get<CardComponent>()?.name }
             ?: "Amass"
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = SelectCardsDecision(
             id = decisionId,
             playerId = controllerId,
@@ -116,7 +115,7 @@ class AmassExecutor(
             sourceId = context.sourceId,
             candidates = armies
         )
-        val newState = state.withPendingDecision(decision).pushContinuation(continuation)
+        val newState = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
         return EffectResult.paused(
             newState,
             decision,

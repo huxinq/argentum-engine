@@ -142,6 +142,8 @@ sealed interface ServerMessage {
         val priorityMode: String? = null,
         /** Monotonically increasing version — clients use this to detect missed messages */
         val stateVersion: Long = 0,
+        /** Live generation accompanying raw engine IDs for asynchronous in-process AI. */
+        val interactionEpoch: String? = null,
     ) : ServerMessage
 
     /**
@@ -167,7 +169,9 @@ sealed interface ServerMessage {
         /** Current priority mode for this player */
         val priorityMode: String? = null,
         /** Monotonically increasing version — clients use this to detect missed messages */
-        val stateVersion: Long = 0
+        val stateVersion: Long = 0,
+        /** Live generation accompanying raw engine IDs for asynchronous in-process AI. */
+        val interactionEpoch: String? = null,
     ) : ServerMessage
 
     /**

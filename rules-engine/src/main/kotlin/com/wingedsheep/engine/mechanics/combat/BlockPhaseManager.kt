@@ -39,7 +39,6 @@ import com.wingedsheep.sdk.scripting.CantBlockUnlessCoBlocker
 import com.wingedsheep.sdk.scripting.filters.unified.GroupFilter
 import com.wingedsheep.sdk.scripting.filters.unified.Scope
 import com.wingedsheep.engine.state.components.battlefield.AttachedToComponent
-import java.util.UUID
 
 /**
  * Handles the declare blockers step of combat.
@@ -1139,7 +1138,7 @@ internal class BlockPhaseManager(
         val solution = manaSolver.solve(state, blockingPlayer, manaCost)
         val autoPaySuggestion = solution?.sources?.map { it.entityId } ?: emptyList()
 
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, allocatedState) = state.newRoutingId()
         val decision = com.wingedsheep.engine.core.SelectManaSourcesDecision(
             id = decisionId,
             playerId = blockingPlayer,
@@ -1163,7 +1162,7 @@ internal class BlockPhaseManager(
             autoPaySuggestion = autoPaySuggestion,
         )
         return ExecutionResult.paused(
-            state.withPendingDecision(decision).pushContinuation(continuation),
+            allocatedState.withPendingDecision(decision).pushContinuation(continuation),
             decision,
         )
     }

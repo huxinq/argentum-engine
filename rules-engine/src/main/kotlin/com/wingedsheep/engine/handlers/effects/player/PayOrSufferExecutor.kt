@@ -24,7 +24,6 @@ import com.wingedsheep.sdk.scripting.effects.Effect
 import com.wingedsheep.sdk.scripting.effects.PayOrSufferEffect
 import com.wingedsheep.sdk.scripting.effects.SacrificeEffect
 import com.wingedsheep.sdk.scripting.effects.SacrificeSelfEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -228,7 +227,7 @@ class PayOrSufferExecutor(
         }
 
         // Create a yes/no decision
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val prompt = "Discard ${if (cost.count == 1) "a card" else "${cost.count} cards"} at random to keep $sourceName?"
 
         val decision = YesNoDecision(
@@ -263,7 +262,7 @@ class PayOrSufferExecutor(
             iterationEntityId = context.pipeline.iterationTarget
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(
@@ -612,7 +611,7 @@ class PayOrSufferExecutor(
             return executeSufferEffect(state, effect.suffer, context)
         }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val cards = if (cost.count == 1) "card" else "cards"
         val decision = YesNoDecision(
             id = decisionId,
@@ -647,7 +646,7 @@ class PayOrSufferExecutor(
         )
 
         return EffectResult.paused(
-            state.withPendingDecision(decision).pushContinuation(continuation),
+            stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation),
             decision,
             listOf()
         )
@@ -672,7 +671,7 @@ class PayOrSufferExecutor(
         }
 
         // Create a yes/no decision
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val prompt = "Pay ${cost.amount} life to avoid ${describeConsequence(effect, sourceName)}?"
 
         val decision = YesNoDecision(
@@ -707,7 +706,7 @@ class PayOrSufferExecutor(
             iterationEntityId = context.pipeline.iterationTarget
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(
@@ -804,7 +803,7 @@ class PayOrSufferExecutor(
         }
 
         // Create a yes/no decision
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val consequence = describeConsequence(effect, sourceName)
         val prompt = "Pay ${cost.cost} or $consequence?"
 
@@ -840,7 +839,7 @@ class PayOrSufferExecutor(
             manaCost = cost.cost
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(
@@ -889,7 +888,7 @@ class PayOrSufferExecutor(
             return executeSufferEffect(state, effect.suffer, context)
         }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val prompt = "Choose one:"
 
         val decision = ChooseOptionDecision(
@@ -924,7 +923,7 @@ class PayOrSufferExecutor(
             storedCollections = context.pipeline.storedCollections
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(

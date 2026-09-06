@@ -330,7 +330,7 @@ class LibraryAndZoneContinuationResumer(
             }
 
             // Pause for next aura target
-            val decisionId = java.util.UUID.randomUUID().toString()
+            val (decisionId, stateAfterRouting) = newState.newRoutingId()
             val auraName = nextCardComponent.name
             val requirementInfo = TargetRequirementInfo(
                 index = 0,
@@ -362,7 +362,7 @@ class LibraryAndZoneContinuationResumer(
                 underOwnersControl = continuation.underOwnersControl
             )
 
-            val stateWithDecision = newState.withPendingDecision(decision)
+            val stateWithDecision = stateAfterRouting.withPendingDecision(decision)
             val stateWithContinuation = stateWithDecision.pushContinuation(nextContinuation)
 
             return ExecutionResult(
@@ -864,7 +864,8 @@ class LibraryAndZoneContinuationResumer(
 
         // Grant free-cast permission so the synthesized cast pays nothing.
         val (permId, stateWithGrant) = CastFromCollectionWithoutPayingCostExecutor.grantFreeCast(
-            state = afterBottom,
+            state = (targetPrep as? CastFromCollectionWithoutPayingCostExecutor.TargetPrep.NeedsTargets)?.state
+                ?: afterBottom,
             cardId = continuation.cascadeCardId,
             controllerId = continuation.playerId,
             sourceId = continuation.sourceId,
@@ -1007,7 +1008,8 @@ class LibraryAndZoneContinuationResumer(
         // cast's "whenever you cast a spell (from exile)" triggers are stacked exactly once
         // (Quintorius Kand).
         val (permId, granted) = CastFromCollectionWithoutPayingCostExecutor.grantFreeCast(
-            state = afterBottom,
+            state = (targetPrep as? CastFromCollectionWithoutPayingCostExecutor.TargetPrep.NeedsTargets)?.state
+                ?: afterBottom,
             cardId = discovered,
             controllerId = continuation.playerId,
             sourceId = continuation.sourceId,

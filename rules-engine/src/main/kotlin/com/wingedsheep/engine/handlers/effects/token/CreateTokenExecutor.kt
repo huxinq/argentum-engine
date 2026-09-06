@@ -43,7 +43,6 @@ import com.wingedsheep.sdk.scripting.effects.ModifyStatsEffect
 import com.wingedsheep.sdk.scripting.effects.MoveToZoneEffect
 import com.wingedsheep.sdk.scripting.effects.SacrificeTargetEffect
 import com.wingedsheep.sdk.scripting.targets.EffectTarget
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -299,8 +298,10 @@ class CreateTokenExecutor(
                 state.getEntity(id)?.get<CardComponent>()?.name ?: "Unknown"
             }
             for (tokenId in createdTokens) {
+                val (delayedTriggerId, stateWithRoutingId) = newState.newRoutingId()
+                newState = stateWithRoutingId
                 val delayedTrigger = DelayedTriggeredAbility(
-                    id = UUID.randomUUID().toString(),
+                    id = delayedTriggerId,
                     effect = MoveToZoneEffect(EffectTarget.SpecificEntity(tokenId), Zone.EXILE),
                     fireAtStep = exileStep,
                     sourceId = sourceId,
@@ -321,8 +322,10 @@ class CreateTokenExecutor(
                 state.getEntity(id)?.get<CardComponent>()?.name ?: "Unknown"
             }
             for (tokenId in createdTokens) {
+                val (delayedTriggerId, stateWithRoutingId) = newState.newRoutingId()
+                newState = stateWithRoutingId
                 val delayedTrigger = DelayedTriggeredAbility(
-                    id = UUID.randomUUID().toString(),
+                    id = delayedTriggerId,
                     effect = SacrificeTargetEffect(EffectTarget.SpecificEntity(tokenId)),
                     fireAtStep = sacrificeStep,
                     sourceId = sourceId,

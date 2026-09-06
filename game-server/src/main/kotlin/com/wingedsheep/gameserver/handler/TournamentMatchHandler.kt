@@ -862,8 +862,8 @@ class TournamentMatchHandler(
                     gameSession = gameSession,
                     aiPlayerId = ps.playerId,
                     deckList = lobby.getSubmittedDeck(ps.playerId),
-                    onActionReady = { aiPlayerId, action ->
-                        gamePlayHandler.handleAiAction(gameSession, aiPlayerId, action)
+                    onActionReady = { aiPlayerId, action, interactionEpoch ->
+                        gamePlayHandler.handleAiAction(gameSession, aiPlayerId, action, interactionEpoch)
                     },
                     onMulliganKeep = { aiPlayerId ->
                         gamePlayHandler.handleAiMulliganKeep(gameSession, aiPlayerId)

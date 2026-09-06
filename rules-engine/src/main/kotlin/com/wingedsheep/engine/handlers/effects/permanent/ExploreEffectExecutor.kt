@@ -22,7 +22,6 @@ import com.wingedsheep.sdk.scripting.effects.ExploreEffect
 import com.wingedsheep.sdk.scripting.effects.MoveToZoneEffect
 import com.wingedsheep.sdk.scripting.effects.ZonePlacement
 import com.wingedsheep.sdk.scripting.targets.EffectTarget
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -129,7 +128,7 @@ class ExploreEffectExecutor(
 
             val (stateAfterCounter, counterEvents) = addPlusOneCounter(stateWithRevealed, exploringCreatureId, context)
 
-            val decisionId = UUID.randomUUID().toString()
+            val (decisionId, stateWithRoutingId) = stateAfterCounter.newRoutingId()
             val decision = YesNoDecision(
                 id = decisionId,
                 playerId = explorerId,
@@ -172,7 +171,7 @@ class ExploreEffectExecutor(
                 effectContext = context
             )
 
-            val stateWithContinuation = stateAfterCounter
+            val stateWithContinuation = stateWithRoutingId
                 .withPendingDecision(decision)
                 .pushContinuation(continuation)
 

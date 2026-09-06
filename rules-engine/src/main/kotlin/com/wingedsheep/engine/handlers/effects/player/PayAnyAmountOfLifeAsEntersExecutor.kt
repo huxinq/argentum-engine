@@ -14,7 +14,6 @@ import com.wingedsheep.engine.state.components.battlefield.EnteredWithValueCompo
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.effects.PayAnyAmountOfLifeAsEntersEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -52,7 +51,7 @@ class PayAnyAmountOfLifeAsEntersExecutor(
         }
 
         val permanentName = state.getEntity(permanentId)?.get<CardComponent>()?.name ?: "it"
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = ChooseNumberDecision(
             id = decisionId,
             playerId = context.controllerId,
@@ -66,7 +65,7 @@ class PayAnyAmountOfLifeAsEntersExecutor(
             maxValue = max
         )
 
-        val newState = state
+        val newState = stateWithRoutingId
             .withPendingDecision(decision)
             .pushContinuation(
                 PayAnyAmountOfLifeAsEntersContinuation(

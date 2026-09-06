@@ -247,7 +247,7 @@ class CreatureTypeChoiceContinuationResumer(
             val nextPlayer = continuation.remainingPlayers.first()
             val nextRemaining = continuation.remainingPlayers.drop(1)
 
-            val decisionId = java.util.UUID.randomUUID().toString()
+            val (decisionId, stateAfterRouting) = state.newRoutingId()
             val decision = ChooseOptionDecision(
                 id = decisionId,
                 playerId = nextPlayer,
@@ -267,7 +267,7 @@ class CreatureTypeChoiceContinuationResumer(
                 chosenTypes = updatedChosenTypes
             )
 
-            val stateWithDecision = state.withPendingDecision(decision)
+            val stateWithDecision = stateAfterRouting.withPendingDecision(decision)
             val stateWithContinuation = stateWithDecision.pushContinuation(newContinuation)
 
             return ExecutionResult.paused(

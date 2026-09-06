@@ -23,7 +23,6 @@ import com.wingedsheep.sdk.scripting.effects.PreventDamageEffect
 import com.wingedsheep.sdk.scripting.effects.PreventionDirection
 import com.wingedsheep.sdk.scripting.effects.PreventionScope
 import com.wingedsheep.sdk.scripting.effects.PreventionSourceFilter
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -106,10 +105,10 @@ class PreventDamageExecutor(
 
         if (sourceIds.isEmpty()) return EffectResult.success(state)
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decisionContext = DecisionContext(
             sourceId = context.sourceId,
-            sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
+            sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name }
         )
 
         val decision = SelectCardsDecision(
@@ -130,11 +129,11 @@ class PreventDamageExecutor(
                 decisionId = decisionId,
                 controllerId = controllerId,
                 sourceId = context.sourceId,
-                sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name },
+                sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name },
                 onPrevented = effect.onPrevented,
                 preventDamage = effect.preventDamage
             )
-            val newState = state.withPendingDecision(decision).pushContinuation(continuation)
+            val newState = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
             return EffectResult.paused(newState, decision)
         } else {
             // Prevention-only path: prevent N damage (or all, when amount is null) from chosen source
@@ -150,10 +149,10 @@ class PreventDamageExecutor(
                 controllerId
             } else {
                 context.resolveTarget(effect.target)
-                    ?: return EffectResult.error(state, "Could not resolve target for PreventDamageEffect with ChosenSource")
+                    ?: return EffectResult.error(stateWithRoutingId, "Could not resolve target for PreventDamageEffect with ChosenSource")
             }
-            val amount = effect.amount?.let { amountEvaluator.evaluate(state, it, context) }
-            if (amount != null && amount <= 0) return EffectResult.success(state)
+            val amount = effect.amount?.let { amountEvaluator.evaluate(stateWithRoutingId, it, context) }
+            if (amount != null && amount <= 0) return EffectResult.success(stateWithRoutingId)
 
             val continuation = PreventDamageFromChosenSourceContinuation(
                 decisionId = decisionId,
@@ -163,11 +162,11 @@ class PreventDamageExecutor(
                 amount = amount,
                 gainLifeFromColors = effect.gainLifeFromColors.map { it.name }.toSet(),
                 sourceId = context.sourceId,
-                sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name },
+                sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name },
                 nextInstanceOnly = effect.nextInstanceOnly,
                 halvePreventedDamage = effect.halvePreventedDamage
             )
-            val newState = state.withPendingDecision(decision).pushContinuation(continuation)
+            val newState = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
             return EffectResult.paused(newState, decision)
         }
     }

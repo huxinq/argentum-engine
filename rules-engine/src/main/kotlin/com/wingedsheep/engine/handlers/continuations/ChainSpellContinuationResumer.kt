@@ -249,7 +249,7 @@ class ChainSpellContinuationResumer(
             return checkForMore(state, events)
         }
 
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, stateAfterRouting) = state.newRoutingId()
 
         val copyCost = effect.copyCost
         val prompt = if (copyCost == null) {
@@ -284,7 +284,7 @@ class ChainSpellContinuationResumer(
             sourceId = sourceId
         )
 
-        val newState = state.withPendingDecision(decision).pushContinuation(copyContinuation)
+        val newState = stateAfterRouting.withPendingDecision(decision).pushContinuation(copyContinuation)
 
         return ExecutionResult.paused(
             newState,
@@ -309,7 +309,7 @@ class ChainSpellContinuationResumer(
         prompt: String,
         useTargetingUI: Boolean
     ): ExecutionResult {
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, stateAfterRouting) = state.newRoutingId()
         val decision = SelectCardsDecision(
             id = decisionId,
             playerId = controllerId,
@@ -333,7 +333,7 @@ class ChainSpellContinuationResumer(
             candidateOptions = options
         )
 
-        val newState = state.withPendingDecision(decision).pushContinuation(costContinuation)
+        val newState = stateAfterRouting.withPendingDecision(decision).pushContinuation(costContinuation)
 
         return ExecutionResult.paused(
             newState,
@@ -365,7 +365,7 @@ class ChainSpellContinuationResumer(
             return checkForMore(state, priorEvents)
         }
 
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, stateAfterRouting) = state.newRoutingId()
         val decision = SelectCardsDecision(
             id = decisionId,
             playerId = controllerId,
@@ -389,7 +389,7 @@ class ChainSpellContinuationResumer(
             candidateTargets = legalTargets
         )
 
-        val newState = state.withPendingDecision(decision).pushContinuation(targetContinuation)
+        val newState = stateAfterRouting.withPendingDecision(decision).pushContinuation(targetContinuation)
 
         return ExecutionResult.paused(
             newState,

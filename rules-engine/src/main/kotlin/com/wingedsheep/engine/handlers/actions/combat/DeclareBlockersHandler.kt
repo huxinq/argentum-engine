@@ -49,15 +49,16 @@ class DeclareBlockersHandler(
             // after the pause resolves (via checkForMoreContinuations).
             val triggers = triggerDetector.detectTriggers(result.newState, result.events)
             if (triggers.isNotEmpty()) {
+                val (routingId, stateAfterRouting) = result.newState.newRoutingId()
                 val pendingTriggers = PendingTriggersContinuation(
-                    decisionId = "block-triggers-${java.util.UUID.randomUUID()}",
+                    decisionId = "block-triggers-$routingId",
                     remainingTriggers = triggers
                 )
                 // Insert BELOW the top continuation so the pause resolves first, then
                 // checkForMoreContinuations picks up the triggers afterwards.
                 val stack = result.newState.continuationStack
                 val newStack = stack.dropLast(1) + pendingTriggers + stack.last()
-                val stateWithTriggers = result.newState.copy(continuationStack = newStack)
+                val stateWithTriggers = stateAfterRouting.copy(continuationStack = newStack)
                 return ExecutionResult.paused(
                     stateWithTriggers,
                     result.pendingDecision!!,

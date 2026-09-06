@@ -154,7 +154,8 @@ class StormCopyEffectExecutor(
                 continue
             }
 
-            val decisionId = "storm-copy-target-${System.nanoTime()}"
+            val (routingId, stateWithRoutingId) = currentState.newRoutingId()
+            val decisionId = "storm-copy-target-$routingId"
             val continuation = StormCopyTargetContinuation(
                 decisionId = decisionId,
                 remainingCopies = copiesLeft,
@@ -189,7 +190,7 @@ class StormCopyEffectExecutor(
                 legalTargets = legalTargetsMap
             )
 
-            val stateWithDecision = currentState.withPendingDecision(decision)
+            val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
             val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
             return EffectResult.paused(stateWithContinuation, decision, allEvents)
@@ -267,7 +268,8 @@ class StormCopyEffectExecutor(
                         continue
                     }
 
-                    val decisionId = "storm-copy-modal-target-${System.nanoTime()}"
+                    val (routingId, stateWithRoutingId) = currentState.newRoutingId()
+                    val decisionId = "storm-copy-modal-target-$routingId"
                     val copyNumber = totalCopies - copiesLeft + 1
                     val copyLabel = if (totalCopies > 1) "copy $copyNumber of $totalCopies of $spellName"
                         else "copy of $spellName"
@@ -306,7 +308,7 @@ class StormCopyEffectExecutor(
                         removeLegendary = removeLegendary
                     )
 
-                    val pausedState = currentState
+                    val pausedState = stateWithRoutingId
                         .withPendingDecision(decision)
                         .pushContinuation(continuation)
                     return ExecutionResult.paused(pausedState, decision, allEvents)

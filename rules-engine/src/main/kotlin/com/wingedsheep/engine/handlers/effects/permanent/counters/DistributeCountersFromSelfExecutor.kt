@@ -12,7 +12,6 @@ import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.battlefield.CountersComponent
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.scripting.effects.DistributeCountersFromSelfEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -62,7 +61,7 @@ class DistributeCountersFromSelfExecutor : EffectExecutor<DistributeCountersFrom
 
         val sourceName = sourceEntity.get<CardComponent>()?.name ?: "Creature"
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = DistributeDecision(
             id = decisionId,
             playerId = context.controllerId,
@@ -85,7 +84,7 @@ class DistributeCountersFromSelfExecutor : EffectExecutor<DistributeCountersFrom
             counterType = effect.counterType
         )
 
-        val newState = state
+        val newState = stateWithRoutingId
             .withPendingDecision(decision)
             .pushContinuation(continuation)
 

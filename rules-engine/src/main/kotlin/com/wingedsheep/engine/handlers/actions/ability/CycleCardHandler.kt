@@ -130,7 +130,7 @@ class CycleCardHandler(
             val fixedMana = cyclingAbility.cost.withXAs(0).cmc
             val maxX = ((manaSolver.getAvailableManaCount(state, action.playerId) - fixedMana) /
                 cyclingAbility.cost.xCount.coerceAtLeast(1)).coerceAtLeast(0)
-            val decisionId = java.util.UUID.randomUUID().toString()
+            val (decisionId, stateAfterRouting) = state.newRoutingId()
             val decision = com.wingedsheep.engine.core.ChooseNumberDecision(
                 id = decisionId,
                 playerId = action.playerId,
@@ -143,7 +143,7 @@ class CycleCardHandler(
                 minValue = 0,
                 maxValue = maxX
             )
-            val pausedState = state
+            val pausedState = stateAfterRouting
                 .withPendingDecision(decision)
                 .pushContinuation(
                     com.wingedsheep.engine.core.CycleCardChooseXContinuation(

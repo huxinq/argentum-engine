@@ -16,7 +16,6 @@ import com.wingedsheep.sdk.scripting.effects.Effect
 import com.wingedsheep.sdk.scripting.costs.CostAtom
 import com.wingedsheep.sdk.scripting.costs.PayCost
 import com.wingedsheep.sdk.scripting.references.Player
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -203,7 +202,7 @@ class AnyPlayerMayPayExecutor(
         playerOrder: List<EntityId>,
         currentIndex: Int
     ): EffectResult {
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val prompt = "Pay ${cost.amount} life to prevent $sourceName's effect?"
 
         val decision = YesNoDecision(
@@ -230,7 +229,7 @@ class AnyPlayerMayPayExecutor(
             filter = com.wingedsheep.sdk.scripting.GameObjectFilter.Any
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(

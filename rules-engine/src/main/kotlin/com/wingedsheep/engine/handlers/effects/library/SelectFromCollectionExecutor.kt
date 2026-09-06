@@ -22,7 +22,6 @@ import com.wingedsheep.sdk.scripting.effects.SelectFromCollectionEffect
 import com.wingedsheep.sdk.scripting.effects.SelectionMode
 import com.wingedsheep.sdk.scripting.effects.SelectionRestriction
 import com.wingedsheep.sdk.scripting.targets.EffectTarget
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -417,15 +416,15 @@ class SelectFromCollectionExecutor(
         conditionalMinimums: List<ConditionalSelectionMinimum> = emptyList()
     ): EffectResult {
         val playerId = decidingPlayerId ?: context.controllerId
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val sourceName = context.sourceId?.let { sourceId ->
-            state.getEntity(sourceId)?.get<CardComponent>()?.name
+            stateWithRoutingId.getEntity(sourceId)?.get<CardComponent>()?.name
         }
 
         // Build card info for hidden-zone cards (library cards are normally hidden)
         val allDisplayCards = cards + nonSelectableCards
         val cardInfoMap = allDisplayCards.associateWith { cardId ->
-            val container = state.getEntity(cardId)
+            val container = stateWithRoutingId.getEntity(cardId)
             val cardComponent = container?.get<CardComponent>()
             SearchCardInfo(
                 name = cardComponent?.name ?: "Unknown",
@@ -500,7 +499,7 @@ class SelectFromCollectionExecutor(
             restrictions = effect.restrictions
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(

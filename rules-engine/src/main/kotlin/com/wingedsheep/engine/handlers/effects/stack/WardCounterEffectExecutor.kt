@@ -272,7 +272,7 @@ class WardCounterEffectExecutor(
         ): EffectResult {
             val label = WardCost.PlayerCounters(counterType, amount).clause
                 .replaceFirstChar { it.uppercase() }
-            val decisionId = java.util.UUID.randomUUID().toString()
+            val (decisionId, stateWithRoutingId) = state.newRoutingId()
             val decision = YesNoDecision(
                 id = decisionId,
                 playerId = payingPlayerId,
@@ -297,7 +297,7 @@ class WardCounterEffectExecutor(
                 wardSourceId = wardSourceId
             )
 
-            val stateWithContinuation = state.withPendingDecision(decision).pushContinuation(continuation)
+            val stateWithContinuation = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
 
             return EffectResult.paused(
                 stateWithContinuation,
@@ -347,7 +347,7 @@ class WardCounterEffectExecutor(
 
             val labels = payable.map { it.clause.replaceFirstChar { ch -> ch.uppercase() } } +
                 "Counter spell"
-            val decisionId = java.util.UUID.randomUUID().toString()
+            val (decisionId, stateWithRoutingId) = state.newRoutingId()
             val decision = ChooseOptionDecision(
                 id = decisionId,
                 playerId = payingPlayerId,
@@ -372,7 +372,7 @@ class WardCounterEffectExecutor(
                 wardSourceId = wardSourceId
             )
 
-            val stateWithContinuation = state.withPendingDecision(decision).pushContinuation(continuation)
+            val stateWithContinuation = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
 
             return EffectResult.paused(
                 stateWithContinuation,
@@ -616,7 +616,7 @@ class WardCounterEffectExecutor(
                 if (count == 1) "a card" else "$count cards"
             }
             val randomSuffix = if (random) " at random" else ""
-            val decisionId = java.util.UUID.randomUUID().toString()
+            val (decisionId, stateWithRoutingId) = state.newRoutingId()
             val decision = YesNoDecision(
                 id = decisionId,
                 playerId = payingPlayerId,
@@ -642,7 +642,7 @@ class WardCounterEffectExecutor(
                 wardSourceId = wardSourceId
             )
 
-            val stateWithDecision = state.withPendingDecision(decision)
+            val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
             val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
             return EffectResult.paused(
@@ -714,7 +714,7 @@ class WardCounterEffectExecutor(
                 WaterbendPermanentChoice(it.entityId, it.name, it.isCreature)
             }
 
-            val decisionId = java.util.UUID.randomUUID().toString()
+            val (decisionId, stateWithRoutingId) = state.newRoutingId()
             val payPrompt = if (waterbend) {
                 "Pay $manaCost for ward (tap artifacts/creatures to help) or your spell will be countered"
             } else {
@@ -749,7 +749,7 @@ class WardCounterEffectExecutor(
                 waterbend = waterbend
             )
 
-            val stateWithDecision = state.withPendingDecision(decision)
+            val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
             val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
             return EffectResult.paused(
@@ -786,7 +786,7 @@ class WardCounterEffectExecutor(
                 return counterSpellOrAbility(state, cardRegistry, spellEntityId)
             }
 
-            val decisionId = java.util.UUID.randomUUID().toString()
+            val (decisionId, stateWithRoutingId) = state.newRoutingId()
             val decision = YesNoDecision(
                 id = decisionId,
                 playerId = payingPlayerId,
@@ -810,7 +810,7 @@ class WardCounterEffectExecutor(
                 wardSourceId = wardSourceId
             )
 
-            val stateWithDecision = state.withPendingDecision(decision)
+            val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
             val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
             return EffectResult.paused(

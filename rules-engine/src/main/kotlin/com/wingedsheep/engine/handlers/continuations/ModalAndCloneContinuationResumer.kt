@@ -94,7 +94,7 @@ class ModalAndCloneContinuationResumer(
         // More modes still need to be picked — present the next ChooseOptionDecision.
         if (newSelectedIndices.size < continuation.chooseCount && newAvailableIndices.isNotEmpty()) {
             val sourceName = continuation.sourceName ?: "modal spell"
-            val decisionId = java.util.UUID.randomUUID().toString()
+            val (decisionId, stateAfterRouting) = stateAfterRecord.newRoutingId()
             val prompt = "Choose a mode for $sourceName (${newSelectedIndices.size + 1} of ${continuation.chooseCount})"
             val nextCanDecline = newSelectedIndices.size >= continuation.minChooseCount
             val baseOptions = newAvailableIndices.map { continuation.modes[it].description }
@@ -117,7 +117,7 @@ class ModalAndCloneContinuationResumer(
                 selectedModeIndices = newSelectedIndices,
                 availableIndices = newAvailableIndices
             )
-            val stateWithDecision = stateAfterRecord.withPendingDecision(decision)
+            val stateWithDecision = stateAfterRouting.withPendingDecision(decision)
             val stateWithContinuation = stateWithDecision.pushContinuation(nextContinuation)
             return ExecutionResult.paused(
                 stateWithContinuation,
@@ -1562,7 +1562,7 @@ class ModalAndCloneContinuationResumer(
         val sourceName = continuation.sourceName ?: "modal spell"
 
         val modeDescriptions = modes.map { it.description }
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, stateAfterRouting) = state.newRoutingId()
 
         val decision = ChooseOptionDecision(
             id = decisionId,
@@ -1588,7 +1588,7 @@ class ModalAndCloneContinuationResumer(
             outerNamedTargets = continuation.outerNamedTargets
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateAfterRouting.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(modalContinuation)
 
         return ExecutionResult.paused(
@@ -1760,7 +1760,7 @@ internal fun processChosenModeQueue(
     // knows which mode of a Choose-N modal ability they are targeting for. The tail
     // rides on the ModalTargetContinuation; resumeModalTarget re-enters via
     // executeChosenModeWithTail so a nested pause inside this mode still survives.
-    val decisionId = java.util.UUID.randomUUID().toString()
+    val (decisionId, stateAfterRouting) = state.newRoutingId()
     val prompt = "Choose targets for $displayName — ${head.description}"
     val decision = ChooseTargetsDecision(
         id = decisionId,
@@ -1791,7 +1791,7 @@ internal fun processChosenModeQueue(
         outerNamedTargets = outerNamedTargets
     )
 
-    val stateWithContinuation = state.withPendingDecision(decision).pushContinuation(modalTargetContinuation)
+    val stateWithContinuation = stateAfterRouting.withPendingDecision(decision).pushContinuation(modalTargetContinuation)
 
     return ExecutionResult.paused(
         stateWithContinuation,
@@ -1834,9 +1834,10 @@ private fun executeChosenModeWithTail(
     checkForMore: CheckForMore
 ): ExecutionResult {
     val stateForExecution = if (tail.isNotEmpty()) {
-        state.pushContinuation(
+        val (routingId, stateAfterRouting) = state.newRoutingId()
+        stateAfterRouting.pushContinuation(
             ModalChosenModeTailContinuation(
-                decisionId = "modal-chosen-tail-${java.util.UUID.randomUUID()}",
+                decisionId = "modal-chosen-tail-$routingId",
                 controllerId = controllerId,
                 sourceId = sourceId,
                 sourceName = sourceName,

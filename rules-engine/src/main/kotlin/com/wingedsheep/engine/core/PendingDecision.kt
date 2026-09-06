@@ -653,8 +653,8 @@ sealed interface DecisionResponse {
     /**
      * The same response retargeted at a different pending-decision id. The id is only a routing
      * nonce — the choice payload is unchanged — so this lets a caller that holds a recorded response
-     * re-bind it to a freshly created decision. Used by replay reconstruction, where decision ids
-     * are minted afresh each run (they are not part of the deterministic state).
+     * re-bind it to a reconstructed decision. Current routing IDs reproduce from serialized game
+     * state; replay retains this operation for historical random or clock-based IDs.
      */
     fun withDecisionId(newId: String): DecisionResponse = when (this) {
         is TargetsResponse -> copy(decisionId = newId)

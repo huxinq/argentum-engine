@@ -10,7 +10,6 @@ import com.wingedsheep.engine.core.RemoveAnyNumberOfCountersContinuation
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.battlefield.CountersComponent
 import com.wingedsheep.sdk.model.EntityId
-import java.util.UUID
 
 /**
  * The prompt-per-counter-kind walk behind
@@ -101,7 +100,8 @@ object RemoveAnyNumberOfCountersFlow {
                 continue
             }
 
-            val decisionId = UUID.randomUUID().toString()
+            val (decisionId, stateWithRoutingId) = currentState.newRoutingId()
+            currentState = stateWithRoutingId
             val decision = ChooseNumberDecision(
                 id = decisionId,
                 playerId = controllerId,

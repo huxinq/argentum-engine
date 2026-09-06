@@ -89,7 +89,7 @@ class AiControllerProviderTest : FunSpec({
 
         manager.createAiOpponent(
             gameSession = game,
-            onActionReady = { _, _ -> },
+            onActionReady = { _, _, _ -> },
             onMulliganKeep = { _ -> },
             onMulliganTake = { _ -> },
             onBottomCards = { _, _ -> },
@@ -182,7 +182,7 @@ class AiControllerProviderTest : FunSpec({
             gameSession = game,
             aiPlayerId = aiPlayerId,
             deckList = null,
-            onActionReady = { _, _ -> },
+            onActionReady = { _, _, _ -> },
             onMulliganKeep = { _ -> },
             onMulliganTake = { _ -> },
             onBottomCards = { _, _ -> },

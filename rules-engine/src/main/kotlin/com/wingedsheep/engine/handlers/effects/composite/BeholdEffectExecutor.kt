@@ -12,7 +12,6 @@ import com.wingedsheep.engine.handlers.effects.EffectExecutor
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.scripting.effects.BeholdEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -70,7 +69,7 @@ class BeholdEffectExecutor(
         val sourceName = context.sourceId
             ?.let { state.getEntity(it)?.get<CardComponent>()?.name }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = SelectCardsDecision(
             id = decisionId,
             playerId = beholder,
@@ -94,7 +93,7 @@ class BeholdEffectExecutor(
             effectContext = context,
         )
 
-        val paused = state
+        val paused = stateWithRoutingId
             .pushContinuation(continuation)
             .withPendingDecision(decision)
         return EffectResult.paused(paused, decision)

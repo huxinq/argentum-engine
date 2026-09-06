@@ -30,7 +30,6 @@ import com.wingedsheep.engine.state.components.stack.captureEntitySnapshots
 import com.wingedsheep.sdk.scripting.effects.MoveType
 import com.wingedsheep.sdk.scripting.references.Player
 import com.wingedsheep.sdk.scripting.effects.ZonePlacement
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -403,9 +402,9 @@ class MoveCollectionExecutor(
             )
         }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val sourceName = context.sourceId?.let { sourceId ->
-            state.getEntity(sourceId)?.get<CardComponent>()?.name
+            stateWithRoutingId.getEntity(sourceId)?.get<CardComponent>()?.name
         }
 
         val isOwnLibrary = destPlayerId == context.controllerId
@@ -440,7 +439,7 @@ class MoveCollectionExecutor(
             placement = placement
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(
@@ -575,7 +574,7 @@ class MoveCollectionExecutor(
             )
         }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val auraName = cardComponent.name
         val requirementInfo = TargetRequirementInfo(
             index = 0,
@@ -607,7 +606,7 @@ class MoveCollectionExecutor(
             underOwnersControl = underOwnersControl
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult(

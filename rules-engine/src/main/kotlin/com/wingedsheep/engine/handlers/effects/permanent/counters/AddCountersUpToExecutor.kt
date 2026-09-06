@@ -12,7 +12,6 @@ import com.wingedsheep.engine.handlers.effects.EffectExecutor
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.scripting.effects.AddCountersUpToEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -52,7 +51,7 @@ class AddCountersUpToExecutor(
         val targetName = state.getEntity(targetId)?.get<CardComponent>()?.name ?: ""
         val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = ChooseNumberDecision(
             id = decisionId,
             playerId = context.controllerId,
@@ -74,7 +73,7 @@ class AddCountersUpToExecutor(
             sourceId = context.sourceId
         )
 
-        val newState = state
+        val newState = stateWithRoutingId
             .withPendingDecision(decision)
             .pushContinuation(continuation)
 

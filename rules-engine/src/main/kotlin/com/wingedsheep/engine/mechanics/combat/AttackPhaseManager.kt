@@ -192,15 +192,16 @@ internal class AttackPhaseManager(
         taxEvents: List<com.wingedsheep.engine.core.GameEvent>,
         bands: List<Set<EntityId>> = emptyList()
     ): ExecutionResult {
+        var newState = state
         // Assign each band a shared id, then map every banded attacker to it (CR 702.22).
         val bandIdByAttacker: Map<EntityId, String> = buildMap {
             for (band in bands) {
-                val bandId = java.util.UUID.randomUUID().toString()
+                val (bandId, bandState) = newState.newRoutingId()
+                newState = bandState
                 for (attackerId in band) put(attackerId, bandId)
             }
         }
 
-        var newState = state
         val tapEvents = mutableListOf<TappedEvent>()
         for ((attackerId, defenderId) in attackers) {
             val hasVigilance = projected.hasKeyword(attackerId, Keyword.VIGILANCE)
@@ -311,7 +312,7 @@ internal class AttackPhaseManager(
         val solution = manaSolver.solve(state, attackingPlayer, manaCost)
         val autoPaySuggestion = solution?.sources?.map { it.entityId } ?: emptyList()
 
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, allocatedState) = state.newRoutingId()
         val attackerNames = attackers.keys.mapNotNull { state.getEntity(it)?.get<CardComponent>()?.name }
         val attackerListing = when (attackerNames.size) {
             0 -> "your attackers"
@@ -342,7 +343,7 @@ internal class AttackPhaseManager(
             bands = bands,
         )
         return ExecutionResult.paused(
-            state.withPendingDecision(decision).pushContinuation(continuation),
+            allocatedState.withPendingDecision(decision).pushContinuation(continuation),
             decision,
         )
     }
@@ -366,7 +367,7 @@ internal class AttackPhaseManager(
             state, attackingPlayer, payingAttacker, requirement
         )
         val attackerName = state.getEntity(payingAttacker)?.get<CardComponent>()?.name ?: "your attacker"
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, allocatedState) = state.newRoutingId()
         val decision = com.wingedsheep.engine.core.SelectCardsDecision(
             id = decisionId,
             playerId = attackingPlayer,
@@ -392,7 +393,7 @@ internal class AttackPhaseManager(
             bands = bands,
         )
         return ExecutionResult.paused(
-            state.withPendingDecision(decision).pushContinuation(continuation),
+            allocatedState.withPendingDecision(decision).pushContinuation(continuation),
             decision,
         )
     }
@@ -420,7 +421,7 @@ internal class AttackPhaseManager(
             state, attackingPlayer, payingAttacker, requirement
         )
         val attackerName = state.getEntity(payingAttacker)?.get<CardComponent>()?.name ?: "your attacker"
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, allocatedState) = state.newRoutingId()
         val decision = com.wingedsheep.engine.core.SelectCardsDecision(
             id = decisionId,
             playerId = attackingPlayer,
@@ -444,7 +445,7 @@ internal class AttackPhaseManager(
             bands = bands,
         )
         return ExecutionResult.paused(
-            state.withPendingDecision(decision).pushContinuation(continuation),
+            allocatedState.withPendingDecision(decision).pushContinuation(continuation),
             decision,
             carryEvents,
         )

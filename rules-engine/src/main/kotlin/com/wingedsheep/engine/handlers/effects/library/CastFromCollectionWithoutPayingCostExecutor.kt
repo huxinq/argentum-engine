@@ -25,7 +25,6 @@ import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.effects.AfterResolveDestination
 import com.wingedsheep.sdk.scripting.effects.CastFromCollectionWithoutPayingCostEffect
 import com.wingedsheep.sdk.scripting.effects.ModalEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -107,7 +106,7 @@ class CastFromCollectionWithoutPayingCostExecutor(
         // the copy"); only the free-cast path stamps PlayWithoutPayingCostComponent. Both grant a
         // MayPlayPermission so the card is castable from its current (e.g. exile) zone.
         val (permId, newState) = grantFreeCast(
-            state = state,
+            state = (prep as? TargetPrep.NeedsTargets)?.state ?: state,
             cardId = cardId,
             controllerId = controllerId,
             sourceId = context.sourceId,
@@ -187,6 +186,7 @@ class CastFromCollectionWithoutPayingCostExecutor(
 
         /** Pause with [decision] and push [continuation]; the resumer performs the cast with the picks. */
         data class NeedsTargets(
+            val state: GameState,
             val decision: ChooseTargetsDecision,
             val continuation: CastFromCollectionTargetsContinuation,
             val event: DecisionRequestedEvent,
@@ -320,7 +320,7 @@ class CastFromCollectionWithoutPayingCostExecutor(
             // Name the face being cast — a transformed cast prompts for "Deluge of the Dead",
             // not for the front face the player exiled.
             val cardName = (if (castTransformed) cardDef?.name else null) ?: cardComponent?.name ?: "spell"
-            val decisionId = UUID.randomUUID().toString()
+            val (decisionId, stateWithRoutingId) = state.newRoutingId()
             val decision = ChooseTargetsDecision(
                 id = decisionId,
                 playerId = casterId,
@@ -346,7 +346,7 @@ class CastFromCollectionWithoutPayingCostExecutor(
                 decisionType = "CHOOSE_TARGETS",
                 prompt = decision.prompt,
             )
-            return TargetPrep.NeedsTargets(decision, continuation, event)
+            return TargetPrep.NeedsTargets(stateWithRoutingId, decision, continuation, event)
         }
 
         /**

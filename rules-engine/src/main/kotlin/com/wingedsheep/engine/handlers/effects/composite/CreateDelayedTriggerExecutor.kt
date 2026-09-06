@@ -36,7 +36,6 @@ import com.wingedsheep.sdk.scripting.GameObjectFilter
 import com.wingedsheep.sdk.scripting.TriggerSpec
 import com.wingedsheep.sdk.scripting.predicates.CardPredicate
 import com.wingedsheep.sdk.scripting.values.DynamicAmount
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -142,8 +141,9 @@ class CreateDelayedTriggerExecutor : EffectExecutor<CreateDelayedTriggerEffect> 
             else -> null
         }
 
+        val (delayedTriggerId, stateWithRoutingId) = state.newRoutingId()
         val delayedTrigger = DelayedTriggeredAbility(
-            id = UUID.randomUUID().toString(),
+            id = delayedTriggerId,
             effect = resolvedEffect,
             fireAtStep = effect.step,
             sourceId = sourceId,
@@ -161,7 +161,7 @@ class CreateDelayedTriggerExecutor : EffectExecutor<CreateDelayedTriggerEffect> 
             fireOnPlayerId = fireOnPlayerId
         )
 
-        return EffectResult.success(state.addDelayedTrigger(delayedTrigger))
+        return EffectResult.success(stateWithRoutingId.addDelayedTrigger(delayedTrigger))
     }
 
     /**

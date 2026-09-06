@@ -137,7 +137,8 @@ class CopyEachTargetSpellExecutor(
                 }
 
                 val spellName = cardComponent?.name ?: "spell"
-                val decisionId = "copy-each-spell-target-${System.nanoTime()}"
+                val (routingId, stateWithRoutingId) = currentState.newRoutingId()
+                val decisionId = "copy-each-spell-target-$routingId"
                 val continuation = CopyEachSpellContinuation(
                     decisionId = decisionId,
                     remainingSpellIds = queue,
@@ -161,7 +162,7 @@ class CopyEachTargetSpellExecutor(
                     legalTargets = legalTargetsMap
                 )
 
-                val paused = currentState.withPendingDecision(decision).pushContinuation(continuation)
+                val paused = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
                 return ExecutionResult.paused(paused, decision, allEvents)
             }
 

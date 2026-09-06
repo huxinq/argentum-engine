@@ -633,7 +633,6 @@ class MiscContinuationResumer(
         }
 
         // Prompt for next copy's targets
-        val decisionId = "storm-copy-target-${System.nanoTime()}"
         val legalTargetsMap = mutableMapOf<Int, List<EntityId>>()
         for ((index, requirement) in continuation.spellTargetRequirements.withIndex()) {
             val legalTargets = services.targetFinder.findLegalTargets(
@@ -672,6 +671,8 @@ class MiscContinuationResumer(
             return checkForMore(loopState, loopEvents)
         }
 
+        val (routingId, stateAfterRouting) = currentState.newRoutingId()
+        val decisionId = "storm-copy-target-$routingId"
         val nextContinuation = StormCopyTargetContinuation(
             decisionId = decisionId,
             remainingCopies = remainingAfterThis,
@@ -709,7 +710,7 @@ class MiscContinuationResumer(
             legalTargets = legalTargetsMap
         )
 
-        currentState = currentState.withPendingDecision(decision)
+        currentState = stateAfterRouting.withPendingDecision(decision)
         currentState = currentState.pushContinuation(nextContinuation)
 
         return ExecutionResult.paused(currentState, decision, allEvents)
@@ -1034,7 +1035,7 @@ class MiscContinuationResumer(
                 .dropWhile { it.first != nextType }
                 .drop(1)
 
-            val decisionId = java.util.UUID.randomUUID().toString()
+            val (decisionId, stateAfterRouting) = newState.newRoutingId()
             val decision = ChooseNumberDecision(
                 id = decisionId,
                 playerId = continuation.controllerId,
@@ -1068,7 +1069,7 @@ class MiscContinuationResumer(
                     prompt = decision.prompt
                 )
             )
-            val pausedState = newState
+            val pausedState = stateAfterRouting
                 .withPendingDecision(decision)
                 .pushContinuation(nextContinuation)
             return ExecutionResult.paused(pausedState, decision, events)

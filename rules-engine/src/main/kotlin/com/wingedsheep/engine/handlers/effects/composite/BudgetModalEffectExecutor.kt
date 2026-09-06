@@ -7,7 +7,6 @@ import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.scripting.effects.BudgetModalEffect
 import com.wingedsheep.sdk.scripting.effects.Effect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -34,7 +33,7 @@ class BudgetModalEffectExecutor(
             state.getEntity(sourceId)?.get<CardComponent>()?.name
         }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = BudgetModalDecision(
             id = decisionId,
             playerId = playerId,
@@ -60,7 +59,7 @@ class BudgetModalEffectExecutor(
             selectedModeIndices = emptyList(),
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(

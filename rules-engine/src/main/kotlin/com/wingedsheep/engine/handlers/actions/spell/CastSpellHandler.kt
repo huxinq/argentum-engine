@@ -4154,7 +4154,7 @@ class CastSpellHandler(
             index to typeToCardIds[type]!!.toList()
         }.toMap()
 
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, stateAfterRouting) = currentState.newRoutingId()
         val decision = ChooseOptionDecision(
             id = decisionId,
             playerId = action.playerId,
@@ -4180,7 +4180,7 @@ class CastSpellHandler(
             creatureTypes = sortedTypes
         )
 
-        val pausedState = currentState
+        val pausedState = stateAfterRouting
             .pushContinuation(continuation)
             .withPendingDecision(decision)
 
@@ -4352,7 +4352,7 @@ class CastSpellHandler(
         val optionLabels = offerIndices.map { modalEffect.modes[it].description } +
             (if (doneOffered) listOf("Done") else emptyList())
 
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, stateAfterRouting) = state.newRoutingId()
         val pickNumber = selectedModeIndices.size + 1
         val alreadyPicked = if (selectedModeIndices.isNotEmpty()) {
             val labels = selectedModeIndices.map { modalEffect.modes[it].description }
@@ -4389,7 +4389,7 @@ class CastSpellHandler(
             doneOptionOffered = doneOffered
         )
 
-        val pausedState = state
+        val pausedState = stateAfterRouting
             .pushContinuation(continuation)
             .withPendingDecision(decision)
             .withPriority(casterId)
@@ -4497,7 +4497,7 @@ class CastSpellHandler(
             }
 
             val cardName = state.getEntity(action.cardId)?.get<CardComponent>()?.name ?: "spell"
-            val decisionId = java.util.UUID.randomUUID().toString()
+            val (decisionId, stateAfterRouting) = state.newRoutingId()
             val verb = when (kind) {
                 AdditionalCostSelectionKind.SACRIFICE -> "sacrifice"
                 AdditionalCostSelectionKind.DISCARD -> "discard"
@@ -4531,7 +4531,7 @@ class CastSpellHandler(
                 baseCastAction = action,
                 costKind = kind,
             )
-            val pausedState = state
+            val pausedState = stateAfterRouting
                 .pushContinuation(continuation)
                 .withPendingDecision(decision)
                 .withPriority(action.playerId)
@@ -4675,7 +4675,7 @@ class CastSpellHandler(
                 )
             }
 
-            val decisionId = java.util.UUID.randomUUID().toString()
+            val (decisionId, stateAfterRouting) = state.newRoutingId()
             val pickNumber = ordinal + 1
             val prompt = "Choose targets for $cardName — ${mode.description} ($pickNumber of ${chosenModeIndices.size})"
             val decision = com.wingedsheep.engine.core.ChooseTargetsDecision(
@@ -4706,7 +4706,7 @@ class CastSpellHandler(
                 currentOrdinal = ordinal
             )
 
-            val pausedState = state
+            val pausedState = stateAfterRouting
                 .pushContinuation(continuation)
                 .withPendingDecision(decision)
                 .withPriority(casterId)

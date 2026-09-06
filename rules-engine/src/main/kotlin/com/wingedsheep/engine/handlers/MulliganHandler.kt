@@ -8,7 +8,6 @@ import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.engine.state.components.player.MulliganStateComponent
 import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.model.EntityId
-import java.util.UUID
 
 /**
  * Handles mulligan-related actions during game setup.
@@ -393,9 +392,10 @@ class MulliganHandler(
         val nextLeyline = getNextLeylineChoice(stateWithLeylineScan)
         if (nextLeyline != null) {
             val (playerId, cardId) = nextLeyline
-            val (decision, continuation) = createLeylineDecision(stateWithLeylineScan, playerId, cardId)
+            val (decisionId, allocatedState) = stateWithLeylineScan.newRoutingId()
+            val (decision, continuation) = createLeylineDecision(allocatedState, playerId, cardId, decisionId)
                 ?: return ExecutionResult.success(stateWithLeylineScan, events)
-            val pausedState = stateWithLeylineScan
+            val pausedState = allocatedState
                 .pushContinuation(continuation)
                 .withPendingDecision(decision)
             return ExecutionResult.paused(
@@ -420,13 +420,12 @@ class MulliganHandler(
     /**
      * Build the [YesNoDecision] + [LeylineDecisionContinuation] pair for a specific leyline
      * card in a player's opening hand. The caller is responsible for pushing the continuation
-     * and setting the pending decision on state.
+     * and setting the pending decision on the state returned by [GameState.newRoutingId].
      *
      * Returns null when the card no longer has a [CardComponent] (defensive — shouldn't happen).
      */
-    fun createLeylineDecision(state: GameState, playerId: EntityId, leylineCardId: EntityId): Pair<YesNoDecision, LeylineDecisionContinuation>? {
+    fun createLeylineDecision(state: GameState, playerId: EntityId, leylineCardId: EntityId, decisionId: String): Pair<YesNoDecision, LeylineDecisionContinuation>? {
         val cardName = state.getEntity(leylineCardId)?.get<CardComponent>()?.name ?: return null
-        val decisionId = "leyline-${leylineCardId.value}-${UUID.randomUUID()}"
         val decision = YesNoDecision(
             id = decisionId,
             playerId = playerId,

@@ -37,7 +37,6 @@ import com.wingedsheep.sdk.scripting.ModifyTokenCount
 import com.wingedsheep.sdk.scripting.ReplaceTokenCreationWithAttachedCopy
 import com.wingedsheep.sdk.scripting.effects.Effect
 import com.wingedsheep.sdk.scripting.events.ControllerFilter
-import java.util.UUID
 
 /**
  * Checks for token creation replacement effects (e.g., Mirrormind Crown)
@@ -307,7 +306,8 @@ object TokenCreationReplacementHelper {
                 var newState = state.withEntity(entityId, container.with(TokenReplacementOfferedThisTurnComponent))
 
                 if (re.optional) {
-                    val decisionId = UUID.randomUUID().toString()
+                    val (decisionId, stateWithRoutingId) = newState.newRoutingId()
+                    newState = stateWithRoutingId
                     val prompt = "Use $cardName? Create ${if (tokenCount == 1) "a token that's a copy" else "$tokenCount tokens that are copies"} of ${attachedCard.name} instead?"
 
                     val decision = YesNoDecision(

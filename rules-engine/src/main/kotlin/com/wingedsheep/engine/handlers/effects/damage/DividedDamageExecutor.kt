@@ -14,7 +14,6 @@ import com.wingedsheep.engine.handlers.effects.TargetResolutionUtils.toEntityId
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.scripting.effects.DividedDamageEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -120,7 +119,7 @@ class DividedDamageExecutor(
             state.getEntity(sourceId)?.get<CardComponent>()?.name
         } ?: "Effect"
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = DistributeDecision(
             id = decisionId,
             playerId = context.controllerId,
@@ -143,7 +142,7 @@ class DividedDamageExecutor(
             targets = targets
         )
 
-        val newState = state
+        val newState = stateWithRoutingId
             .withPendingDecision(decision)
             .pushContinuation(continuation)
 

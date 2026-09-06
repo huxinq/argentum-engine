@@ -13,7 +13,6 @@ import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.engine.state.components.identity.PlayerComponent
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.effects.Effect
-import java.util.UUID
 
 /**
  * The "**you may**" half of an optional damage-redirection shield (Blood of the Martyr:
@@ -171,8 +170,9 @@ object OptionalDamageRedirect {
             pruned.getEntity(redirectToId)?.get<CardComponent>()?.name ?: "the redirection target"
         }
 
+        val (decisionId, stateWithRoutingId) = pruned.newRoutingId()
         val decision = YesNoDecision(
-            id = UUID.randomUUID().toString(),
+            id = decisionId,
             playerId = shield.controllerId,
             prompt = "$sourceName would deal ${instance.amount} damage to $recipientName — " +
                 "have that damage dealt to $redirectName instead?",
@@ -184,7 +184,7 @@ object OptionalDamageRedirect {
             yesText = "Redirect it",
             noText = "Let it through"
         )
-        return Check.Ask(pruned.withPendingDecision(decision), decision, key)
+        return Check.Ask(stateWithRoutingId.withPendingDecision(decision), decision, key)
     }
 
     /**

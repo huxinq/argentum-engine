@@ -22,7 +22,6 @@ import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.scripting.effects.CardKind
 import com.wingedsheep.sdk.scripting.effects.Effect
-import java.util.UUID
 
 /**
  * Resumes the two-step opponent-guess flow for
@@ -104,7 +103,7 @@ class GuessContinuationResumer(
             state.getEntity(it)?.get<CardComponent>()?.name
         }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateAfterRouting) = state.newRoutingId()
         val decision = ChooseOptionDecision(
             id = decisionId,
             playerId = continuation.guesserId,
@@ -126,7 +125,7 @@ class GuessContinuationResumer(
             effectContext = continuation.effectContext
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateAfterRouting.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(nextContinuation)
 
         return ExecutionResult.paused(

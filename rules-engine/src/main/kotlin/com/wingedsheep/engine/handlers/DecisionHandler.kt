@@ -4,7 +4,6 @@ import com.wingedsheep.engine.core.*
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.sdk.core.Color
 import com.wingedsheep.sdk.model.EntityId
-import java.util.UUID
 
 /**
  * Handles the creation and resolution of player decisions.
@@ -34,8 +33,9 @@ class DecisionHandler {
         legalTargets: Map<Int, List<EntityId>>,
         effectHint: String? = null
     ): ExecutionResult {
+        val (decisionId, allocatedState) = state.newRoutingId()
         val decision = ChooseTargetsDecision(
-            id = generateDecisionId(),
+            id = decisionId,
             playerId = playerId,
             prompt = "Choose targets for $sourceName",
             context = DecisionContext(
@@ -48,7 +48,7 @@ class DecisionHandler {
             legalTargets = legalTargets
         )
 
-        val newState = state.withPendingDecision(decision)
+        val newState = allocatedState.withPendingDecision(decision)
         return ExecutionResult.paused(
             newState,
             decision,
@@ -84,8 +84,9 @@ class DecisionHandler {
          */
         minTotalManaValue: Int? = null
     ): ExecutionResult {
+        val (decisionId, allocatedState) = state.newRoutingId()
         val decision = SelectCardsDecision(
-            id = generateDecisionId(),
+            id = decisionId,
             playerId = playerId,
             prompt = prompt,
             context = DecisionContext(
@@ -101,7 +102,7 @@ class DecisionHandler {
             minTotalManaValue = minTotalManaValue
         )
 
-        val newState = state.withPendingDecision(decision)
+        val newState = allocatedState.withPendingDecision(decision)
         return ExecutionResult.paused(
             newState,
             decision,
@@ -130,8 +131,9 @@ class DecisionHandler {
         phase: DecisionPhase = DecisionPhase.RESOLUTION,
         abilityIdentity: com.wingedsheep.sdk.scripting.AbilityIdentity? = null
     ): ExecutionResult {
+        val (decisionId, allocatedState) = state.newRoutingId()
         val decision = YesNoDecision(
-            id = generateDecisionId(),
+            id = decisionId,
             playerId = playerId,
             prompt = prompt,
             context = DecisionContext(
@@ -144,7 +146,7 @@ class DecisionHandler {
             noText = noText
         )
 
-        val newState = state.withPendingDecision(decision)
+        val newState = allocatedState.withPendingDecision(decision)
         return ExecutionResult.paused(
             newState,
             decision,
@@ -171,8 +173,9 @@ class DecisionHandler {
         minModes: Int = 1,
         maxModes: Int = 1
     ): ExecutionResult {
+        val (decisionId, allocatedState) = state.newRoutingId()
         val decision = ChooseModeDecision(
-            id = generateDecisionId(),
+            id = decisionId,
             playerId = playerId,
             prompt = "Choose ${if (minModes == maxModes) minModes else "$minModes-$maxModes"} mode(s) for $sourceName",
             context = DecisionContext(
@@ -185,7 +188,7 @@ class DecisionHandler {
             maxModes = maxModes
         )
 
-        val newState = state.withPendingDecision(decision)
+        val newState = allocatedState.withPendingDecision(decision)
         return ExecutionResult.paused(
             newState,
             decision,
@@ -212,8 +215,9 @@ class DecisionHandler {
         phase: DecisionPhase = DecisionPhase.RESOLUTION,
         availableColors: Set<Color> = Color.entries.toSet()
     ): ExecutionResult {
+        val (decisionId, allocatedState) = state.newRoutingId()
         val decision = ChooseColorDecision(
-            id = generateDecisionId(),
+            id = decisionId,
             playerId = playerId,
             prompt = prompt,
             context = DecisionContext(
@@ -224,7 +228,7 @@ class DecisionHandler {
             availableColors = availableColors
         )
 
-        val newState = state.withPendingDecision(decision)
+        val newState = allocatedState.withPendingDecision(decision)
         return ExecutionResult.paused(
             newState,
             decision,
@@ -252,8 +256,9 @@ class DecisionHandler {
         targets: List<EntityId>,
         minPerTarget: Int = 0
     ): ExecutionResult {
+        val (decisionId, allocatedState) = state.newRoutingId()
         val decision = DistributeDecision(
-            id = generateDecisionId(),
+            id = decisionId,
             playerId = playerId,
             prompt = prompt,
             context = DecisionContext(
@@ -266,7 +271,7 @@ class DecisionHandler {
             minPerTarget = minPerTarget
         )
 
-        val newState = state.withPendingDecision(decision)
+        val newState = allocatedState.withPendingDecision(decision)
         return ExecutionResult.paused(
             newState,
             decision,
@@ -293,8 +298,9 @@ class DecisionHandler {
         objects: List<EntityId>,
         phase: DecisionPhase = DecisionPhase.RESOLUTION
     ): ExecutionResult {
+        val (decisionId, allocatedState) = state.newRoutingId()
         val decision = OrderObjectsDecision(
-            id = generateDecisionId(),
+            id = decisionId,
             playerId = playerId,
             prompt = prompt,
             context = DecisionContext(
@@ -305,7 +311,7 @@ class DecisionHandler {
             objects = objects
         )
 
-        val newState = state.withPendingDecision(decision)
+        val newState = allocatedState.withPendingDecision(decision)
         return ExecutionResult.paused(
             newState,
             decision,
@@ -332,8 +338,9 @@ class DecisionHandler {
         numberOfPiles: Int = 2,
         pileLabels: List<String> = emptyList()
     ): ExecutionResult {
+        val (decisionId, allocatedState) = state.newRoutingId()
         val decision = SplitPilesDecision(
-            id = generateDecisionId(),
+            id = decisionId,
             playerId = playerId,
             prompt = "Separate cards into $numberOfPiles piles",
             context = DecisionContext(
@@ -346,7 +353,7 @@ class DecisionHandler {
             pileLabels = pileLabels
         )
 
-        val newState = state.withPendingDecision(decision)
+        val newState = allocatedState.withPendingDecision(decision)
         return ExecutionResult.paused(
             newState,
             decision,
@@ -374,8 +381,9 @@ class DecisionHandler {
         maxValue: Int,
         phase: DecisionPhase = DecisionPhase.RESOLUTION
     ): ExecutionResult {
+        val (decisionId, allocatedState) = state.newRoutingId()
         val decision = ChooseNumberDecision(
-            id = generateDecisionId(),
+            id = decisionId,
             playerId = playerId,
             prompt = prompt,
             context = DecisionContext(
@@ -387,7 +395,7 @@ class DecisionHandler {
             maxValue = maxValue
         )
 
-        val newState = state.withPendingDecision(decision)
+        val newState = allocatedState.withPendingDecision(decision)
         return ExecutionResult.paused(
             newState,
             decision,
@@ -402,5 +410,4 @@ class DecisionHandler {
         )
     }
 
-    private fun generateDecisionId(): String = UUID.randomUUID().toString()
 }

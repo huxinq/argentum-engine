@@ -12,7 +12,6 @@ import com.wingedsheep.sdk.scripting.effects.Effect
 import com.wingedsheep.sdk.scripting.effects.Gate
 import com.wingedsheep.sdk.scripting.targets.TargetRequirement
 import com.wingedsheep.sdk.scripting.targets.withCount
-import java.util.UUID
 
 /**
  * Handles core effect and trigger resumption:
@@ -239,7 +238,7 @@ class EffectAndTriggerContinuationResumer(
                 is com.wingedsheep.engine.state.components.stack.ChosenTarget.Spell -> target.spellEntityId
             }
         }
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateAfterRouting) = state.newRoutingId()
         val decision = DistributeDecision(
             id = decisionId,
             playerId = continuation.controllerId,
@@ -280,7 +279,7 @@ class EffectAndTriggerContinuationResumer(
             interveningIf = continuation.interveningIf
         )
 
-        val newState = state
+        val newState = stateAfterRouting
             .withPendingDecision(decision)
             .pushContinuation(distributionContinuation)
 
@@ -422,9 +421,10 @@ class EffectAndTriggerContinuationResumer(
         val rest = run.drop(1)
         var workingState = state
         if (rest.isNotEmpty()) {
-            workingState = workingState.pushContinuation(
+            val (routingId, stateAfterRouting) = workingState.newRoutingId()
+            workingState = stateAfterRouting.pushContinuation(
                 PendingTriggersContinuation(
-                    decisionId = "batch-may-peel-${java.util.UUID.randomUUID()}",
+                    decisionId = "batch-may-peel-$routingId",
                     remainingTriggers = rest
                 )
             )

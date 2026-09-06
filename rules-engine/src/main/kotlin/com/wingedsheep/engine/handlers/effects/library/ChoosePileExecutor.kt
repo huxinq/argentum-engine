@@ -7,7 +7,6 @@ import com.wingedsheep.engine.handlers.effects.EffectExecutor
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.scripting.effects.ChoosePileEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -59,7 +58,7 @@ class ChoosePileExecutor : EffectExecutor<ChoosePileEffect> {
             )
         }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = ChooseOptionDecision(
             id = decisionId,
             playerId = deciderId,
@@ -90,7 +89,7 @@ class ChoosePileExecutor : EffectExecutor<ChoosePileEffect> {
             storedCollections = context.pipeline.storedCollections
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(

@@ -9,7 +9,6 @@ import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.core.Subtype
 import com.wingedsheep.sdk.scripting.Duration
 import com.wingedsheep.sdk.scripting.effects.ChangeCreatureTypeTextEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -79,7 +78,7 @@ class ChangeCreatureTypeTextExecutor(
         val excludedNote = if (effect.excludedTypes.isNotEmpty())
             " (can't be ${effect.excludedTypes.joinToString(" or ")})" else ""
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = ChooseReplacementDecision(
             id = decisionId,
             playerId = context.controllerId,
@@ -107,7 +106,7 @@ class ChangeCreatureTypeTextExecutor(
             duration = Duration.Permanent
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(

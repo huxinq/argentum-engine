@@ -37,7 +37,6 @@ import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.AssignCombatDamageAsUnblocked
 import com.wingedsheep.sdk.scripting.DivideCombatDamageFreely
 import com.wingedsheep.sdk.scripting.effects.RedirectScope
-import java.util.UUID
 
 /**
  * Handles combat damage using a three-phase pipeline:
@@ -112,7 +111,7 @@ internal class CombatDamageManager(
             if (attackerPower <= 0) continue
 
             val attackingPlayer = projected.getController(attackerId) ?: continue
-            val decisionId = UUID.randomUUID().toString()
+            val (decisionId, allocatedState) = state.newRoutingId()
 
             val decision = YesNoDecision(
                 id = decisionId,
@@ -134,7 +133,7 @@ internal class CombatDamageManager(
                 firstStrike = firstStrike
             )
 
-            val pausedState = state
+            val pausedState = allocatedState
                 .withPendingDecision(decision)
                 .pushContinuation(continuation)
 
@@ -199,7 +198,7 @@ internal class CombatDamageManager(
 
             if (targets.size <= 1) continue
 
-            val decisionId = UUID.randomUUID().toString()
+            val (decisionId, allocatedState) = state.newRoutingId()
             val attackingPlayer = projected.getController(attackerId) ?: continue
 
             val decision = DistributeDecision(
@@ -223,7 +222,7 @@ internal class CombatDamageManager(
                 firstStrike = firstStrike
             )
 
-            val pausedState = state
+            val pausedState = allocatedState
                 .withPendingDecision(decision)
                 .pushContinuation(continuation)
 
@@ -620,7 +619,7 @@ internal class CombatDamageManager(
             .filterNot { it in attackerChoosers }
         val choosers = attackerChoosers + blockerChoosers
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, allocatedState) = state.newRoutingId()
         // Names here are the real card names; per-viewer face-down masking is applied downstream at
         // delivery time (DecisionEnricher), since this one decision graph is shown to both choosers.
         val prompt = if (candidates.size == 1) {
@@ -651,7 +650,7 @@ internal class CombatDamageManager(
             decisionShape = decision,
         )
         return ExecutionResult.paused(
-            state.withPendingDecision(decision).pushContinuation(continuation),
+            allocatedState.withPendingDecision(decision).pushContinuation(continuation),
             decision,
         )
     }
@@ -673,7 +672,7 @@ internal class CombatDamageManager(
         val updatedEdges = previous.edges.map { edge ->
             latestAmounts[edge.id]?.let { edge.copy(amount = it) } ?: edge
         }
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, allocatedState) = state.newRoutingId()
         val newDecision = previous.copy(
             id = decisionId,
             playerId = nextChooser,
@@ -687,7 +686,7 @@ internal class CombatDamageManager(
             decisionShape = newDecision,
         )
         return ExecutionResult.paused(
-            state.withPendingDecision(newDecision).pushContinuation(continuation),
+            allocatedState.withPendingDecision(newDecision).pushContinuation(continuation),
             newDecision,
         )
     }
@@ -1645,7 +1644,7 @@ internal class CombatDamageManager(
                 val shieldAmount = mod.remainingAmount
                 if (shieldAmount >= totalDamage) continue
 
-                val decisionId = UUID.randomUUID().toString()
+                val (decisionId, allocatedState) = state.newRoutingId()
 
                 val decision = DistributeDecision(
                     id = decisionId,
@@ -1671,7 +1670,7 @@ internal class CombatDamageManager(
                     firstStrike = firstStrike
                 )
 
-                val pausedState = state
+                val pausedState = allocatedState
                     .withPendingDecision(decision)
                     .pushContinuation(continuation)
 

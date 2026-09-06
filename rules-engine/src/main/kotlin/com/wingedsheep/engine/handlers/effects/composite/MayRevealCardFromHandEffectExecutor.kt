@@ -15,7 +15,6 @@ import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.scripting.effects.Effect
 import com.wingedsheep.sdk.scripting.effects.MayRevealCardFromHandEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -67,7 +66,7 @@ class MayRevealCardFromHandEffectExecutor(
         val sourceName = context.sourceId
             ?.let { state.getEntity(it)?.get<CardComponent>()?.name }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = SelectCardsDecision(
             id = decisionId,
             playerId = revealer,
@@ -91,7 +90,7 @@ class MayRevealCardFromHandEffectExecutor(
             effectContext = context,
         )
 
-        val paused = state
+        val paused = stateWithRoutingId
             .pushContinuation(continuation)
             .withPendingDecision(decision)
         return EffectResult.paused(paused, decision)

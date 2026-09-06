@@ -12,7 +12,6 @@ import com.wingedsheep.engine.handlers.effects.EffectExecutor
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.scripting.effects.DistributeCountersAmongFilteredEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -52,7 +51,7 @@ class DistributeCountersAmongFilteredExecutor : EffectExecutor<DistributeCounter
         val sourceId = context.sourceId ?: context.controllerId
         val sourceName = state.getEntity(sourceId)?.get<CardComponent>()?.name ?: "Spell"
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = DistributeDecision(
             id = decisionId,
             playerId = context.controllerId,
@@ -78,7 +77,7 @@ class DistributeCountersAmongFilteredExecutor : EffectExecutor<DistributeCounter
             removeFromSource = false
         )
 
-        val newState = state
+        val newState = stateWithRoutingId
             .withPendingDecision(decision)
             .pushContinuation(continuation)
 

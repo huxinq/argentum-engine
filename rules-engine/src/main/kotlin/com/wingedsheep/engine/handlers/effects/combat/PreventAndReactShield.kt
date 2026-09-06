@@ -13,7 +13,6 @@ import com.wingedsheep.sdk.scripting.EventPattern
 import com.wingedsheep.sdk.scripting.TriggerSpec
 import com.wingedsheep.sdk.scripting.effects.DelayedTriggerExpiry
 import com.wingedsheep.sdk.scripting.effects.Effect
-import java.util.UUID
 
 /** Installs a one-shot source shield and its linked "when damage is prevented this way" trigger. */
 internal fun GameState.installPreventAndReactShield(
@@ -34,9 +33,9 @@ internal fun GameState.installPreventAndReactShield(
     val sourceName = effectSourceName
         ?: stateWithSource.getEntity(reactionSourceId)?.get<CardComponent>()?.name
         ?: "Source"
-    val delayedTriggerId = UUID.randomUUID().toString()
+    val (delayedTriggerId, stateWithRoutingId) = stateWithSource.newRoutingId()
 
-    var result = stateWithSource
+    var result = stateWithRoutingId
     onPrevented?.let { reaction ->
         result = result.addDelayedTrigger(
             DelayedTriggeredAbility(

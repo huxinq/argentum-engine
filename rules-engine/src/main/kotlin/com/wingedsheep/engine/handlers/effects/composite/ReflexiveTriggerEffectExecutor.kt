@@ -27,7 +27,6 @@ import com.wingedsheep.sdk.scripting.effects.SelectFromCollectionEffect
 import com.wingedsheep.sdk.scripting.effects.SelectTargetEffect
 import com.wingedsheep.sdk.scripting.effects.SelectionMode
 import com.wingedsheep.sdk.scripting.targets.TargetRequirement
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -98,7 +97,7 @@ class ReflexiveTriggerEffectExecutor(
             state.getEntity(sourceId)?.get<CardComponent>()?.name
         }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = YesNoDecision(
             id = decisionId,
             playerId = playerId,
@@ -122,7 +121,7 @@ class ReflexiveTriggerEffectExecutor(
             effectContext = context
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(

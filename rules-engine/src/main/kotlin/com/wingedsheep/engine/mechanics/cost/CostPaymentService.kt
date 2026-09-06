@@ -39,7 +39,6 @@ import com.wingedsheep.sdk.scripting.GameObjectFilter
 import com.wingedsheep.sdk.scripting.costs.CostAtom
 import com.wingedsheep.sdk.scripting.DistributedCounterRemoval
 import com.wingedsheep.sdk.scripting.costs.PayCost
-import java.util.UUID
 
 /**
  * Single, shared engine service that owns paying every [PayCost] variant.
@@ -288,7 +287,7 @@ class CostPaymentService(private val services: EngineServices) {
         // and the trailing "Don't pay" option means decline.
         val affordable = cost.options.filter { canAfford(state, payerId, it, sourceId) }
         val labels = affordable.map { it.description.replaceFirstChar { ch -> ch.uppercase() } } + "Don't pay"
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, allocatedState) = state.newRoutingId()
         val decision = ChooseOptionDecision(
             id = decisionId,
             playerId = payerId,
@@ -298,7 +297,7 @@ class CostPaymentService(private val services: EngineServices) {
         )
         // Store the reduced (affordable-only) Choice so the resumer can map the option index directly.
         val reduced = PayCost.Choice(affordable)
-        val stateWithContinuation = state.withPendingDecision(decision)
+        val stateWithContinuation = allocatedState.withPendingDecision(decision)
             .pushContinuation(continuation(decisionId, payerId, sourceId, sourceName, reduced, ctx))
         return PaymentResult.Pending(
             stateWithContinuation,

@@ -136,9 +136,9 @@ class CostPaymentContinuationResumer(
         val manaCost = ((cost as? PayCost.Atom)?.atom as? CostAtom.Mana)?.cost ?: return null
         if (ManaPaymentWindow.floatingManaCovers(state, continuation.payerId, manaCost)) return null
 
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, stateAfterRouting) = state.newRoutingId()
         val decision = ManaPaymentWindow.buildDecision(
-            state = state,
+            state = stateAfterRouting,
             playerId = continuation.payerId,
             cost = manaCost,
             decisionId = decisionId,
@@ -158,7 +158,7 @@ class CostPaymentContinuationResumer(
             availableSources = decision.availableSources
         )
         return ExecutionResult.paused(
-            state.withPendingDecision(decision).pushContinuation(frame),
+            stateAfterRouting.withPendingDecision(decision).pushContinuation(frame),
             decision,
             listOf(
                 DecisionRequestedEvent(

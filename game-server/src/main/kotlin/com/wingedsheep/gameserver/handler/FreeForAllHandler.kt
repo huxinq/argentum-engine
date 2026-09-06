@@ -228,8 +228,8 @@ class FreeForAllHandler(
                 gameSession = gameSession,
                 aiPlayerId = playerId,
                 deckList = lobby.getSubmittedDeck(playerId),
-                onActionReady = { aiPlayerId, action ->
-                    gamePlayHandler.handleAiAction(gameSession, aiPlayerId, action)
+                onActionReady = { aiPlayerId, action, interactionEpoch ->
+                    gamePlayHandler.handleAiAction(gameSession, aiPlayerId, action, interactionEpoch)
                 },
                 onMulliganKeep = { aiPlayerId ->
                     gamePlayHandler.handleAiMulliganKeep(gameSession, aiPlayerId)

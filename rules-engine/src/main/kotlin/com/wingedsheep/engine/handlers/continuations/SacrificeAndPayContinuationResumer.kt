@@ -594,9 +594,9 @@ class SacrificeAndPayContinuationResumer(
         continuation: PayOrSufferContinuation,
         manaCost: ManaCost
     ): ExecutionResult {
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, stateAfterRouting) = state.newRoutingId()
         val decision = ManaPaymentWindow.buildDecision(
-            state = state,
+            state = stateAfterRouting,
             playerId = continuation.playerId,
             cost = manaCost,
             decisionId = decisionId,
@@ -616,7 +616,7 @@ class SacrificeAndPayContinuationResumer(
             availableSources = decision.availableSources
         )
         return ExecutionResult.paused(
-            state.withPendingDecision(decision).pushContinuation(frame),
+            stateAfterRouting.withPendingDecision(decision).pushContinuation(frame),
             decision,
             listOf(
                 DecisionRequestedEvent(
@@ -957,7 +957,7 @@ class SacrificeAndPayContinuationResumer(
                 is CostAtom.PayLife -> {
                     val life = state.lifeTotal(nextPlayerId) // CR 810.9a — team's shared total
                     if (life >= atom.amount) {
-                        val decisionId = java.util.UUID.randomUUID().toString()
+                        val (decisionId, stateAfterRouting) = state.newRoutingId()
                         val prompt = "Pay ${atom.amount} life to prevent ${continuation.sourceName}'s effect?"
                         val decision = YesNoDecision(
                             id = decisionId,
@@ -976,7 +976,7 @@ class SacrificeAndPayContinuationResumer(
                             currentPlayerId = nextPlayerId,
                             remainingPlayers = remainingAfter
                         )
-                        val stateWithContinuation = state.withPendingDecision(decision).pushContinuation(newContinuation)
+                        val stateWithContinuation = stateAfterRouting.withPendingDecision(decision).pushContinuation(newContinuation)
                         return ExecutionResult.paused(
                             stateWithContinuation,
                             decision,

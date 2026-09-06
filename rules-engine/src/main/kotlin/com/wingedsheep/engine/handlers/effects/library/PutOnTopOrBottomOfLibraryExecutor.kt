@@ -7,7 +7,6 @@ import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.engine.state.components.identity.OwnerComponent
 import com.wingedsheep.sdk.scripting.effects.PutOnLibraryPositionOfChoiceEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -51,7 +50,7 @@ class PutOnTopOrBottomOfLibraryExecutor : EffectExecutor<PutOnLibraryPositionOfC
         val promptPhrase = positions.joinToString(" or ") {
             it.label.replaceFirstChar { c -> c.lowercase() }
         }
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = ChooseOptionDecision(
             id = decisionId,
             playerId = ownerId,
@@ -74,7 +73,7 @@ class PutOnTopOrBottomOfLibraryExecutor : EffectExecutor<PutOnLibraryPositionOfC
             positions = positions
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(

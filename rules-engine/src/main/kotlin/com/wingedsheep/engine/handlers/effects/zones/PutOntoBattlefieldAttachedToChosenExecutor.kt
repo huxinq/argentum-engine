@@ -19,7 +19,6 @@ import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.scripting.effects.PutOntoBattlefieldAttachedToChosenEffect
 import com.wingedsheep.sdk.scripting.filters.unified.TargetFilter
 import com.wingedsheep.sdk.scripting.targets.TargetObject
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -122,7 +121,7 @@ class PutOntoBattlefieldAttachedToChosenExecutor(
         }
 
         // Pause for the controller to choose a host.
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val cardName = cardComponent.name
         val requirementInfo = TargetRequirementInfo(
             index = 0,
@@ -136,7 +135,7 @@ class PutOntoBattlefieldAttachedToChosenExecutor(
             prompt = "Choose what $cardName attaches to",
             context = DecisionContext(
                 sourceId = context.sourceId,
-                sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name },
+                sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name },
                 phase = DecisionPhase.RESOLUTION
             ),
             targetRequirements = listOf(requirementInfo),
@@ -149,7 +148,7 @@ class PutOntoBattlefieldAttachedToChosenExecutor(
             controllerId = controllerId
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult(

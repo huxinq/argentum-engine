@@ -1703,9 +1703,10 @@ class StackResolver(
             val sacrificeStep = copyRiders?.sacrificeAtStep
             if (sacrificeStep != null) {
                 val sourceName = newState.getEntity(spellId)?.get<CardComponent>()?.name ?: "Unknown"
-                newState = newState.addDelayedTrigger(
+                val (triggerId, allocatedState) = newState.newRoutingId()
+                newState = allocatedState.addDelayedTrigger(
                     DelayedTriggeredAbility(
-                        id = java.util.UUID.randomUUID().toString(),
+                        id = triggerId,
                         effect = com.wingedsheep.sdk.scripting.effects.SacrificeTargetEffect(
                             com.wingedsheep.sdk.scripting.targets.EffectTarget.SpecificEntity(spellId)
                         ),
@@ -1941,8 +1942,9 @@ class StackResolver(
             val entryTimestamp = newState.getEntity(spellId)
                 ?.get<com.wingedsheep.engine.state.components.battlefield.BattlefieldEntryTimestampComponent>()
                 ?.timestamp
+            val (triggerId, allocatedState) = newState.newRoutingId()
             val delayedTrigger = DelayedTriggeredAbility(
-                id = java.util.UUID.randomUUID().toString(),
+                id = triggerId,
                 effect = WarpExileEffect(
                     target = EffectTarget.SpecificEntity(spellId),
                     enteredBattlefieldTimestamp = entryTimestamp
@@ -1952,7 +1954,7 @@ class StackResolver(
                 sourceName = cardComponent?.name ?: "Unknown",
                 controllerId = controllerId
             )
-            newState = newState.addDelayedTrigger(delayedTrigger)
+            newState = allocatedState.addDelayedTrigger(delayedTrigger)
         }
 
         // Dash (CR 702.109a): create delayed trigger to return this permanent to its owner's
@@ -1961,8 +1963,9 @@ class StackResolver(
             val entryTimestamp = newState.getEntity(spellId)
                 ?.get<com.wingedsheep.engine.state.components.battlefield.BattlefieldEntryTimestampComponent>()
                 ?.timestamp
+            val (triggerId, allocatedState) = newState.newRoutingId()
             val delayedTrigger = DelayedTriggeredAbility(
-                id = java.util.UUID.randomUUID().toString(),
+                id = triggerId,
                 effect = MoveTrackedBattlefieldObjectEffect(
                     target = EffectTarget.SpecificEntity(spellId),
                     destination = Zone.HAND,
@@ -1973,7 +1976,7 @@ class StackResolver(
                 sourceName = cardComponent?.name ?: "Unknown",
                 controllerId = controllerId
             )
-            newState = newState.addDelayedTrigger(delayedTrigger)
+            newState = allocatedState.addDelayedTrigger(delayedTrigger)
         }
 
         // Prepared (Secrets of Strixhaven): a preparation creature whose face carries the PREPARED
@@ -2022,31 +2025,34 @@ class StackResolver(
         exiledCardId: EntityId,
         casterId: EntityId,
         sourceName: String
-    ): GameState = state.addDelayedTrigger(
-        com.wingedsheep.engine.event.DelayedTriggeredAbility(
-            id = java.util.UUID.randomUUID().toString(),
-            effect = com.wingedsheep.sdk.scripting.effects.MayEffect(
-                com.wingedsheep.sdk.scripting.effects.CompositeEffect(
-                    listOf(
-                        com.wingedsheep.sdk.scripting.effects.GatherCardsEffect(
-                            source = com.wingedsheep.sdk.scripting.effects.CardSource.Self,
-                            storeAs = "rebound_recast",
-                        ),
-                        com.wingedsheep.sdk.scripting.effects.CastFromCollectionWithoutPayingCostEffect(
-                            from = "rebound_recast",
-                        ),
-                    )
+    ): GameState {
+        val (triggerId, allocatedState) = state.newRoutingId()
+        return allocatedState.addDelayedTrigger(
+            com.wingedsheep.engine.event.DelayedTriggeredAbility(
+                id = triggerId,
+                effect = com.wingedsheep.sdk.scripting.effects.MayEffect(
+                    com.wingedsheep.sdk.scripting.effects.CompositeEffect(
+                        listOf(
+                            com.wingedsheep.sdk.scripting.effects.GatherCardsEffect(
+                                source = com.wingedsheep.sdk.scripting.effects.CardSource.Self,
+                                storeAs = "rebound_recast",
+                            ),
+                            com.wingedsheep.sdk.scripting.effects.CastFromCollectionWithoutPayingCostEffect(
+                                from = "rebound_recast",
+                            ),
+                        )
+                    ),
+                    descriptionOverride = "cast this card from exile without paying its mana cost",
                 ),
-                descriptionOverride = "cast this card from exile without paying its mana cost",
-            ),
-            fireAtStep = com.wingedsheep.sdk.core.Step.UPKEEP,
-            fireOnPlayerId = casterId,
-            notBeforeTurn = state.turnNumber + 1,
-            sourceId = exiledCardId,
-            sourceName = sourceName,
-            controllerId = casterId,
+                fireAtStep = com.wingedsheep.sdk.core.Step.UPKEEP,
+                fireOnPlayerId = casterId,
+                notBeforeTurn = state.turnNumber + 1,
+                sourceId = exiledCardId,
+                sourceName = sourceName,
+                controllerId = casterId,
+            )
         )
-    )
+    }
 
     /**
      * Resolve a non-permanent spell - execute effects, put in graveyard.
@@ -2170,9 +2176,10 @@ class StackResolver(
             // pauses for a decision of its own — the frame sits beneath the inner decision's frames
             // and auto-resumes once they finish (CR 702.47b: main spell first, then the spliced text).
             val stateForMainEffect = if (spliceEntries.isNotEmpty()) {
-                newState.pushContinuation(
+                val (tailId, allocatedState) = newState.newRoutingId()
+                allocatedState.pushContinuation(
                     SpliceTailContinuation(
-                        decisionId = "splice-tail-${java.util.UUID.randomUUID()}",
+                        decisionId = tailId,
                         controllerId = spellComponent.casterId,
                         sourceId = spellId,
                         sourceName = cardComponent?.name,

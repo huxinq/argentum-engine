@@ -12,7 +12,6 @@ import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.battlefield.CountersComponent
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.scripting.effects.MoveChosenCountersToTargetEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -57,7 +56,7 @@ class MoveChosenCountersToTargetExecutor : EffectExecutor<MoveChosenCountersToTa
         val (firstType, firstMax) = present.first()
         val remaining = present.drop(1)
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = ChooseNumberDecision(
             id = decisionId,
             playerId = context.controllerId,
@@ -85,7 +84,7 @@ class MoveChosenCountersToTargetExecutor : EffectExecutor<MoveChosenCountersToTa
             anyMovedSoFar = false
         )
 
-        val newState = state
+        val newState = stateWithRoutingId
             .withPendingDecision(decision)
             .pushContinuation(continuation)
 

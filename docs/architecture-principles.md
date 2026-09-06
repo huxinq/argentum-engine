@@ -398,6 +398,31 @@ what an old input stream re-simulates to. Stored replays therefore pin the card 
 on and carry position checkpoints, with an archived frame stream as the last resort — see
 [data-contracts.md](data-contracts.md) → *Compact replays*.
 
+#### Reproducible routing identity
+
+`GameState.newRoutingId()` allocates game-local correlation tokens for pending decisions,
+continuations, delayed triggers, and combat bands. Its serialized `nextRoutingId` counter is
+independent of entity allocation and gameplay RNG. Every caller must carry the returned state
+forward before allocating another token or executing a nested effect. Restoring the same snapshot
+and repeating the same actions reproduces those tokens, including their linked references.
+Tokens are opaque to consumers: their spelling is neither a game identifier nor an action's
+semantic identity, and separate games or divergent simulation branches can reuse the same token.
+
+Live request freshness belongs to `GameSession`, separately from engine correlation identity.
+Browser-facing decision IDs include a session epoch that rotates on successful undo; the server
+validates that epoch before rebinding a response to its engine ID. Undo restores the exact engine
+checkpoint, and replay records only canonical engine actions. Repeated delivery or reconnect to
+the same session preserves an outstanding live ID; a recovered session issues a fresh epoch.
+In-process AI receives engine IDs so its response simulations still address the raw snapshot,
+plus the live epoch captured with that update. Its asynchronous callback returns that epoch;
+the server atomically validates it before execution. An obsolete callback is discarded without
+fallback actions or rejection accounting.
+
+Snapshots written before this counter existed decode with zero and retain their existing UUID or
+clock-based tokens. Historical action logs may still need decision-ID rebinding; replay should use
+its recorded engine version. This routing guarantee does not remove other sources of identity
+variation, such as process-global IDs for dynamically constructed abilities.
+
 ### 2.2 Entity-Component-System (ECS)
 
 **Principle:** Every game object is an `EntityId` with behavioral traits attached via components.

@@ -155,7 +155,7 @@ class ManaPaymentContinuationResumer(
             val solution = manaSolver.solve(state, playerId, partialResult.remainingCost)
             val autoPaySuggestion = solution?.sources?.map { it.entityId } ?: emptyList()
 
-            val decisionId = java.util.UUID.randomUUID().toString()
+            val (decisionId, stateAfterRouting) = state.newRoutingId()
             val decision = SelectManaSourcesDecision(
                 id = decisionId,
                 playerId = playerId,
@@ -183,7 +183,7 @@ class ManaPaymentContinuationResumer(
                 sourceId = continuation.sourceId
             )
 
-            val stateWithDecision = state.withPendingDecision(decision)
+            val stateWithDecision = stateAfterRouting.withPendingDecision(decision)
             val stateWithContinuation = stateWithDecision.pushContinuation(manaSelectionContinuation)
 
             return ExecutionResult.paused(
@@ -976,7 +976,7 @@ class ManaPaymentContinuationResumer(
         val solution = manaSolver.solve(state, playerId, partialResult.remainingCost)
         val autoPaySuggestion = solution?.sources?.map { it.entityId } ?: emptyList()
 
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, stateAfterRouting) = state.newRoutingId()
         val decision = SelectManaSourcesDecision(
             id = decisionId,
             playerId = playerId,
@@ -1003,7 +1003,7 @@ class ManaPaymentContinuationResumer(
             autoPaySuggestion = autoPaySuggestion
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateAfterRouting.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(manaSelectionContinuation)
 
         return ExecutionResult.paused(
@@ -1182,7 +1182,7 @@ class ManaPaymentContinuationResumer(
         val autoPaySuggestion = solution?.sources?.map { it.entityId } ?: emptyList()
 
         // Create mana source selection decision
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, stateAfterRouting) = state.newRoutingId()
         val decision = SelectManaSourcesDecision(
             id = decisionId,
             playerId = playerId,
@@ -1206,7 +1206,7 @@ class ManaPaymentContinuationResumer(
             autoPaySuggestion = autoPaySuggestion
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateAfterRouting.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(manaSourceContinuation)
 
         return ExecutionResult.paused(
@@ -1576,7 +1576,7 @@ class ManaPaymentContinuationResumer(
             return ExecutionResult.error(state, "Not enough valid permanents to satisfy $sourceName's tap cost")
         }
 
-        val decisionId = java.util.UUID.randomUUID().toString()
+        val (decisionId, stateAfterRouting) = state.newRoutingId()
         val decision = SelectCardsDecision(
             id = decisionId,
             playerId = payingPlayerId,
@@ -1607,7 +1607,7 @@ class ManaPaymentContinuationResumer(
             wardSourceId = wardSourceId
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateAfterRouting.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return ExecutionResult.paused(

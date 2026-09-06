@@ -15,7 +15,6 @@ import com.wingedsheep.engine.state.components.identity.PlayerComponent
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.effects.Chooser
 import com.wingedsheep.sdk.scripting.effects.Effect
-import java.util.UUID
 
 /**
  * The single place a [Chooser] becomes a concrete deciding player.
@@ -168,8 +167,8 @@ object ChooserResolution {
         context: EffectContext,
         prompt: String
     ): EffectResult {
-        val decisionId = UUID.randomUUID().toString()
-        val sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name }
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
+        val sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name }
         val decision = ChooseOptionDecision(
             id = decisionId,
             playerId = context.controllerId,
@@ -179,7 +178,7 @@ object ChooserResolution {
                 sourceName = sourceName,
                 phase = DecisionPhase.RESOLUTION
             ),
-            options = opponents.map { playerName(state, it) }
+            options = opponents.map { playerName(stateWithRoutingId, it) }
         )
         val continuation = ChooseOpponentDeciderContinuation(
             decisionId = decisionId,
@@ -190,7 +189,7 @@ object ChooserResolution {
             baseContext = context
         )
         return EffectResult.paused(
-            state.withPendingDecision(decision).pushContinuation(continuation),
+            stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation),
             decision,
             listOf(
                 DecisionRequestedEvent(

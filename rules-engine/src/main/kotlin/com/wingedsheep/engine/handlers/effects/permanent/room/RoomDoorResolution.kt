@@ -17,7 +17,6 @@ import com.wingedsheep.engine.state.components.identity.RoomComponent
 import com.wingedsheep.engine.state.components.identity.RoomFace
 import com.wingedsheep.engine.state.components.identity.RoomFaceId
 import com.wingedsheep.sdk.model.EntityId
-import java.util.UUID
 
 /**
  * Shared resolution logic for the resolution-time "lock a door" / "unlock a door" effects
@@ -86,7 +85,7 @@ object RoomDoorResolution {
         controllerId: EntityId,
         lock: Boolean,
     ): EffectResult {
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val verb = if (lock) "lock" else "unlock"
         val decision = ChooseOptionDecision(
             id = decisionId,
@@ -106,7 +105,7 @@ object RoomDoorResolution {
             candidateFaceIds = candidates.map { it.id },
             lock = lock,
         )
-        val newState = state.withPendingDecision(decision).pushContinuation(continuation)
+        val newState = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
         return EffectResult.paused(
             newState,
             decision,

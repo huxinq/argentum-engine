@@ -237,12 +237,13 @@ class CopyTargetSpellExecutor(
         copyCount: Int = 1,
         stackResolver: StackResolver = StackResolver(cardRegistry = cardRegistry)
     ): EffectResult {
-        val decisionId = "copy-spell-target-${System.nanoTime()}"
+        val (routingId, stateWithRoutingId) = state.newRoutingId()
+        val decisionId = "copy-spell-target-$routingId"
 
         val legalTargetsMap = mutableMapOf<Int, List<EntityId>>()
         for ((index, requirement) in targetRequirements.withIndex()) {
             val legalTargets = targetFinder.findLegalTargets(
-                state, requirement, context.controllerId, context.sourceId
+                stateWithRoutingId, requirement, context.controllerId, context.sourceId
             )
             legalTargetsMap[index] = legalTargets
         }
@@ -254,7 +255,7 @@ class CopyTargetSpellExecutor(
         if (hasNoLegalTargets) {
             return EffectResult.from(
                 putInheritedCopies(
-                    state, stackResolver, spellEntityId, context.controllerId, copyCount,
+                    stateWithRoutingId, stackResolver, spellEntityId, context.controllerId, copyCount,
                     keywordsForCopy, removeLegendary, tokenRiders = null
                 )
             )
@@ -300,7 +301,7 @@ class CopyTargetSpellExecutor(
             legalTargets = legalTargetsMap
         )
 
-        val stateWithDecision = state.withPendingDecision(decision)
+        val stateWithDecision = stateWithRoutingId.withPendingDecision(decision)
         val stateWithContinuation = stateWithDecision.pushContinuation(continuation)
 
         return EffectResult.paused(stateWithContinuation, decision)

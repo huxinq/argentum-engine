@@ -28,7 +28,6 @@ import com.wingedsheep.sdk.scripting.effects.Effect
 import com.wingedsheep.sdk.scripting.effects.FaceDownMode
 import com.wingedsheep.sdk.scripting.effects.MoveToZoneEffect
 import com.wingedsheep.sdk.scripting.effects.ZonePlacement
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -258,14 +257,14 @@ class MoveToZoneEffectExecutor(
         }
 
         val cardName = cardComponent.name
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = ChooseTargetsDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = "Choose what $cardName attaches to",
             context = DecisionContext(
                 sourceId = context.sourceId,
-                sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name },
+                sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name },
                 phase = DecisionPhase.RESOLUTION
             ),
             targetRequirements = listOf(
@@ -283,7 +282,7 @@ class MoveToZoneEffectExecutor(
             cardId = cardId,
             controllerId = controllerId
         )
-        val newState = state.withPendingDecision(decision).pushContinuation(continuation)
+        val newState = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation)
         return EffectResult(state = newState, events = emptyList(), pendingDecision = decision)
     }
 

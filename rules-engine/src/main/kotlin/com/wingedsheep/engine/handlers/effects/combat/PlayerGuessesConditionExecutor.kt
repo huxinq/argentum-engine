@@ -12,7 +12,6 @@ import com.wingedsheep.engine.handlers.effects.EffectExecutor
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.scripting.effects.PlayerGuessesConditionEffect
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -56,7 +55,7 @@ class PlayerGuessesConditionExecutor : EffectExecutor<PlayerGuessesConditionEffe
             ?.let { effect.prompt.replace("{name}", it) }
             ?: effect.prompt
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = YesNoDecision(
             id = decisionId,
             playerId = guesserId,
@@ -79,7 +78,7 @@ class PlayerGuessesConditionExecutor : EffectExecutor<PlayerGuessesConditionEffe
         )
 
         return EffectResult.paused(
-            state.withPendingDecision(decision).pushContinuation(continuation),
+            stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation),
             decision,
             listOf(
                 DecisionRequestedEvent(

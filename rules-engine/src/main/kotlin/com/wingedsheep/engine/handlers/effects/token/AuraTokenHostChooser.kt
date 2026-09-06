@@ -13,7 +13,6 @@ import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.effects.CreateTokenCopyOfTargetEffect
-import java.util.UUID
 
 /**
  * Raises the "what does this Aura token enchant?" choice (CR 303.4h).
@@ -55,14 +54,14 @@ internal object AuraTokenHostChooser {
             return EffectResult.success(state)
         }
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = ChooseTargetsDecision(
             id = decisionId,
             playerId = controllerId,
             prompt = "Choose what the $auraName token enchants",
             context = DecisionContext(
                 sourceId = context.sourceId,
-                sourceName = context.sourceId?.let { state.getEntity(it)?.get<CardComponent>()?.name },
+                sourceName = context.sourceId?.let { stateWithRoutingId.getEntity(it)?.get<CardComponent>()?.name },
                 phase = DecisionPhase.RESOLUTION,
             ),
             targetRequirements = listOf(
@@ -87,7 +86,7 @@ internal object AuraTokenHostChooser {
         )
 
         return EffectResult(
-            state = state.withPendingDecision(decision).pushContinuation(continuation),
+            state = stateWithRoutingId.withPendingDecision(decision).pushContinuation(continuation),
             events = emptyList(),
             pendingDecision = decision,
         )

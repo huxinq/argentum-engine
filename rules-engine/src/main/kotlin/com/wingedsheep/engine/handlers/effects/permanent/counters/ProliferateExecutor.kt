@@ -18,7 +18,6 @@ import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.effects.ProliferateEffect
 import com.wingedsheep.sdk.scripting.targets.EffectTarget
-import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
@@ -87,7 +86,7 @@ class ProliferateExecutor : EffectExecutor<ProliferateEffect> {
             ?.let { state.getEntity(it)?.get<CardComponent>()?.name }
             ?: "Proliferate"
 
-        val decisionId = UUID.randomUUID().toString()
+        val (decisionId, stateWithRoutingId) = state.newRoutingId()
         val decision = SelectCardsDecision(
             id = decisionId,
             playerId = context.controllerId,
@@ -109,7 +108,7 @@ class ProliferateExecutor : EffectExecutor<ProliferateEffect> {
             eligibleEntities = eligible
         )
 
-        val newState = state
+        val newState = stateWithRoutingId
             .withPendingDecision(decision)
             .pushContinuation(continuation)
 

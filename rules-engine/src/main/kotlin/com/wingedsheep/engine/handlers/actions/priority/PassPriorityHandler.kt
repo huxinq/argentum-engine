@@ -189,8 +189,9 @@ class PassPriorityHandler(
                 result.events
             )
             if (triggers.isNotEmpty()) {
+                val (routingId, stateAfterRouting) = result.newState.newRoutingId()
                 val pendingTriggers = PendingTriggersContinuation(
-                    decisionId = "resolution-deferred-triggers-${java.util.UUID.randomUUID()}",
+                    decisionId = "resolution-deferred-triggers-$routingId",
                     remainingTriggers = triggers
                 )
                 val stack = result.newState.continuationStack
@@ -198,7 +199,7 @@ class PassPriorityHandler(
                     pendingTriggers +
                     stack.subList(preResolutionStackSize, stack.size)
                 return ExecutionResult.paused(
-                    result.newState.copy(continuationStack = newStack),
+                    stateAfterRouting.copy(continuationStack = newStack),
                     result.pendingDecision!!,
                     result.events
                 )
@@ -239,15 +240,16 @@ class PassPriorityHandler(
         if (sbaResult.isPaused) {
             var pausedState = sbaResult.state
             if (preSbaTriggers.isNotEmpty()) {
+                val (routingId, stateAfterRouting) = pausedState.newRoutingId()
                 val pendingTriggers = PendingTriggersContinuation(
-                    decisionId = "sba-deferred-triggers-${java.util.UUID.randomUUID()}",
+                    decisionId = "sba-deferred-triggers-$routingId",
                     remainingTriggers = preSbaTriggers
                 )
                 val stack = pausedState.continuationStack
                 val newStack = stack.subList(0, preSbaStackSize) +
                     pendingTriggers +
                     stack.subList(preSbaStackSize, stack.size)
-                pausedState = pausedState.copy(continuationStack = newStack)
+                pausedState = stateAfterRouting.copy(continuationStack = newStack)
             }
             return ExecutionResult.paused(
                 pausedState,

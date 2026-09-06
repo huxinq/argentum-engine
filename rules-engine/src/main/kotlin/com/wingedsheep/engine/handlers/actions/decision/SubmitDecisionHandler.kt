@@ -127,15 +127,16 @@ class SubmitDecisionHandler(
                 if (sbaResult.isPaused) {
                     var pausedState = sbaResult.state
                     if (preSbaTriggers.isNotEmpty()) {
+                        val (routingId, stateAfterRouting) = pausedState.newRoutingId()
                         val pendingTriggers = PendingTriggersContinuation(
-                            decisionId = "submit-sba-deferred-triggers-${java.util.UUID.randomUUID()}",
+                            decisionId = "submit-sba-deferred-triggers-$routingId",
                             remainingTriggers = preSbaTriggers
                         )
                         val stack = pausedState.continuationStack
                         val newStack = stack.subList(0, preSbaStackSize) +
                             pendingTriggers +
                             stack.subList(preSbaStackSize, stack.size)
-                        pausedState = pausedState.copy(continuationStack = newStack)
+                        pausedState = stateAfterRouting.copy(continuationStack = newStack)
                     }
                     return ExecutionResult.paused(
                         pausedState,
@@ -200,8 +201,9 @@ class SubmitDecisionHandler(
             if (result.isPaused && !result.triggersAlreadyProcessed) {
                 val deferredTriggers = triggerDetector.detectTriggers(result.state, result.events)
                 if (deferredTriggers.isNotEmpty()) {
+                    val (routingId, stateAfterRouting) = result.state.newRoutingId()
                     val pending = PendingTriggersContinuation(
-                        decisionId = "submit-deferred-triggers-${java.util.UUID.randomUUID()}",
+                        decisionId = "submit-deferred-triggers-$routingId",
                         remainingTriggers = deferredTriggers
                     )
                     // Frames untouched by this resume (the identity-equal bottom prefix) are outer
@@ -218,7 +220,7 @@ class SubmitDecisionHandler(
                     val newStack = postStack.subList(0, untouched) + pending +
                         postStack.subList(untouched, postStack.size)
                     return ExecutionResult.paused(
-                        result.state.copy(continuationStack = newStack),
+                        stateAfterRouting.copy(continuationStack = newStack),
                         result.pendingDecision!!,
                         listOf(submittedEvent) + result.events
                     )
