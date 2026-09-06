@@ -1,0 +1,559 @@
+{
+    "entities": {
+        "player-1": {
+            "com.wingedsheep.engine.state.components.identity.PlayerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.PlayerComponent",
+                "name": "Player1",
+                "startingLifeTotal": 20
+            },
+            "com.wingedsheep.engine.state.components.identity.LifeTotalComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.LifeTotalComponent",
+                "life": 20
+            },
+            "com.wingedsheep.engine.state.components.player.ManaPoolComponent": {
+                "type": "com.wingedsheep.engine.state.components.player.ManaPoolComponent",
+                "white": 0,
+                "blue": 0,
+                "black": 0,
+                "red": 0,
+                "green": 0,
+                "colorless": 0,
+                "restrictedMana": [],
+                "manaBySubtype": {},
+                "manaBySource": {}
+            },
+            "com.wingedsheep.engine.state.components.player.LandDropsComponent": {
+                "type": "com.wingedsheep.engine.state.components.player.LandDropsComponent",
+                "remaining": 1,
+                "maxPerTurn": 1
+            }
+        },
+        "player-2": {
+            "com.wingedsheep.engine.state.components.identity.PlayerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.PlayerComponent",
+                "name": "Player2",
+                "startingLifeTotal": 20
+            },
+            "com.wingedsheep.engine.state.components.identity.LifeTotalComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.LifeTotalComponent",
+                "life": 20
+            },
+            "com.wingedsheep.engine.state.components.player.ManaPoolComponent": {
+                "type": "com.wingedsheep.engine.state.components.player.ManaPoolComponent",
+                "white": 0,
+                "blue": 0,
+                "black": 0,
+                "red": 0,
+                "green": 0,
+                "colorless": 0,
+                "restrictedMana": [],
+                "manaBySubtype": {},
+                "manaBySource": {}
+            },
+            "com.wingedsheep.engine.state.components.player.LandDropsComponent": {
+                "type": "com.wingedsheep.engine.state.components.player.LandDropsComponent",
+                "remaining": 1,
+                "maxPerTurn": 1
+            }
+        },
+        "card-1001": {
+            "com.wingedsheep.engine.state.components.identity.CardComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.CardComponent",
+                "cardDefinitionId": "Birds of Paradise",
+                "name": "Birds of Paradise",
+                "manaCost": "{G}",
+                "typeLine": "Creature — Bird",
+                "oracleText": "Flying\n{T}: Add one mana of any color.",
+                "baseStats": {
+                    "power": 0,
+                    "toughness": 1
+                },
+                "baseKeywords": [
+                    "FLYING"
+                ],
+                "baseFlags": [],
+                "colors": [
+                    "GREEN"
+                ],
+                "ownerId": "player-1",
+                "spellEffect": null,
+                "imageUri": null,
+                "backFaceImageUri": null,
+                "printingSetCode": null,
+                "hasNonManaActivatedAbility": false,
+                "hasActivatedAbility": false,
+                "originalSetCode": null,
+                "hasAdventure": false,
+                "isDoubleFaced": false,
+                "manaValueOverride": null
+            },
+            "com.wingedsheep.engine.state.components.identity.OwnerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.OwnerComponent",
+                "playerId": "player-1"
+            },
+            "com.wingedsheep.engine.state.components.identity.ControllerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.ControllerComponent",
+                "playerId": "player-1"
+            },
+            "com.wingedsheep.engine.state.components.battlefield.TappedComponent": {
+                "type": "com.wingedsheep.engine.state.components.battlefield.TappedComponent"
+            },
+            "com.wingedsheep.engine.state.components.battlefield.HasBecomeTappedComponent": {
+                "type": "com.wingedsheep.engine.state.components.battlefield.HasBecomeTappedComponent",
+                "lastBecameTappedTurn": 1,
+                "timesThisTurn": 1
+            }
+        }
+    },
+    "zones": [
+        {
+            "ownerId": "player-1",
+            "zoneType": "Hand"
+        },
+        [],
+        {
+            "ownerId": "player-1",
+            "zoneType": "Library"
+        },
+        [],
+        {
+            "ownerId": "player-1",
+            "zoneType": "Graveyard"
+        },
+        [],
+        {
+            "ownerId": "player-1",
+            "zoneType": "Battlefield"
+        },
+        [
+            "card-1001"
+        ],
+        {
+            "ownerId": "player-2",
+            "zoneType": "Hand"
+        },
+        [],
+        {
+            "ownerId": "player-2",
+            "zoneType": "Library"
+        },
+        [],
+        {
+            "ownerId": "player-2",
+            "zoneType": "Graveyard"
+        },
+        [],
+        {
+            "ownerId": "player-2",
+            "zoneType": "Battlefield"
+        },
+        []
+    ],
+    "departedLinkedExile": {},
+    "turnNumber": 1,
+    "activePlayerId": "player-1",
+    "phase": "PRECOMBAT_MAIN",
+    "step": "PRECOMBAT_MAIN",
+    "priorityPlayerId": "player-1",
+    "stack": [],
+    "priorityPassedBy": [],
+    "timestamp": 0,
+    "turnOrder": [
+        "player-1",
+        "player-2"
+    ],
+    "winnerId": null,
+    "gameOver": false,
+    "pendingDecision": {
+        "type": "ChooseColorDecision",
+        "id": "r2",
+        "playerId": "player-1",
+        "prompt": "Choose a color of mana to add",
+        "context": {
+            "sourceId": "card-1001",
+            "sourceName": "Birds of Paradise",
+            "phase": "RESOLUTION",
+            "triggeringEntityId": null,
+            "inlineOnTrigger": false,
+            "effectHint": null,
+            "subjectEntityId": null,
+            "abilityIdentity": null
+        },
+        "availableColors": [
+            "WHITE",
+            "BLUE",
+            "BLACK",
+            "RED",
+            "GREEN"
+        ]
+    },
+    "floatingEffects": [],
+    "delayedTriggers": [],
+    "grantedTriggeredAbilities": [],
+    "grantedStateTriggeredAbilities": [],
+    "grantedActivatedAbilities": [],
+    "grantedStaticAbilities": [],
+    "grantedReplacementEffects": [],
+    "grantedKeywordAbilities": [],
+    "globalGrantedTriggeredAbilities": [],
+    "continuationStack": [
+        {
+            "type": "com.wingedsheep.engine.core.MayPayManaSelectionContinuation",
+            "decisionId": "r1",
+            "playerId": "player-1",
+            "sourceName": null,
+            "manaCost": "{1}",
+            "effect": {
+                "type": "GainLife",
+                "amount": {
+                    "type": "Fixed",
+                    "amount": 2,
+                    "description": "2"
+                },
+                "target": {
+                    "type": "Controller"
+                },
+                "description": "You gain 2 life"
+            },
+            "effectContext": {
+                "sourceId": null,
+                "controllerId": "player-1",
+                "effectControllerId": null,
+                "granterId": null,
+                "abilityIdentity": null,
+                "activatedAbility": null,
+                "candidatePlayerId": null,
+                "sourceFaceChanges": null,
+                "sourceBattlefieldTimestamp": null,
+                "sourceReferenceLost": false,
+                "targets": [],
+                "alignedTargets": [],
+                "xValue": null,
+                "totalManaSpent": 0,
+                "manaSpentOnXByColor": {},
+                "declaredCostSlot": null,
+                "wasBlightPaid": false,
+                "wasWaterbendPaid": false,
+                "wasSneaked": false,
+                "wasWebSlung": false,
+                "wasMayhem": false,
+                "sacrificedPermanents": [],
+                "discardedAsCostCards": [],
+                "damageDistribution": null,
+                "chosenModes": [],
+                "modeTargetsOrdered": [],
+                "modeTargetRequirements": {},
+                "exiledCardCount": 0,
+                "additionalCostBlightAmount": 0,
+                "tappedPermanents": [],
+                "exiledAsCostCards": [],
+                "exiledAsCostSnapshots": [],
+                "tappedEntitySnapshots": [],
+                "lastKnownSourceCounters": {},
+                "lastKnownSourceSnapshot": null,
+                "lastKnownSourceAttachments": [],
+                "chosenEntitySnapshots": [],
+                "triggerDamageAmount": null,
+                "triggerCounterCount": null,
+                "triggerTotalCounterCount": null,
+                "triggerMinusOneMinusOneCounterCount": null,
+                "triggerLastKnownSubtypes": null,
+                "triggerLastKnownCardTypes": null,
+                "triggeringEntityId": null,
+                "triggeringPlayerId": null,
+                "targetingSourceEntityId": null,
+                "triggerUnattachedFromEntityId": null,
+                "defendingPlayerId": null,
+                "triggerLastKnownPower": null,
+                "triggerLastKnownToughness": null,
+                "triggerDiedBatchTotalPower": null,
+                "enchantedCreatureLastKnownPower": null,
+                "triggerLastKnownCounters": null,
+                "triggerLastKnownDamageDealtByPlayers": null,
+                "triggerLastKnownBlockingOrBlockedByIds": null,
+                "triggerModesChosenCount": null,
+                "triggerManaSpentOnTriggeringSpell": null,
+                "triggerColorsSpentOnTriggeringSpell": null,
+                "triggerManaValueOfTriggeringSpell": null,
+                "triggerXValueOfTriggeringSpell": null,
+                "triggerScryCount": null,
+                "triggerDiscardCount": null,
+                "triggerDiscoverValue": null,
+                "triggerExcessDamageAmount": null,
+                "triggerRecipientToughness": null,
+                "manaColorChoice": null,
+                "chosenColor": null,
+                "chosenCreatureType": null,
+                "opponentDeciderId": null,
+                "castFromZone": null,
+                "affectedEntityId": null,
+                "pipeline": {
+                    "storedCollections": {},
+                    "namedTargets": {},
+                    "chosenValues": {},
+                    "storedNumbers": {},
+                    "storedStringLists": {},
+                    "storedSubtypeGroups": {},
+                    "iterationTarget": null
+                },
+                "resolutionDepth": 0
+            },
+            "availableSources": [
+                {
+                    "entityId": "card-1001",
+                    "name": "Birds of Paradise",
+                    "producesColors": [
+                        "WHITE",
+                        "BLUE",
+                        "BLACK",
+                        "RED",
+                        "GREEN"
+                    ],
+                    "producesColorless": false,
+                    "requiresSacrifice": false,
+                    "requiresTappingAnotherPermanent": false,
+                    "manaAmount": 1
+                }
+            ],
+            "autoPaySuggestion": [
+                "card-1001"
+            ],
+            "waterbend": false,
+            "otherwise": null
+        },
+        {
+            "type": "com.wingedsheep.engine.core.ReopenManaPaymentDecisionContinuation",
+            "decisionId": "r1",
+            "decision": {
+                "id": "r1",
+                "playerId": "player-1",
+                "prompt": "Pay {1}",
+                "context": {
+                    "sourceId": null,
+                    "sourceName": "You may pay",
+                    "phase": "RESOLUTION",
+                    "triggeringEntityId": null,
+                    "inlineOnTrigger": false,
+                    "effectHint": null,
+                    "subjectEntityId": null,
+                    "abilityIdentity": null
+                },
+                "availableSources": [
+                    {
+                        "entityId": "card-1001",
+                        "name": "Birds of Paradise",
+                        "producesColors": [
+                            "WHITE",
+                            "BLUE",
+                            "BLACK",
+                            "RED",
+                            "GREEN"
+                        ],
+                        "producesColorless": false,
+                        "requiresSacrifice": false,
+                        "requiresTappingAnotherPermanent": false,
+                        "manaAmount": 1
+                    }
+                ],
+                "requiredCost": "{1}",
+                "autoPaySuggestion": [
+                    "card-1001"
+                ],
+                "canDecline": true,
+                "waterbendPermanents": []
+            }
+        },
+        {
+            "type": "com.wingedsheep.engine.core.ChooseManaColorContinuation",
+            "decisionId": "r2",
+            "controllerId": "player-1",
+            "sourceId": "card-1001",
+            "sourceName": "Birds of Paradise",
+            "effect": {
+                "type": "AddManaOfChoice",
+                "colorSet": {
+                    "type": "ManaColorSet.AnyColor"
+                },
+                "amount": {
+                    "type": "Fixed",
+                    "amount": 1,
+                    "description": "1"
+                },
+                "restriction": null,
+                "riders": [],
+                "recipient": {
+                    "type": "Controller"
+                },
+                "description": "Add one mana of any color"
+            },
+            "baseContext": {
+                "sourceId": "card-1001",
+                "controllerId": "player-1",
+                "effectControllerId": null,
+                "granterId": null,
+                "abilityIdentity": {
+                    "cardDefinitionId": "Birds of Paradise",
+                    "abilityId": "f6dc362f-c398-4560-80cc-b2f2ebd533bc"
+                },
+                "activatedAbility": {
+                    "id": "f6dc362f-c398-4560-80cc-b2f2ebd533bc",
+                    "cost": {
+                        "type": "CostTap"
+                    },
+                    "effect": {
+                        "type": "AddManaOfChoice",
+                        "colorSet": {
+                            "type": "ManaColorSet.AnyColor"
+                        },
+                        "amount": {
+                            "type": "Fixed",
+                            "amount": 1,
+                            "description": "1"
+                        },
+                        "restriction": null,
+                        "riders": [],
+                        "recipient": {
+                            "type": "Controller"
+                        },
+                        "description": "Add one mana of any color"
+                    },
+                    "targetRequirements": [],
+                    "timing": {
+                        "type": "InstantSpeed"
+                    },
+                    "restrictions": [],
+                    "isManaAbility": true,
+                    "isPlaneswalkerAbility": false,
+                    "isEquipAbility": false,
+                    "equipQuality": null,
+                    "activateFromZone": "Battlefield",
+                    "trackActivations": false,
+                    "descriptionOverride": null,
+                    "hasConvoke": false,
+                    "hasWaterbend": false,
+                    "isExhaust": false,
+                    "isPowerUp": false,
+                    "isBoast": false,
+                    "holdPriority": false,
+                    "genericCostReduction": null,
+                    "xManaRestriction": [],
+                    "minimumXValue": 0,
+                    "xDefinedAs": null,
+                    "cantBeCopied": false
+                },
+                "candidatePlayerId": null,
+                "sourceFaceChanges": null,
+                "sourceBattlefieldTimestamp": null,
+                "sourceReferenceLost": false,
+                "targets": [],
+                "alignedTargets": [],
+                "xValue": null,
+                "totalManaSpent": 0,
+                "manaSpentOnXByColor": {},
+                "declaredCostSlot": null,
+                "wasBlightPaid": false,
+                "wasWaterbendPaid": false,
+                "wasSneaked": false,
+                "wasWebSlung": false,
+                "wasMayhem": false,
+                "sacrificedPermanents": [],
+                "discardedAsCostCards": [],
+                "damageDistribution": null,
+                "chosenModes": [],
+                "modeTargetsOrdered": [],
+                "modeTargetRequirements": {},
+                "exiledCardCount": 0,
+                "additionalCostBlightAmount": 0,
+                "tappedPermanents": [],
+                "exiledAsCostCards": [],
+                "exiledAsCostSnapshots": [],
+                "tappedEntitySnapshots": [],
+                "lastKnownSourceCounters": {},
+                "lastKnownSourceSnapshot": null,
+                "lastKnownSourceAttachments": [],
+                "chosenEntitySnapshots": [],
+                "triggerDamageAmount": null,
+                "triggerCounterCount": null,
+                "triggerTotalCounterCount": null,
+                "triggerMinusOneMinusOneCounterCount": null,
+                "triggerLastKnownSubtypes": null,
+                "triggerLastKnownCardTypes": null,
+                "triggeringEntityId": null,
+                "triggeringPlayerId": null,
+                "targetingSourceEntityId": null,
+                "triggerUnattachedFromEntityId": null,
+                "defendingPlayerId": null,
+                "triggerLastKnownPower": null,
+                "triggerLastKnownToughness": null,
+                "triggerDiedBatchTotalPower": null,
+                "enchantedCreatureLastKnownPower": null,
+                "triggerLastKnownCounters": null,
+                "triggerLastKnownDamageDealtByPlayers": null,
+                "triggerLastKnownBlockingOrBlockedByIds": null,
+                "triggerModesChosenCount": null,
+                "triggerManaSpentOnTriggeringSpell": null,
+                "triggerColorsSpentOnTriggeringSpell": null,
+                "triggerManaValueOfTriggeringSpell": null,
+                "triggerXValueOfTriggeringSpell": null,
+                "triggerScryCount": null,
+                "triggerDiscardCount": null,
+                "triggerDiscoverValue": null,
+                "triggerExcessDamageAmount": null,
+                "triggerRecipientToughness": null,
+                "manaColorChoice": null,
+                "chosenColor": null,
+                "chosenCreatureType": null,
+                "opponentDeciderId": null,
+                "castFromZone": null,
+                "affectedEntityId": null,
+                "pipeline": {
+                    "storedCollections": {},
+                    "namedTargets": {},
+                    "chosenValues": {},
+                    "storedNumbers": {},
+                    "storedStringLists": {},
+                    "storedSubtypeGroups": {},
+                    "iterationTarget": null
+                },
+                "resolutionDepth": 0
+            }
+        }
+    ],
+    "spellsCastThisTurn": 0,
+    "playerSpellsCastThisTurn": {},
+    "spellsCastThisTurnByPlayer": {},
+    "dayNight": null,
+    "previousTurnActivePlayerId": null,
+    "previousTurnActiveTeamSpellCounts": {},
+    "pendingSpellCopies": [],
+    "pendingUncounterableSpells": [],
+    "pendingNextSpellAffinities": [],
+    "pendingFreeCastSpells": [],
+    "turnSpellCostReductions": [],
+    "spellWarpedThisTurn": false,
+    "damageCantBePreventedThisTurn": false,
+    "powerUpRestrictedTurns": [],
+    "nonlandPermanentLeftBattlefieldThisTurn": false,
+    "activeCounterPlacementModifiers": [],
+    "permanentsSacrificedThisTurn": 0,
+    "pendingSacrificeIds": [],
+    "pendingDiscardCauseControllers": {},
+    "playersWhoCommittedCrimeThisTurn": [],
+    "lastCastSpellColors": null,
+    "lastCardDrawnThisTurnByPlayer": {},
+    "drawStepStartDrawCountByPlayer": {},
+    "format": {
+        "type": "com.wingedsheep.sdk.core.Format.Standard"
+    },
+    "attackMode": "MULTIPLE",
+    "commanderDamage": [],
+    "mayPlayPermissions": [],
+    "rng": {
+        "state": 1703
+    },
+    "nextEntityId": 0,
+    "nextRoutingId": 3,
+    "yieldsByPlayer": {},
+    "activeReplacementChain": null,
+    "optionalDamageRedirectChoices": {}
+}

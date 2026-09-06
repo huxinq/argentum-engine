@@ -1,0 +1,67 @@
+[
+    {
+        "type": "DecisionSubmittedEvent",
+        "decisionId": "r0",
+        "playerId": "player-1",
+        "description": "(Naturalize) Targeting Sol Ring"
+    },
+    {
+        "type": "ManaSpentEvent",
+        "playerId": "player-1",
+        "reason": "Cast Naturalize",
+        "white": 0,
+        "blue": 0,
+        "black": 0,
+        "red": 0,
+        "green": 0,
+        "colorless": 0
+    },
+    {
+        "type": "SpellCastEvent",
+        "spellEntityId": "card-1001",
+        "cardName": "Naturalize",
+        "casterId": "player-1",
+        "targetNames": [
+            "Sol Ring"
+        ],
+        "xValue": null,
+        "cardPresentation": {
+            "semanticName": "Naturalize",
+            "publicName": "Naturalize",
+            "identityViewers": []
+        },
+        "declaredCostSlot": null,
+        "totalManaSpent": 0,
+        "distinctColorsSpent": 0,
+        "spentManaSubtypes": [],
+        "spentManaSourceIds": [],
+        "chosenModesCount": 0,
+        "manaValue": 2,
+        "castFromZone": "Hand",
+        "alternativeCost": null,
+        "sacrificedAsCostNames": []
+    },
+    {
+        "type": "CommitCrimeEvent",
+        "playerId": "player-1",
+        "sourceEntityId": "card-1001",
+        "sourceName": "Naturalize"
+    },
+    {
+        "type": "TargetsChosenEvent",
+        "chooserId": "player-1",
+        "stackObjectId": "card-1001",
+        "sourceName": "Naturalize"
+    },
+    {
+        "type": "BecomesTargetEvent",
+        "targetEntityId": "card-1002",
+        "targetName": "Sol Ring",
+        "sourceEntityId": "card-1001",
+        "controllerId": "player-1",
+        "firstTimeByThisController": true,
+        "targetIsSpell": false,
+        "sourceIsSpell": true,
+        "targetIsPlayer": false
+    }
+]

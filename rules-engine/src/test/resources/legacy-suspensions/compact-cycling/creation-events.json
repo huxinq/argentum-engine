@@ -1,0 +1,54 @@
+[
+    {
+        "type": "TappedEvent",
+        "entityId": "card-1004",
+        "entityName": "Plains",
+        "tappedById": "player-1"
+    },
+    {
+        "type": "AbilityActivatedEvent",
+        "sourceId": "card-1004",
+        "sourceName": "Plains",
+        "controllerId": "player-1",
+        "costsTap": true,
+        "isManaAbility": true
+    },
+    {
+        "type": "ManaSpentEvent",
+        "playerId": "player-1",
+        "reason": "Cycle Secluded Steppe",
+        "white": 1
+    },
+    {
+        "type": "CardsDiscardedEvent",
+        "playerId": "player-1",
+        "cardIds": [
+            "card-1003"
+        ],
+        "cardNames": [
+            "Secluded Steppe"
+        ],
+        "asCyclingCost": true
+    },
+    {
+        "type": "ZoneChangeEvent",
+        "entityId": "card-1003",
+        "entityName": "Secluded Steppe",
+        "fromZone": "Hand",
+        "toZone": "Graveyard",
+        "ownerId": "player-1"
+    },
+    {
+        "type": "CardCycledEvent",
+        "playerId": "player-1",
+        "cardId": "card-1003",
+        "cardName": "Secluded Steppe"
+    },
+    {
+        "type": "DecisionRequestedEvent",
+        "decisionId": "r0",
+        "playerId": "player-1",
+        "decisionType": "YES_NO",
+        "prompt": "You may exile target. create a delayed trigger at the beginning of the next End Step"
+    }
+]

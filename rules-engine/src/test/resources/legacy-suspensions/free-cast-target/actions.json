@@ -1,0 +1,23 @@
+[
+    {
+        "type": "SubmitDecision",
+        "playerId": "player-1",
+        "response": {
+            "type": "TargetsResponse",
+            "decisionId": "r0",
+            "selectedTargets": {
+                "0": [
+                    "card-1002"
+                ]
+            }
+        }
+    },
+    {
+        "type": "PassPriority",
+        "playerId": "player-1"
+    },
+    {
+        "type": "PassPriority",
+        "playerId": "player-2"
+    }
+]

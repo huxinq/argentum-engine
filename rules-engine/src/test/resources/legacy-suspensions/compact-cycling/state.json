@@ -1,0 +1,359 @@
+{
+    "entities": {
+        "player-1": {
+            "com.wingedsheep.engine.state.components.identity.PlayerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.PlayerComponent",
+                "name": "Player1"
+            },
+            "com.wingedsheep.engine.state.components.identity.LifeTotalComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.LifeTotalComponent",
+                "life": 20
+            },
+            "com.wingedsheep.engine.state.components.player.ManaPoolComponent": {
+                "type": "com.wingedsheep.engine.state.components.player.ManaPoolComponent"
+            },
+            "com.wingedsheep.engine.state.components.player.LandDropsComponent": {
+                "type": "com.wingedsheep.engine.state.components.player.LandDropsComponent"
+            },
+            "com.wingedsheep.engine.state.components.player.PlayerDescendedThisTurnComponent": {
+                "type": "com.wingedsheep.engine.state.components.player.PlayerDescendedThisTurnComponent",
+                "count": 1
+            },
+            "com.wingedsheep.engine.state.components.player.CardsDiscardedThisTurnComponent": {
+                "type": "com.wingedsheep.engine.state.components.player.CardsDiscardedThisTurnComponent",
+                "cardIds": [
+                    "card-1003"
+                ],
+                "count": 1
+            }
+        },
+        "player-2": {
+            "com.wingedsheep.engine.state.components.identity.PlayerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.PlayerComponent",
+                "name": "Player2"
+            },
+            "com.wingedsheep.engine.state.components.identity.LifeTotalComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.LifeTotalComponent",
+                "life": 20
+            },
+            "com.wingedsheep.engine.state.components.player.ManaPoolComponent": {
+                "type": "com.wingedsheep.engine.state.components.player.ManaPoolComponent"
+            },
+            "com.wingedsheep.engine.state.components.player.LandDropsComponent": {
+                "type": "com.wingedsheep.engine.state.components.player.LandDropsComponent"
+            }
+        },
+        "card-1001": {
+            "com.wingedsheep.engine.state.components.identity.CardComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.CardComponent",
+                "cardDefinitionId": "Astral Slide",
+                "name": "Astral Slide",
+                "manaCost": "{2}{W}",
+                "typeLine": "Enchantment",
+                "oracleText": "Whenever a player cycles a card, you may exile target creature. If you do, return that card to the battlefield under its owner's control at the beginning of the next end step.",
+                "colors": [
+                    "WHITE"
+                ],
+                "ownerId": "player-1",
+                "imageUri": "https://cards.scryfall.io/normal/front/d/1/d14993b6-ed8d-4b9b-b54c-2837b343a61e.jpg?1562944880"
+            },
+            "com.wingedsheep.engine.state.components.identity.OwnerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.OwnerComponent",
+                "playerId": "player-1"
+            },
+            "com.wingedsheep.engine.state.components.identity.ControllerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.ControllerComponent",
+                "playerId": "player-1"
+            }
+        },
+        "card-1002": {
+            "com.wingedsheep.engine.state.components.identity.CardComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.CardComponent",
+                "cardDefinitionId": "Grizzly Bears",
+                "name": "Grizzly Bears",
+                "manaCost": "{1}{G}",
+                "typeLine": "Creature — Bear",
+                "baseStats": {
+                    "power": 2,
+                    "toughness": 2
+                },
+                "colors": [
+                    "GREEN"
+                ],
+                "ownerId": "player-1",
+                "imageUri": "https://cards.scryfall.io/normal/front/c/e/ce2d603a-3231-4a8c-bf39-1617586ea870.jpg?1559591691"
+            },
+            "com.wingedsheep.engine.state.components.identity.OwnerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.OwnerComponent",
+                "playerId": "player-1"
+            },
+            "com.wingedsheep.engine.state.components.identity.ControllerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.ControllerComponent",
+                "playerId": "player-1"
+            }
+        },
+        "card-1003": {
+            "com.wingedsheep.engine.state.components.identity.CardComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.CardComponent",
+                "cardDefinitionId": "Secluded Steppe",
+                "name": "Secluded Steppe",
+                "manaCost": "",
+                "typeLine": "Land",
+                "oracleText": "Secluded Steppe enters the battlefield tapped.\n{T}: Add {W}.\nCycling {W}",
+                "ownerId": "player-1",
+                "imageUri": "https://cards.scryfall.io/normal/front/e/a/ea454280-f7f4-4315-bb46-b56050c02c97.jpg?1562950810"
+            },
+            "com.wingedsheep.engine.state.components.identity.OwnerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.OwnerComponent",
+                "playerId": "player-1"
+            },
+            "com.wingedsheep.engine.state.components.identity.ControllerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.ControllerComponent",
+                "playerId": "player-1"
+            },
+            "com.wingedsheep.engine.state.components.battlefield.GraveyardEntryTurnComponent": {
+                "type": "com.wingedsheep.engine.state.components.battlefield.GraveyardEntryTurnComponent",
+                "turnNumber": 1
+            },
+            "com.wingedsheep.engine.state.components.identity.PutIntoGraveyardThisTurnComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.PutIntoGraveyardThisTurnComponent",
+                "fromBattlefield": false
+            }
+        },
+        "card-1004": {
+            "com.wingedsheep.engine.state.components.identity.CardComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.CardComponent",
+                "cardDefinitionId": "Plains",
+                "name": "Plains",
+                "manaCost": "",
+                "typeLine": "Basic Land — Plains",
+                "oracleText": "({T}: Add {W}.)",
+                "ownerId": "player-1",
+                "imageUri": "https://cards.scryfall.io/normal/front/7/b/7b7c408b-8660-4db5-9a16-5003c11b4ac1.jpg",
+                "originalSetCode": "HOB"
+            },
+            "com.wingedsheep.engine.state.components.identity.OwnerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.OwnerComponent",
+                "playerId": "player-1"
+            },
+            "com.wingedsheep.engine.state.components.identity.ControllerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.ControllerComponent",
+                "playerId": "player-1"
+            },
+            "com.wingedsheep.engine.state.components.battlefield.TappedComponent": {
+                "type": "com.wingedsheep.engine.state.components.battlefield.TappedComponent"
+            },
+            "com.wingedsheep.engine.state.components.battlefield.HasBecomeTappedComponent": {
+                "type": "com.wingedsheep.engine.state.components.battlefield.HasBecomeTappedComponent",
+                "lastBecameTappedTurn": 1,
+                "timesThisTurn": 1
+            }
+        },
+        "card-1005": {
+            "com.wingedsheep.engine.state.components.identity.CardComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.CardComponent",
+                "cardDefinitionId": "Forest",
+                "name": "Forest",
+                "manaCost": "",
+                "typeLine": "Basic Land — Forest",
+                "oracleText": "({T}: Add {G}.)",
+                "ownerId": "player-1",
+                "imageUri": "https://cards.scryfall.io/normal/front/c/3/c3e84b42-5423-4d4d-b8fc-cfbb2c53a4ca.jpg",
+                "originalSetCode": "HOB"
+            },
+            "com.wingedsheep.engine.state.components.identity.OwnerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.OwnerComponent",
+                "playerId": "player-1"
+            },
+            "com.wingedsheep.engine.state.components.identity.ControllerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.ControllerComponent",
+                "playerId": "player-1"
+            }
+        },
+        "card-1006": {
+            "com.wingedsheep.engine.state.components.identity.CardComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.CardComponent",
+                "cardDefinitionId": "Mountain",
+                "name": "Mountain",
+                "manaCost": "",
+                "typeLine": "Basic Land — Mountain",
+                "oracleText": "({T}: Add {R}.)",
+                "ownerId": "player-1",
+                "imageUri": "https://cards.scryfall.io/normal/front/c/4/c49d378e-9549-4320-b3c6-1aeb216d1e98.jpg",
+                "originalSetCode": "HOB"
+            },
+            "com.wingedsheep.engine.state.components.identity.OwnerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.OwnerComponent",
+                "playerId": "player-1"
+            },
+            "com.wingedsheep.engine.state.components.identity.ControllerComponent": {
+                "type": "com.wingedsheep.engine.state.components.identity.ControllerComponent",
+                "playerId": "player-1"
+            }
+        }
+    },
+    "zones": [
+        {
+            "ownerId": "player-1",
+            "zoneType": "Hand"
+        },
+        [],
+        {
+            "ownerId": "player-1",
+            "zoneType": "Library"
+        },
+        [
+            "card-1005",
+            "card-1006"
+        ],
+        {
+            "ownerId": "player-1",
+            "zoneType": "Graveyard"
+        },
+        [
+            "card-1003"
+        ],
+        {
+            "ownerId": "player-1",
+            "zoneType": "Battlefield"
+        },
+        [
+            "card-1001",
+            "card-1002",
+            "card-1004"
+        ],
+        {
+            "ownerId": "player-2",
+            "zoneType": "Hand"
+        },
+        [],
+        {
+            "ownerId": "player-2",
+            "zoneType": "Library"
+        },
+        [],
+        {
+            "ownerId": "player-2",
+            "zoneType": "Graveyard"
+        },
+        [],
+        {
+            "ownerId": "player-2",
+            "zoneType": "Battlefield"
+        },
+        []
+    ],
+    "turnNumber": 1,
+    "activePlayerId": "player-1",
+    "phase": "PRECOMBAT_MAIN",
+    "step": "PRECOMBAT_MAIN",
+    "priorityPlayerId": "player-1",
+    "timestamp": 1,
+    "turnOrder": [
+        "player-1",
+        "player-2"
+    ],
+    "pendingDecision": {
+        "type": "YesNoDecision",
+        "id": "r0",
+        "playerId": "player-1",
+        "prompt": "You may exile target. create a delayed trigger at the beginning of the next End Step",
+        "context": {
+            "sourceId": "card-1001",
+            "sourceName": "Astral Slide",
+            "abilityIdentity": {
+                "cardDefinitionId": "Astral Slide",
+                "abilityId": "ability_1684"
+            }
+        }
+    },
+    "continuationStack": [
+        {
+            "type": "com.wingedsheep.engine.core.CycleDrawContinuation",
+            "playerId": "player-1"
+        },
+        {
+            "type": "com.wingedsheep.engine.core.MayTriggerContinuation",
+            "decisionId": "r0",
+            "trigger": {
+                "ability": {
+                    "id": "ability_1684",
+                    "trigger": {
+                        "type": "CycleEvent",
+                        "player": {
+                            "type": "Each"
+                        }
+                    },
+                    "binding": "ANY",
+                    "effect": {
+                        "type": "Gated",
+                        "gate": {
+                            "type": "Gate.MayDecide"
+                        },
+                        "then": {
+                            "type": "Composite",
+                            "effects": [
+                                {
+                                    "type": "MoveToZone",
+                                    "target": {
+                                        "type": "BoundVariable",
+                                        "name": "target"
+                                    },
+                                    "destination": "Exile"
+                                },
+                                {
+                                    "type": "CreateDelayedTrigger",
+                                    "step": "END",
+                                    "effect": {
+                                        "type": "MoveToZone",
+                                        "target": {
+                                            "type": "BoundVariable",
+                                            "name": "target"
+                                        },
+                                        "destination": "Battlefield"
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "targetRequirement": {
+                        "type": "TargetObject",
+                        "filter": {
+                            "baseFilter": {
+                                "cardPredicates": [
+                                    {
+                                        "type": "IsCreature"
+                                    }
+                                ]
+                            }
+                        },
+                        "id": "target"
+                    }
+                },
+                "sourceId": "card-1001",
+                "sourceName": "Astral Slide",
+                "controllerId": "player-1",
+                "triggerContext": {
+                    "triggeringPlayerId": "player-1"
+                }
+            },
+            "targetRequirement": {
+                "type": "TargetObject",
+                "filter": {
+                    "baseFilter": {
+                        "cardPredicates": [
+                            {
+                                "type": "IsCreature"
+                            }
+                        ]
+                    }
+                },
+                "id": "target"
+            }
+        }
+    ],
+    "rng": {
+        "state": 721
+    },
+    "nextRoutingId": 1
+}

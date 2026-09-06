@@ -579,11 +579,15 @@ execution without allocating or emitting another request. Mana-ability execution
 moves the complete payment suspension into an automatic reopen frame; restoration refreshes
 its menu while preserving the original identity and answer.
 
-Snapshots store the structural representation. `GameStateSerializer` rejects the previous
-independent pending-question and answer-frame format, including under the server's
-`ignoreUnknownKeys` persistence decoder. This change alone cannot resume previously saved paused
-games. If a deployment must preserve those games, the companion legacy-reader change must
-accompany it. There is no runtime compatibility switch.
+Snapshots store the structural representation. `LegacyGameStateSerializer` reads the previous
+format by pairing the active question with its matching top answer and saved mana questions with
+their lower answer frames. It preserves intervening automatic work, counters, and gameplay state;
+malformed associations fail explicitly. The translated state then passes through the current-format
+`GameStateSerializer` rejection check. Writes contain only the current representation.
+
+This companion compatibility change supports deployments that must resume previously saved
+paused games. Deploying the structural suspension change alone rejects that old representation.
+Maintainers can make this review and merge choice independently; there is no runtime switch.
 
 Captured parent execution traces remain regression evidence in current-format fixtures, with
 separate execution-source and representation-conversion revisions. New execution may allocate

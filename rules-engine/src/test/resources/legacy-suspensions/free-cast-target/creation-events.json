@@ -1,0 +1,9 @@
+[
+    {
+        "type": "DecisionRequestedEvent",
+        "decisionId": "r0",
+        "playerId": "player-1",
+        "decisionType": "CHOOSE_TARGETS",
+        "prompt": "Choose targets for Naturalize"
+    }
+]

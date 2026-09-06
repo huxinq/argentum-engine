@@ -1,0 +1,24 @@
+[
+    {
+        "type": "DecisionSubmittedEvent",
+        "decisionId": "r1",
+        "playerId": "player-1",
+        "description": "Chose Yes"
+    },
+    {
+        "type": "LifeChangedEvent",
+        "playerId": "player-1",
+        "oldLife": 20,
+        "newLife": 21,
+        "reason": "LIFE_GAIN",
+        "firstThisTurn": true
+    },
+    {
+        "type": "LifeChangedEvent",
+        "playerId": "player-1",
+        "oldLife": 21,
+        "newLife": 24,
+        "reason": "LIFE_GAIN",
+        "firstThisTurn": false
+    }
+]

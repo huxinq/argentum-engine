@@ -41,7 +41,7 @@ import kotlinx.serialization.ExperimentalSerializationApi
  */
 @OptIn(ExperimentalSerializationApi::class)
 @KeepGeneratedSerializer
-@Serializable(with = GameStateSerializer::class)
+@Serializable(with = LegacyGameStateSerializer::class)
 data class GameState(
     /** All entities in the game, keyed by their ID */
     val entities: Map<EntityId, ComponentContainer> = emptyMap(),
