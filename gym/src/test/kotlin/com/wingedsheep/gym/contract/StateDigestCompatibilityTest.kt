@@ -85,6 +85,8 @@ class StateDigestCompatibilityTest : FunSpec({
 
     test("digest is independent of default locale") {
         val previous = Locale.getDefault()
+        val previousDisplay = Locale.getDefault(Locale.Category.DISPLAY)
+        val previousFormat = Locale.getDefault(Locale.Category.FORMAT)
         try {
             listOf(Locale.US, Locale.forLanguageTag("tr-TR"), Locale.forLanguageTag("ar-EG"))
                 .forEach { locale ->
@@ -93,6 +95,8 @@ class StateDigestCompatibilityTest : FunSpec({
                 }
         } finally {
             Locale.setDefault(previous)
+            Locale.setDefault(Locale.Category.DISPLAY, previousDisplay)
+            Locale.setDefault(Locale.Category.FORMAT, previousFormat)
         }
     }
 
