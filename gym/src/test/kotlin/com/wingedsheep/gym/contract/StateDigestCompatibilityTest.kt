@@ -66,11 +66,13 @@ class StateDigestCompatibilityTest : FunSpec({
         val reordered = observation.copy(
             players = observation.players.reversed().map { it.copy(name = "Excluded ${it.id.value}") },
             zones = observation.zones.reversed().map { zone ->
-                zone.copy(cards = zone.cards.map { it.copy(
-                    types = linkedSetOf("INSTANT", "SORCERY"),
-                    colors = linkedSetOf("BLUE", "RED"),
-                    oracleText = "Changed printed text",
-                ) }) }
+                zone.copy(cards = zone.cards.map { feature ->
+                    feature.copy(
+                        types = linkedSetOf("INSTANT", "SORCERY"),
+                        colors = linkedSetOf("BLUE", "RED"),
+                        oracleText = "Changed printed text",
+                    )
+                })
             },
             legalActions = listOf(LegalActionView(42, "Pass", "Pass priority", true)),
             pendingDecision = observation.pendingDecision?.copy(prompt = "Changed prompt"),
