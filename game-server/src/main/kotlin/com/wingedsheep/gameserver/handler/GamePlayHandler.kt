@@ -1008,11 +1008,20 @@ class GamePlayHandler(
 
         val gameSession = getGameSession(session, playerSession) ?: return
 
-        // Forward the attacker targets to every opponent (2-player = the one opponent)
-        val serverMessage = ServerMessage.OpponentAttackerTargets(message.selectedAttackers, message.attackerTargets)
+        // Forward the attacker targets to every opponent (2-player = the one opponent), each in
+        // their own card names
+        val engineMessage = gameSession.fromSeat(
+            playerSession.playerId, message, ClientMessage.UpdateAttackerTargets.serializer()
+        ) ?: return
+        val serverMessage = ServerMessage.OpponentAttackerTargets(engineMessage.selectedAttackers, engineMessage.attackerTargets)
 
         gameSession.getOpponentIds(playerSession.playerId).forEach { opponentId ->
-            gameSession.getPlayerSession(opponentId)?.let { sender.send(it.webSocketSession, serverMessage) }
+            gameSession.getPlayerSession(opponentId)?.let {
+                sender.send(
+                    it.webSocketSession,
+                    gameSession.toSeat(opponentId, serverMessage, ServerMessage.OpponentAttackerTargets.serializer())
+                )
+            }
         }
 
         // Also forward to all spectators so they can see attacker arrows in real-time
@@ -1030,16 +1039,24 @@ class GamePlayHandler(
 
         val gameSession = getGameSession(session, playerSession) ?: return
 
-        // Forward the blocker assignments to every opponent (2-player = the one opponent)
+        // Forward the blocker assignments to every opponent (2-player = the one opponent), each in
+        // their own card names
+        val engineMessage = gameSession.fromSeat(
+            playerSession.playerId, message, ClientMessage.UpdateBlockerAssignments.serializer()
+        ) ?: return
+        val serverMessage = ServerMessage.OpponentBlockerAssignments(engineMessage.assignments)
         gameSession.getOpponentIds(playerSession.playerId).forEach { opponentId ->
             gameSession.getPlayerSession(opponentId)?.let {
-                sender.send(it.webSocketSession, ServerMessage.OpponentBlockerAssignments(message.assignments))
+                sender.send(
+                    it.webSocketSession,
+                    gameSession.toSeat(opponentId, serverMessage, ServerMessage.OpponentBlockerAssignments.serializer())
+                )
             }
         }
 
         // Also forward to all spectators so they can see blocker arrows in real-time
         for (spectator in gameSession.getSpectators()) {
-            sender.send(spectator.webSocketSession, ServerMessage.OpponentBlockerAssignments(message.assignments))
+            sender.send(spectator.webSocketSession, serverMessage)
         }
     }
 
