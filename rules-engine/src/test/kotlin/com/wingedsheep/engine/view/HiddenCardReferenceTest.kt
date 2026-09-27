@@ -2,6 +2,9 @@ package com.wingedsheep.engine.view
 
 import com.wingedsheep.engine.core.CardsDrawnEvent
 import com.wingedsheep.engine.core.ForetellCard
+import com.wingedsheep.engine.core.GameConfig
+import com.wingedsheep.engine.core.GameInitializer
+import com.wingedsheep.engine.core.PlayerConfig
 import com.wingedsheep.engine.core.TakeMulligan
 import com.wingedsheep.engine.handlers.EffectContext
 import com.wingedsheep.engine.handlers.PredicateEvaluator
@@ -34,10 +37,12 @@ import io.kotest.matchers.string.shouldNotContain
  */
 class HiddenCardReferenceTest : FunSpec({
 
+    val deck = Deck.of("Island" to 20, "Lightning Bolt" to 20)
+
     fun createDriver(skipMulligans: Boolean = true): GameTestDriver {
         val driver = GameTestDriver()
         driver.registerCards(TestCards.all)
-        driver.initMirrorMatch(deck = Deck.of("Island" to 20, "Lightning Bolt" to 20), skipMulligans = skipMulligans)
+        driver.initMirrorMatch(deck = deck, skipMulligans = skipMulligans)
         return driver
     }
 
@@ -165,11 +170,26 @@ class HiddenCardReferenceTest : FunSpec({
         val opponentMoves = ClientEventTransformer.transform(events, opponent).filterIsInstance<ClientEvent.PermanentLeft>()
         opponentMoves.shouldNotBeEmpty()
         opponentMoves.forEach { move ->
-            move.cardId shouldBe null
             move.cardName shouldBe "card"
+            move.cardId shouldBe null
         }
 
         val ownerMoves = ClientEventTransformer.transform(events, owner).filterIsInstance<ClientEvent.PermanentLeft>()
         ownerMoves.map { it.cardId }.toSet() shouldBe hand + newHand
+    }
+
+    test("a card's ID doesn't say which card it is") {
+        val registry = createDriver().cardRegistry
+        fun cardNamesById(seed: Long): Map<EntityId, String> {
+            val game = GameInitializer(registry).initializeGame(
+                GameConfig(players = listOf(PlayerConfig("A", deck), PlayerConfig("B", deck)), seed = seed)
+            )
+            return game.state.entities.mapNotNull { (id, container) ->
+                container.get<CardComponent>()?.let { id to it.name }
+            }.toMap()
+        }
+
+        cardNamesById(1L) shouldBe cardNamesById(1L)
+        cardNamesById(1L) shouldNotBe cardNamesById(2L)
     }
 })
