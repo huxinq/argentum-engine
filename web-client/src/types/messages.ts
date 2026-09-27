@@ -250,6 +250,8 @@ export interface StateDelta {
   readonly winnerId?: EntityId | null
   /** Day/night designation (CR 731). Null means unchanged — the game never returns to neither. */
   readonly dayNight?: ClientGameState['dayNight'] | null
+  /** Whether the Void condition holds this turn. Null means unchanged. */
+  readonly voidActive?: boolean | null
   /** Combat state changes */
   readonly combat?: ClientCombatState | null
   readonly combatCleared?: boolean | null
@@ -262,6 +264,8 @@ export interface StateDelta {
   readonly hotseat?: boolean | null
   /** The viewer's decklist, present only when a `remaining` count moved (draw, mill, tutor). */
   readonly deck?: readonly ClientDeckCard[] | null
+  /** The viewer's persistent yields, present only when they changed. */
+  readonly activeYields?: ClientGameState['activeYields'] | null
 }
 
 /**
