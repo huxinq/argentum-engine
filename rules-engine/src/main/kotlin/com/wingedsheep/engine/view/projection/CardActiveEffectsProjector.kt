@@ -5,11 +5,13 @@ import com.wingedsheep.engine.handlers.PredicateEvaluator
 import com.wingedsheep.engine.handlers.effects.DamageUtils
 import com.wingedsheep.engine.mechanics.combat.rules.DefenderBypass
 import com.wingedsheep.engine.mechanics.combat.rules.TappedBlockBypass
+import com.wingedsheep.engine.mechanics.layers.ActiveFloatingEffect
 import com.wingedsheep.engine.mechanics.layers.ProjectedState
 import com.wingedsheep.engine.mechanics.layers.SerializableModification
 import com.wingedsheep.engine.registry.CardRegistry
 import com.wingedsheep.engine.state.ComponentContainer
 import com.wingedsheep.engine.state.GameState
+import com.wingedsheep.engine.state.nameVisibleToAll
 import com.wingedsheep.engine.state.components.battlefield.*
 import com.wingedsheep.engine.state.components.combat.*
 import com.wingedsheep.engine.state.components.identity.*
@@ -21,6 +23,7 @@ import com.wingedsheep.sdk.core.Keyword
 import com.wingedsheep.sdk.core.Subtype
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.CantBeBlockedByMoreThan
+import com.wingedsheep.sdk.scripting.Duration
 import com.wingedsheep.sdk.scripting.events.DamageType
 import com.wingedsheep.sdk.scripting.filters.unified.Scope
 
@@ -53,6 +56,7 @@ internal class CardActiveEffectsProjector(
         effects += textReplacementBadges(state, entityId)
         effects += outgoingDamageDoublerBadges(state, entityId)
         effects += floatingEffectBadges(state, entityId)
+        effects += temporaryEffectBadges(state, entityId)
         effects += damageShieldBadges(state, entityId)
         effects += combatRequirementBadges(state, entityId)
         // Check for triggered ability condition indicators (intervening-if progress)
@@ -153,11 +157,102 @@ internal class CardActiveEffectsProjector(
             )
         }
 
-    /** One badge per floating effect on this card that restricts, requires or redirects something. */
+    /**
+     * One badge per restriction, requirement or redirection on this card. The same restriction
+     * applied twice is one badge listing each ending, so every badge keeps a distinct effectId.
+     */
     private fun floatingEffectBadges(state: GameState, entityId: EntityId): List<ClientCardEffect> =
         state.floatingEffects
             .filter { entityId in it.effect.affectedEntities }
-            .mapNotNull { modificationBadge(state, it.effect.modification) }
+            .mapNotNull { floating ->
+                modificationBadge(state, floating.effect.modification)?.let { it to durationPhrase(state, floating) }
+            }
+            .groupBy({ it.first }, { it.second })
+            .map { (badge, ends) -> badge.lasting(combinedEnding(ends)) }
+
+    /**
+     * Temporary floating effects that have no badge of their own: a pump, a granted keyword, a
+     * set P/T. The card shows the result but not its source or its end, so an end-of-turn pump
+     * would read as a lasting change. One badge per source name and duration; repeated pumps
+     * from one name add up ("+6/+6" for two Giant Growths).
+     */
+    private fun temporaryEffectBadges(state: GameState, entityId: EntityId): List<ClientCardEffect> =
+        state.floatingEffects
+            .filter { floating ->
+                entityId in floating.effect.affectedEntities &&
+                    floating.duration != Duration.Permanent &&
+                    !hasOwnBadge(state, floating.effect.modification)
+            }
+            .groupBy { publicSourceName(state, it) to durationPhrase(state, it) }
+            .map { (key, group) ->
+                val (sourceName, ending) = key
+                ClientCardEffect(
+                    effectId = "temporary_${sourceName.orEmpty().lowercase().replace(" ", "_")}_" +
+                        ending.orEmpty().replace(" ", "_"),
+                    name = sourceName ?: "Temporary effect",
+                    description = temporaryChanges(group).joinToString(", ").ifEmpty { null },
+                    icon = "temporary-effect"
+                ).lasting(ending)
+            }
+
+    /**
+     * The source's name as every player may read it: a face-down source (a morph that granted the
+     * pump) shows its face-down name, not its face.
+     */
+    private fun publicSourceName(state: GameState, floating: ActiveFloatingEffect): String? {
+        val name = floating.sourceName ?: return null
+        return floating.sourceId?.let { nameVisibleToAll(state, it, name) } ?: name
+    }
+
+    /**
+     * What a group of floating effects does: unconditional P/T changes summed into one, then each
+     * other change once. A change that only holds under a condition (Restless Spire's first strike
+     * "as long as it's your turn") says so, since the card may not show it right now.
+     */
+    private fun temporaryChanges(group: List<ActiveFloatingEffect>): List<String> {
+        val (conditional, unconditional) = group.partition { it.effect.sourceCondition != null }
+        val pumps = unconditional.mapNotNull { it.effect.modification as? SerializableModification.ModifyPowerToughness }
+        val summedPump = if (pumps.isEmpty()) emptyList() else listOf(
+            "${signed(pumps.sumOf { it.powerMod })}/${signed(pumps.sumOf { it.toughnessMod })}"
+        )
+        val others = unconditional.filter { it.effect.modification !is SerializableModification.ModifyPowerToughness }
+            .mapNotNull { modificationSummary(it.effect.modification) }
+        val whileTrue = conditional.mapNotNull { floating ->
+            modificationSummary(floating.effect.modification)?.let { "$it as long as ${floating.effect.sourceCondition!!.description}" }
+        }
+        return summedPump + (others + whileTrue).distinct()
+    }
+
+    /** Whether a modification already has a badge that [lasting] can date: its own, or a damage shield's. */
+    private fun hasOwnBadge(state: GameState, modification: SerializableModification): Boolean =
+        modificationBadge(state, modification) != null ||
+            modification is SerializableModification.PreventNextDamage ||
+            modification is SerializableModification.RegenerationShield ||
+            modification is SerializableModification.RemoveDamageShield
+
+    /** A short account of a stat or keyword change, or null for one the card's own display covers. */
+    private fun modificationSummary(modification: SerializableModification): String? = when (modification) {
+        is SerializableModification.ModifyPowerToughness ->
+            "${signed(modification.powerMod)}/${signed(modification.toughnessMod)}"
+        is SerializableModification.SetPowerToughness -> "base ${modification.power}/${modification.toughness}"
+        is SerializableModification.SwitchPowerToughness -> "power and toughness switched"
+        is SerializableModification.GrantKeyword -> keywordName(modification.keyword)
+        is SerializableModification.RemoveKeyword -> "loses ${keywordName(modification.keyword)}"
+        else -> null
+    }
+
+    private fun signed(amount: Int): String = if (amount >= 0) "+$amount" else "$amount"
+
+    private fun keywordName(keyword: String): String = keyword.lowercase().replace('_', ' ')
+
+    /** This badge with its effect's end stated, both as a field and in the text a tooltip shows. */
+    private fun ClientCardEffect.lasting(phrase: String?): ClientCardEffect {
+        if (phrase == null) return this
+        return copy(
+            description = description?.let { "$it ($phrase)" } ?: phrase.replaceFirstChar { it.uppercase() },
+            duration = phrase
+        )
+    }
 
     private fun modificationBadge(
         state: GameState,
@@ -197,7 +292,7 @@ internal class CardActiveEffectsProjector(
         is SerializableModification.SetCantBlock -> ClientCardEffect(
             effectId = "cant_block",
             name = "Can't Block",
-            description = "This creature can't block this turn",
+            description = "This creature can't block",
             icon = "cant-block"
         )
         // PreventNextDamage, RegenerationShield and RemoveDamageShield are totalled across all
@@ -205,7 +300,7 @@ internal class CardActiveEffectsProjector(
         is SerializableModification.PreventAllDamageDealtBy -> ClientCardEffect(
             effectId = "prevent_all_damage_dealt_by",
             name = "Silenced",
-            description = "All damage this creature would deal is prevented this turn",
+            description = "All damage this creature would deal is prevented",
             icon = "prevent-damage"
         )
         is SerializableModification.SetCantAttack -> ClientCardEffect(
@@ -259,9 +354,9 @@ internal class CardActiveEffectsProjector(
                 effectId = "cant_block_${modification.attackerId}",
                 name = "Can't Block",
                 description = if (attackerName != null) {
-                    "This creature can't block $attackerName this turn"
+                    "This creature can't block $attackerName"
                 } else {
-                    "This creature can't block a specific attacker this turn"
+                    "This creature can't block a specific attacker"
                 },
                 icon = "cant-block"
             )
@@ -272,7 +367,7 @@ internal class CardActiveEffectsProjector(
         is SerializableModification.SetMustBlock -> ClientCardEffect(
             effectId = "must_block_this_turn",
             name = "Must Block",
-            description = "This creature must block this turn if able",
+            description = "This creature must block if able",
             icon = "must-attack"
         )
         // PreventAllCombatDamage and PreventCombatDamageFromGroup are not card-scoped — they hold
@@ -330,20 +425,24 @@ internal class CardActiveEffectsProjector(
      * every floating effect into one badge.
      */
     private fun damageShieldBadges(state: GameState, entityId: EntityId): List<ClientCardEffect> {
-        var preventDamageTotal = 0
-        var regenerationShieldCount = 0
-        var removeDamageShieldCount = 0
+        // Each shield's amount and ending, so a shield that ends this turn and one that doesn't
+        // read differently even when their totals match.
+        val prevent = mutableListOf<Pair<String?, Int>>()
+        val regeneration = mutableListOf<String?>()
+        val removeDamage = mutableListOf<String?>()
         for (floatingEffect in state.floatingEffects) {
             if (entityId !in floatingEffect.effect.affectedEntities) continue
+            val ending = durationPhrase(state, floatingEffect)
             when (val modification = floatingEffect.effect.modification) {
-                is SerializableModification.PreventNextDamage -> preventDamageTotal += modification.remainingAmount
-                is SerializableModification.RegenerationShield -> regenerationShieldCount++
-                is SerializableModification.RemoveDamageShield -> removeDamageShieldCount++
+                is SerializableModification.PreventNextDamage -> prevent += ending to modification.remainingAmount
+                is SerializableModification.RegenerationShield -> regeneration += ending
+                is SerializableModification.RemoveDamageShield -> removeDamage += ending
                 else -> {}
             }
         }
 
         val effects = mutableListOf<ClientCardEffect>()
+        val preventDamageTotal = prevent.sumOf { it.second }
         if (preventDamageTotal > 0) {
             effects.add(
                 ClientCardEffect(
@@ -351,10 +450,11 @@ internal class CardActiveEffectsProjector(
                     name = "Prevent $preventDamageTotal",
                     description = "Prevents the next $preventDamageTotal damage that would be dealt to this creature",
                     icon = "prevent-damage"
-                )
+                ).lasting(combinedEnding(prevent.map { it.first }, prevent.map { it.second }))
             )
         }
 
+        val regenerationShieldCount = regeneration.size
         if (regenerationShieldCount > 0) {
             val name = if (regenerationShieldCount > 1) "Regen x$regenerationShieldCount" else "Regen"
             effects.add(
@@ -366,10 +466,11 @@ internal class CardActiveEffectsProjector(
                     else
                         "Has a regeneration shield (prevents destruction, taps, removes damage and from combat)",
                     icon = "regeneration"
-                )
+                ).lasting(combinedEnding(regeneration, regeneration.map { 1 }))
             )
         }
 
+        val removeDamageShieldCount = removeDamage.size
         if (removeDamageShieldCount > 0) {
             val name = if (removeDamageShieldCount > 1) "Shielded x$removeDamageShieldCount" else "Shielded"
             effects.add(
@@ -379,7 +480,7 @@ internal class CardActiveEffectsProjector(
                     description = "The next time this permanent would be destroyed this turn, " +
                         "remove all damage marked on it instead",
                     icon = "regeneration"
-                )
+                ).lasting(combinedEnding(removeDamage, removeDamage.map { 1 }))
             )
         }
         return effects
