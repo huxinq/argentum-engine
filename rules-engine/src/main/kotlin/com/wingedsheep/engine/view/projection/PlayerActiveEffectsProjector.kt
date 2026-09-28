@@ -9,6 +9,7 @@ import com.wingedsheep.engine.mechanics.targeting.ControllerHexproof
 import com.wingedsheep.engine.mechanics.targeting.ControllerShroud
 import com.wingedsheep.engine.state.ComponentContainer
 import com.wingedsheep.engine.state.GameState
+import com.wingedsheep.engine.state.nameVisibleToAll
 import com.wingedsheep.engine.state.components.battlefield.*
 import com.wingedsheep.engine.state.components.combat.MustAttackPlayerComponent
 import com.wingedsheep.engine.state.components.identity.*
@@ -17,6 +18,7 @@ import com.wingedsheep.engine.view.ClientEffectProgress
 import com.wingedsheep.engine.view.ClientPlayerEffect
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.Duration
+import com.wingedsheep.sdk.scripting.effects.DelayedTriggerExpiry
 import com.wingedsheep.sdk.scripting.GameObjectFilter
 import com.wingedsheep.sdk.scripting.events.DamageType
 
@@ -78,7 +80,8 @@ internal class PlayerActiveEffectsProjector(
 
     /** The prevention shields on one player, totalled per kind across every floating effect. */
     private class ShieldTally {
-        var preventDamageTotal = 0
+        /** Each "prevent the next N" shield's ending and amount. */
+        val preventNext = mutableListOf<Pair<String?, Int>>()
         var preventsAllDamage = false
         var preventsAllCombatDamage = false
         val preventedNextFromMatching = mutableSetOf<String>()
@@ -116,7 +119,7 @@ internal class PlayerActiveEffectsProjector(
                     tally.preventsAllDamage = true
                 }
                 is SerializableModification.PreventNextDamage -> {
-                    tally.preventDamageTotal += modification.remainingAmount
+                    tally.preventNext += durationPhrase(state, floatingEffect) to modification.remainingAmount
                 }
                 is SerializableModification.PreventNextDamageFromMatching -> {
                     tally.preventedNextFromMatching.add(modification.filter.description)
@@ -177,13 +180,17 @@ internal class PlayerActiveEffectsProjector(
                 )
             )
         }
+        val preventDamageTotal = preventNext.sumOf { it.second }
         if (preventDamageTotal > 0) {
+            val ending = combinedEnding(preventNext.map { it.first }, preventNext.map { it.second })
             effects.add(
                 ClientPlayerEffect(
                     effectId = "prevent_damage",
                     name = "Prevent $preventDamageTotal",
-                    description = "The next $preventDamageTotal damage that would be dealt to you is prevented",
-                    icon = "prevent-damage"
+                    description = "The next $preventDamageTotal damage that would be dealt to you is prevented" +
+                        (ending?.let { " ($it)" } ?: ""),
+                    icon = "prevent-damage",
+                    duration = ending
                 )
             )
         }
@@ -625,13 +632,15 @@ internal class PlayerActiveEffectsProjector(
                 it.descriptionOverride ?: it.ability.description
             }
             val isPermanent = duration == Duration.Permanent
-            val durationSuffix = if (isPermanent) "" else " (${duration.description})"
+            val ending = durationPhrase(state, duration, playerId)
+            val durationSuffix = ending?.let { " ($it)" } ?: ""
             effects.add(
                 ClientPlayerEffect(
                     effectId = "emblem_${sourceName.lowercase().replace(" ", "_").replace(",", "")}${if (!isPermanent) "_temp" else ""}",
                     name = if (isPermanent) "$sourceName Emblem" else sourceName,
                     description = description + durationSuffix,
-                    icon = if (isPermanent) "emblem" else "triggered-ability"
+                    icon = if (isPermanent) "emblem" else "triggered-ability",
+                    duration = ending
                 )
             )
         }
@@ -642,19 +651,25 @@ internal class PlayerActiveEffectsProjector(
         // Step-based delayed triggers are scheduled actions, not ongoing effects, so skip them.
         val delayedBySource = state.delayedTriggers
             .filter { it.controllerId == playerId && it.trigger != null }
-            .groupBy { it.sourceName }
+            // A face-down source (a morph granted the ability) shows its face-down name, not its face.
+            .groupBy { Triple(nameVisibleToAll(state, it.sourceId, it.sourceName), it.expiry, it.fireOnce) }
 
-        for ((sourceName, triggers) in delayedBySource) {
+        for ((key, triggers) in delayedBySource) {
+            val (sourceName, expiry, fireOnce) = key
             val first = triggers.first()
             val triggerDesc = first.trigger?.event?.description ?: "the triggered event"
             val effectDesc = first.effect.description.replaceFirstChar { it.lowercase() }
             val countSuffix = if (triggers.size > 1) " (×${triggers.size})" else ""
+            val lead = if (fireOnce) "The next time" else "Whenever"
+            val ends = expiryPhrase(state, expiry, playerId)
             effects.add(
                 ClientPlayerEffect(
-                    effectId = "delayed_trigger_${sourceName.lowercase().replace(" ", "_").replace(",", "")}",
+                    effectId = "delayed_trigger_${sourceName.lowercase().replace(" ", "_").replace(",", "")}" +
+                        "_${expiry?.let { it::class.simpleName } ?: "Never"}${if (fireOnce) "_once" else ""}",
                     name = "$sourceName$countSuffix",
-                    description = "Whenever $triggerDesc, $effectDesc. (Until end of turn)",
-                    icon = "triggered-ability"
+                    description = "$lead $triggerDesc, $effectDesc." + (ends?.let { " (${it.replaceFirstChar { c -> c.uppercase() }})" } ?: ""),
+                    icon = "triggered-ability",
+                    duration = ends
                 )
             )
         }
@@ -694,5 +709,13 @@ internal class PlayerActiveEffectsProjector(
             }
         }
         return effects
+    }
+
+    /** When an event-based delayed trigger stops watching, or null when only firing ends it. */
+    private fun expiryPhrase(state: GameState, expiry: DelayedTriggerExpiry?, controllerId: EntityId): String? = when (expiry) {
+        DelayedTriggerExpiry.EndOfTurn -> "until end of turn"
+        DelayedTriggerExpiry.EndOfCombat -> "until end of combat"
+        DelayedTriggerExpiry.UntilControllersNextTurn -> durationPhrase(state, Duration.UntilYourNextTurn, controllerId)
+        DelayedTriggerExpiry.Never, null -> null
     }
 }

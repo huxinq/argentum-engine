@@ -475,8 +475,8 @@ export function CardPreview() {
         <div style={styles.cardPreviewEffects}>
           {card.activeEffects
             .filter((e) => e.description)
-            .map((effect) => (
-              <div key={effect.effectId} style={styles.cardPreviewEffect}>
+            .map((effect, index) => (
+              <div key={`${effect.effectId}-${index}`} style={styles.cardPreviewEffect}>
                 <span style={styles.cardPreviewEffectName}>{effect.name}</span>
                 <span style={styles.cardPreviewEffectText}>
                   <AbilityText text={effect.description ?? ''} size={13} />

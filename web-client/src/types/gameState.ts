@@ -744,6 +744,8 @@ export interface ClientPlayerEffect {
    * (e.g. The Ring's four temptations). Rendered as filled/empty pips.
    */
   readonly progress?: ClientEffectProgress
+  /** When the effect ends, e.g. "until end of turn"; absent when no end is stated. */
+  readonly duration?: string | null
 }
 
 /**
@@ -769,6 +771,8 @@ export interface ClientCardEffect {
   readonly description?: string
   /** Optional icon identifier for UI rendering */
   readonly icon?: string
+  /** When the effect ends, e.g. "until end of turn"; absent when no end is stated. */
+  readonly duration?: string | null
 }
 
 /**
