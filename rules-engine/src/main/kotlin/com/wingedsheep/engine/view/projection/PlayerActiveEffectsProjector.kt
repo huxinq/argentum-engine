@@ -1,5 +1,7 @@
 package com.wingedsheep.engine.view.projection
 
+import com.wingedsheep.engine.core.engineSerializersModule
+import com.wingedsheep.engine.event.DelayedTriggeredAbility
 import com.wingedsheep.engine.handlers.PredicateEvaluator
 import com.wingedsheep.engine.handlers.effects.DamageUtils
 import com.wingedsheep.engine.mechanics.citysblessing.CitysBlessingService
@@ -16,11 +18,21 @@ import com.wingedsheep.engine.state.components.identity.*
 import com.wingedsheep.engine.state.components.player.*
 import com.wingedsheep.engine.view.ClientEffectProgress
 import com.wingedsheep.engine.view.ClientPlayerEffect
+import com.wingedsheep.sdk.core.Step
+import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.Duration
 import com.wingedsheep.sdk.scripting.effects.DelayedTriggerExpiry
 import com.wingedsheep.sdk.scripting.GameObjectFilter
+import com.wingedsheep.sdk.scripting.effects.Effect
 import com.wingedsheep.sdk.scripting.events.DamageType
+import com.wingedsheep.sdk.scripting.targets.EffectTarget
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Projects the badges shown on a player: damage shields and doublers, skipped steps and turns,
@@ -648,7 +660,7 @@ internal class PlayerActiveEffectsProjector(
         // Check for event-based delayed triggers controlled by this player
         // (e.g., Flitterwing Nuisance's "whenever a creature you control deals combat
         //  damage to a player this turn, draw a card" floating ability).
-        // Step-based delayed triggers are scheduled actions, not ongoing effects, so skip them.
+        // Step-based delayed triggers are scheduled actions and get their own badges below.
         val delayedBySource = state.delayedTriggers
             .filter { it.controllerId == playerId && it.trigger != null }
             // A face-down source (a morph granted the ability) shows its face-down name, not its face.
@@ -670,6 +682,24 @@ internal class PlayerActiveEffectsProjector(
                     description = "$lead $triggerDesc, $effectDesc." + (ends?.let { " (${it.replaceFirstChar { c -> c.uppercase() }})" } ?: ""),
                     icon = "triggered-ability",
                     duration = ends
+                )
+            )
+        }
+
+        // Step-based delayed triggers: something scheduled for a coming step ("return it at the
+        // beginning of the next end step"). The spell or ability that scheduled one resolved in
+        // the open, but nothing on the board shows it until it fires.
+        for (scheduled in state.delayedTriggers) {
+            if (scheduled.controllerId != playerId || scheduled.trigger != null) continue
+            val step = scheduled.fireAtStep ?: continue
+            effects.add(
+                ClientPlayerEffect(
+                    effectId = "scheduled_trigger_${scheduled.id}",
+                    // Both players see this badge, so a face-down source keeps its face-down name.
+                    name = nameVisibleToAll(state, scheduled.sourceId, scheduled.sourceName),
+                    description = "${scheduleText(state, scheduled, step)}: " +
+                        "${scheduledEffectText(state, scheduled.effect).replaceFirstChar { it.uppercase() }}.",
+                    icon = "triggered-ability"
                 )
             )
         }
@@ -717,5 +747,76 @@ internal class PlayerActiveEffectsProjector(
         DelayedTriggerExpiry.EndOfCombat -> "until end of combat"
         DelayedTriggerExpiry.UntilControllersNextTurn -> durationPhrase(state, Duration.UntilYourNextTurn, controllerId)
         DelayedTriggerExpiry.Never, null -> null
+    }
+
+    /**
+     * When a step-based delayed trigger fires: "At the beginning of the next end step", "At the
+     * beginning of Bob's next upkeep", "At the beginning of each combat this turn".
+     */
+    private fun scheduleText(state: GameState, scheduled: DelayedTriggeredAbility, step: Step): String {
+        val stepName = when (step) {
+            Step.UPKEEP -> "upkeep"
+            Step.BEGIN_COMBAT -> "combat"
+            else -> step.displayName.lowercase()
+        }
+        // Both seats read this badge, so the player is named rather than called "your".
+        val onTurnOf = scheduled.fireOnPlayerId?.let { player ->
+            "${state.getEntity(player)?.get<PlayerComponent>()?.name ?: "a player"}'s"
+        }
+        // A trigger that expires at cleanup ("at the beginning of the next combat this turn") says
+        // so: cast after the last combat, it lapses without firing.
+        val thisTurn = if (scheduled.expiry == DelayedTriggerExpiry.EndOfTurn) " this turn" else ""
+        val occasion = if (scheduled.repeatAtEachMatchingStep) {
+            "each $stepName" + (onTurnOf?.let { " on $it turn" } ?: "") + thisTurn
+        } else {
+            "${onTurnOf ?: "the"} next $stepName$thisTurn"
+        }
+        val notBefore = scheduled.notBeforeTurn?.takeIf { it > state.turnNumber }?.let { " (not before turn $it)" } ?: ""
+        return "At the beginning of $occasion$notBefore"
+    }
+
+    /**
+     * The scheduled effect's text with each object it captured named. Scheduling bakes the
+     * effect's targets into [EffectTarget.SpecificEntity] references, whose own text is only
+     * "specific entity"; each is replaced, in order, by the name every player may read.
+     */
+    private fun scheduledEffectText(state: GameState, effect: Effect): String {
+        val text = effect.description
+        if (SPECIFIC_ENTITY !in text) return text
+        val captured = mutableListOf<EntityId>()
+        fun collect(element: JsonElement) {
+            when (element) {
+                is JsonObject -> {
+                    if (element["type"]?.jsonPrimitive?.content == "SpecificEntity") {
+                        element["entityId"]?.jsonPrimitive?.content?.let { captured += EntityId(it) }
+                    }
+                    element.values.forEach(::collect)
+                }
+                is JsonArray -> element.forEach(::collect)
+                else -> Unit
+            }
+        }
+        collect(effectJson.encodeToJsonElement<Effect>(effect))
+        var named = text
+        for (id in captured) {
+            if (SPECIFIC_ENTITY !in named) break
+            named = named.replaceFirst(SPECIFIC_ENTITY, publicName(state, id))
+        }
+        return named
+    }
+
+    /** What every player may call [entityId]: a player's name, a public card's, or a placeholder. */
+    private fun publicName(state: GameState, entityId: EntityId): String {
+        state.getEntity(entityId)?.get<PlayerComponent>()?.let { return it.name }
+        val name = state.getEntity(entityId)?.get<CardComponent>()?.name ?: return "a card"
+        val hidden = state.zones.any { (key, ids) ->
+            key.zoneType in setOf(Zone.HAND, Zone.LIBRARY, Zone.SIDEBOARD) && entityId in ids
+        }
+        return if (hidden) "a card" else nameVisibleToAll(state, entityId, name)
+    }
+
+    private companion object {
+        const val SPECIFIC_ENTITY = "specific entity"
+        val effectJson = Json { serializersModule = engineSerializersModule }
     }
 }
