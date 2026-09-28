@@ -945,7 +945,9 @@ data class ClientPlayerEffect(
      * The Ring's four-step temptation (CR 701.54c). The UI can render this as
      * filled/empty pips so the player sees how far the effect has advanced.
      */
-    val progress: ClientEffectProgress? = null
+    val progress: ClientEffectProgress? = null,
+    /** When the effect ends, e.g. "until end of turn"; `null` when no end is stated. */
+    val duration: String? = null
 )
 
 /**
@@ -972,7 +974,9 @@ data class ClientCardEffect(
     /** Optional description/tooltip text */
     val description: String? = null,
     /** Optional icon identifier for UI rendering */
-    val icon: String? = null
+    val icon: String? = null,
+    /** When the effect ends, e.g. "until end of turn"; `null` when no end is stated. */
+    val duration: String? = null
 )
 
 /**
