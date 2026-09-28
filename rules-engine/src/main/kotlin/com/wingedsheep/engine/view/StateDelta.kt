@@ -44,6 +44,9 @@ data class StateDelta(
      */
     val dayNight: com.wingedsheep.sdk.core.DayNight? = null,
 
+    /** Whether the Void condition holds this turn. `null` means unchanged. */
+    val voidActive: Boolean? = null,
+
     /** Combat state. Present = changed. combatCleared = true means combat ended (set to null). */
     val combat: ClientCombatState? = null,
     val combatCleared: Boolean? = null,
@@ -67,4 +70,7 @@ data class StateDelta(
      * tutor — and not on the many updates that only shuffle the battlefield around.
      */
     val deck: List<ClientDeckCard>? = null,
+
+    /** The viewer's persistent yields, sent only when they changed. */
+    val activeYields: List<ClientYield>? = null,
 )

@@ -60,6 +60,7 @@ object StateDiffCalculator {
         val isGameOverDelta = if (current.isGameOver != previous.isGameOver) current.isGameOver else null
         val winnerIdDelta = if (current.winnerId != previous.winnerId) current.winnerId else null
         val dayNightDelta = if (current.dayNight != previous.dayNight) current.dayNight else null
+        val voidActiveDelta = if (current.voidActive != previous.voidActive) current.voidActive else null
 
         // --- Combat diff ---
         val combatChanged = current.combat != previous.combat
@@ -77,6 +78,7 @@ object StateDiffCalculator {
 
         // --- Deck diff (whole list; changes only when a card's remaining count moves) ---
         val deckDelta = if (current.deck != previous.deck) current.deck else null
+        val activeYieldsDelta = if (current.activeYields != previous.activeYields) current.activeYields else null
 
         return StateDelta(
             addedCards = addedCards.ifEmpty { null },
@@ -92,6 +94,7 @@ object StateDiffCalculator {
             isGameOver = isGameOverDelta,
             winnerId = winnerIdDelta,
             dayNight = dayNightDelta,
+            voidActive = voidActiveDelta,
             combat = combatDelta,
             combatCleared = if (combatCleared) true else null,
             newLogEntries = newLogEntries,
@@ -99,6 +102,7 @@ object StateDiffCalculator {
             youAreHijackedBy = current.youAreHijackedBy,
             hotseat = current.hotseat,
             deck = deckDelta,
+            activeYields = activeYieldsDelta,
         )
     }
 }
