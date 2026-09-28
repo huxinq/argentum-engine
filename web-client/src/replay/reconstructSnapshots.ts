@@ -58,6 +58,9 @@ interface StateDelta {
   combat?: unknown | null
   combatCleared?: boolean | null
   newLogEntries?: unknown[] | null
+  /** Null means unchanged, as in the live delta. */
+  dayNight?: string | null
+  voidActive?: boolean | null
 }
 
 /**
@@ -231,6 +234,8 @@ function applyGameStateDelta(
     turnNumber: delta.turnNumber ?? prev.turnNumber,
     isGameOver: delta.isGameOver ?? prev.isGameOver,
     winnerId: delta.winnerId !== undefined ? delta.winnerId : prev.winnerId,
+    dayNight: delta.dayNight ?? prev.dayNight,
+    voidActive: delta.voidActive ?? prev.voidActive,
     combat,
     gameLog,
   }
