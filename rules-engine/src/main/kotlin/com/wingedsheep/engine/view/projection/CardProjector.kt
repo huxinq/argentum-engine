@@ -468,6 +468,7 @@ internal class CardProjector(
             // cast face (Omen/Adventure/split half) on the stack still wins, since it has no
             // battlefield projection entry to overwrite.
             name = castFace?.name ?: frame.projectedValues?.name ?: cardComponent.name,
+            hasRuleTextChanges = TextChanges.of(state, entityId) != null,
             manaCost = (castFace?.manaCost ?: cardComponent.manaCost).toString(),
             manaValue = (castFace?.manaCost ?: cardComponent.manaCost).cmc,
             typeLine = typeLine.text,
