@@ -842,6 +842,10 @@ class TriggerProcessor(
     ): ExecutionResult {
         val ability = trigger.ability
 
+        val definitionIdentity = state.triggerIdentityFromCurrentCardDefinition(trigger.sourceId, ability.id)
+        val printedAbility = definitionIdentity?.let { identity ->
+            cardRegistry.getCard(identity.cardDefinitionId)?.script?.triggeredAbilities?.find { it.id == identity.abilityId }
+        }
         val abilityComponent = TriggeredAbilityOnStackComponent(
             sourceId = trigger.sourceId,
             sourceBattlefieldTimestamp = trigger.sourceBattlefieldTimestamp,
@@ -850,7 +854,8 @@ class TriggerProcessor(
             controllerId = trigger.controllerId,
             effect = effectOverride ?: ability.effect,
             description = ability.description,
-            abilityIdentity = state.triggerIdentityFromCurrentCardDefinition(trigger.sourceId, ability.id),
+            abilityIdentity = definitionIdentity,
+            definitionRuleIsExact = printedAbility == ability && (effectOverride == null || effectOverride == ability.effect),
             granterId = trigger.granterId,
             // CR 701.28f — freeze the source's face-change clock as the trigger goes on the stack,
             // so an instruction inside it to transform that same permanent is ignored if the

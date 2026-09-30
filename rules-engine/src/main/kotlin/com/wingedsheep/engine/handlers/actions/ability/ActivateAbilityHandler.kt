@@ -458,6 +458,7 @@ class ActivateAbilityHandler(
             revealedNotedCreatureType = snapshots.revealedNotedCreatureType,
             descriptionOverride = ability.descriptionOverride,
             abilityIdentity = activation.abilityLookup.definitionIdentity,
+            definitionRuleIsExact = activation.abilityLookup is ActivatedAbilityLookup.DirectDefinition && activation.textReplacement == null,
             activatedAbility = ability,
             granterId = activation.staticGranterId,
             objectReferences = activation.activationReferences.authorize(activationCostEvents),
@@ -604,6 +605,7 @@ class ActivateAbilityHandler(
                 tappedEntitySnapshots = repeatTapSnapshots,
                 descriptionOverride = ability.descriptionOverride,
                 abilityIdentity = activation.abilityLookup.definitionIdentity,
+                definitionRuleIsExact = activation.abilityLookup is ActivatedAbilityLookup.DirectDefinition && activation.textReplacement == null,
                 activatedAbility = ability,
                 granterId = activation.staticGranterId
             )

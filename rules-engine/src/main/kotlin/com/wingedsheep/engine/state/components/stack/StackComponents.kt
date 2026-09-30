@@ -243,6 +243,8 @@ data class TriggeredAbilityOnStackComponent(
      * (e.g. spell copies on a fresh entity) that have no card definition behind them.
      */
     val abilityIdentity: com.wingedsheep.sdk.scripting.AbilityIdentity? = null,
+    /** Captured provenance: a printed rule alone is sufficient; false for copies/modified rules. */
+    val definitionRuleIsExact: Boolean = false,
     /** Optional human-readable description from `TriggeredAbility.descriptionOverride`,
      *  used when displaying the ability on the stack instead of the auto-generated effect text. */
     val descriptionOverride: String? = null,
@@ -408,6 +410,8 @@ data class ActivatedAbilityOnStackComponent(
      * no identity.
      */
     val abilityIdentity: com.wingedsheep.sdk.scripting.AbilityIdentity? = null,
+    /** Captured at activation; copying clears it. Old serialized states default to unverified. */
+    val definitionRuleIsExact: Boolean = false,
     /**
      * Concrete ability captured at activation, independent of definition ownership. Stack copies
      * retain this snapshot even if the source changes or the grant disappears before resolution.

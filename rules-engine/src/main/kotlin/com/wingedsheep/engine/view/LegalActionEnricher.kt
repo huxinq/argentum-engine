@@ -2,8 +2,11 @@ package com.wingedsheep.engine.view
 
 import com.wingedsheep.engine.core.ActivateAbility
 import com.wingedsheep.engine.core.CastSpell
+import com.wingedsheep.engine.handlers.PredicateEvaluator
 import com.wingedsheep.engine.legalactions.*
+import com.wingedsheep.engine.legalactions.utils.CastPermissionUtils
 import com.wingedsheep.engine.mechanics.mana.ManaSolver
+import com.wingedsheep.engine.mechanics.mana.CostCalculator
 import com.wingedsheep.engine.mechanics.mana.SpellPaymentContext
 import com.wingedsheep.engine.mechanics.mana.buildAbilityPaymentContext
 import com.wingedsheep.engine.mechanics.mana.isSatisfiedBy
@@ -14,29 +17,68 @@ import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.engine.state.components.player.ManaPoolComponent
 import com.wingedsheep.engine.state.components.player.RestrictedManaEntry
 import com.wingedsheep.sdk.core.ManaCost
+import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.ChoiceSlot
 
 /**
  * Thin mapping layer from engine [LegalAction] to server [LegalActionInfo] DTO.
  *
- * Adds presentation-only data: mana source info for the pre-cast UI.
- * The client protocol (LegalActionInfo) remains unchanged.
+ * Adds mana-source presentation, typed rule addresses and bounded target-cost quotes.
  */
 class LegalActionEnricher(
     private val manaSolver: ManaSolver,
     private val cardRegistry: CardRegistry
 ) {
+    private val ruleResolver = LegalActionRuleResolver(cardRegistry)
+    private val predicates = PredicateEvaluator(cardRegistry)
+    private val costs = CostCalculator(cardRegistry, predicates)
+    private val permissions = CastPermissionUtils(cardRegistry, predicates, predicates.conditions)
+
     fun enrich(actions: List<LegalAction>, state: GameState, playerId: EntityId): List<LegalActionInfo> {
         val manaSourceInfos = buildManaSourceInfos(state, playerId)
         val restrictedMana = state.getEntity(playerId)?.get<ManaPoolComponent>()?.restrictedMana ?: emptyList()
         return actions.map { action ->
+            val quotes = targetManaCosts(action, state)
             toLegalActionInfo(
                 action,
                 manaSourceInfos,
                 eligibleRestrictedMana = if (restrictedMana.isEmpty() || !shouldExposeManaSources(action)) null
                 else buildEligibleRestrictedMana(state, action, restrictedMana)
+            ).copy(
+                rule = ruleResolver.resolve(state, action.action),
+                targetManaCosts = quotes,
+                isAffordable = quotes?.any { it.affordable } ?: action.affordable,
             )
+        }
+    }
+
+    /** Quotes only the complete single-target, ordinary hand-cast path. Null means unquoted. */
+    private fun targetManaCosts(offer: LegalAction, state: GameState): List<TargetManaCost>? {
+        val cast = offer.action as? CastSpell ?: return null
+        // A quote must account for every declared payment/mode. This bounded path accepts only
+        // the ordinary template; future CastSpell fields with non-default values stay unquoted.
+        if (cast != CastSpell(cast.playerId, cast.cardId)) return null
+        if (offer.actionType != "CastSpell" || offer.targetCount != 1 || offer.minTargets != 1 ||
+            !offer.targetRequirements.isNullOrEmpty() ||
+            offer.hasXCost || offer.additionalCostInfo != null || offer.modalEnumeration != null ||
+            offer.hasConvoke || offer.hasDelve || offer.hasHarmonize || offer.hasTapForGeneric ||
+            cast.castFaceDown || (offer.sourceZone != null && offer.sourceZone != "HAND")) return null
+        val card = state.getEntity(cast.cardId)?.get<CardComponent>() ?: return null
+        val definition = cardRegistry.getCard(card.cardDefinitionId) ?: return null
+        if (definition.script.additionalCosts.isNotEmpty() || definition.cardFaces.isNotEmpty()) return null
+        val targets = offer.validTargets ?: return null
+        val payment = spellPaymentContextFor(card, isFromHand = true)
+        // Equal-cost targets share this solve (and its mana-source discovery) within the offer.
+        val affordability = HashMap<ManaCost, Boolean>()
+        return targets.map { target ->
+            val cost = costs.calculateEffectiveCost(
+                state, definition, cast.playerId, listOf(target), Zone.HAND, cast.declaredCostSlot,
+            )
+            val payable = permissions.relaxSpellCostColorsIfAny(state, cast.playerId, cast.cardId, cost)
+            TargetManaCost(target, cost.toString(), affordability.getOrPut(payable) {
+                manaSolver.canPay(state, cast.playerId, payable, spellContext = payment)
+            })
         }
     }
 
