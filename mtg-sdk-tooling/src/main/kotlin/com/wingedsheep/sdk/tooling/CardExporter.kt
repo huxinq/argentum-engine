@@ -25,6 +25,16 @@ import java.nio.file.Path
 object CardExporter {
 
     private val prettyJson = Json { prettyPrint = true }
+    private val expandedJson = Json(CardSerialization.json) { encodeDefaults = true }
+
+    /**
+     * Export the complete serialized definition, including defaults and structured filters.
+     * Unlike the compact authoring format, singleton operations remain typed objects. Core
+     * ManaCost and TypeLine values retain their SDK string codecs. Pair with
+     * [CardLoader.fromJsonPreservingIds] when external references address ability ids.
+     */
+    fun exportToExpandedJson(card: CardDefinition): String =
+        expandedJson.encodeToString(CardDefinition.serializer(), card)
 
     /**
      * Serialize a CardDefinition to pretty-printed compact JSON.

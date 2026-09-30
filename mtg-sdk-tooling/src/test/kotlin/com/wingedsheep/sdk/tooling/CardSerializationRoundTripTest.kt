@@ -52,6 +52,29 @@ class CardSerializationRoundTripTest : DescribeSpec({
 
     val json = CardSerialization.json
 
+    describe("Expanded catalog export") {
+        it("retains defaults, expanded filters and definition-scoped identities") {
+            val definition = card("Expanded Contract") {
+                manaCost = "{1}{G}"
+                typeLine = "Creature — Elf"
+                power = 1
+                toughness = 2
+                triggeredAbility {
+                    trigger = Triggers.self.enters()
+                    target = TargetObject(filter = TargetFilter.InstantOrSorceryInGraveyard.ownedByYou())
+                    effect = Effects.GainLife(2)
+                }
+            }
+            val expanded = CardExporter.exportToExpandedJson(definition)
+            val restored = CardLoader.fromJsonPreservingIds(expanded)
+            restored shouldBe definition
+            restored.script.triggeredAbilities.single().id shouldBe definition.script.triggeredAbilities.single().id
+            expanded shouldContain "controllerPredicate"
+            expanded shouldContain "\"hasNoManaCost\": false"
+            CardExporter.exportToExpandedJson(restored) shouldBe expanded
+        }
+    }
+
     describe("Effect round-trip serialization") {
 
         it("should round-trip player-iteration collection reducers") {
