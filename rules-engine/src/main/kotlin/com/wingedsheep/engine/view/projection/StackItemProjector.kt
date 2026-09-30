@@ -98,6 +98,8 @@ internal class StackItemProjector(
             targets = StackTextRenderer.toClientTargets(targetsComponent),
             imageUri = sourceCard?.imageUri ?: cardDef?.metadata?.imageUri,
             chosenX = activatedAbility.xValue,
+            abilitySourceId = activatedAbility.sourceId.takeIf { identityVisible },
+            abilityDefinitionIsExact = identityVisible && activatedAbility.definitionRuleIsExact,
             abilityIdentity = activatedAbility.abilityIdentity?.takeIf { identityVisible }?.let {
                 ClientAbilityIdentity(it.cardDefinitionId, it.abilityId.value)
             }
@@ -185,6 +187,8 @@ internal class StackItemProjector(
             imageUri = sourceCard?.imageUri ?: cardDef?.metadata?.imageUri,
             sourceZone = sourceZone,
             chosenX = triggeredAbility.xValue,
+            abilitySourceId = triggeredAbility.sourceId.takeIf { identityVisible },
+            abilityDefinitionIsExact = identityVisible && triggeredAbility.definitionRuleIsExact,
             abilityIdentity = triggeredAbility.abilityIdentity?.takeIf { identityVisible }?.let {
                 ClientAbilityIdentity(it.cardDefinitionId, it.abilityId.value)
             },

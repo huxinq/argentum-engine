@@ -197,8 +197,14 @@ data class LegalActionInfo(
     val tapForPowerRequired: Int? = null,
     val tapForPowerCreatures: List<TapForPowerCreatureInfo>? = null,
     val modalEnumeration: ModalLegalEnumerationInfo? = null,
-    val holdPriority: Boolean = false
+    val holdPriority: Boolean = false,
+    val rule: LegalActionRule? = null,
+    val targetManaCosts: List<TargetManaCost>? = null,
 )
+
+/** A mana quote for a single-target cast with no further payment or mode choices. */
+@Serializable
+data class TargetManaCost(val targetId: EntityId, val manaCost: String, val affordable: Boolean)
 
 /**
  * DTO for a choose-N modal spell's cast-time enumeration payload (rules 700.2).

@@ -473,6 +473,12 @@ data class ClientCard(
      */
     val abilityIdentity: ClientAbilityIdentity? = null,
 
+    /** Visible source of a stack ability. Null when its identity is hidden from this viewer. */
+    val abilitySourceId: EntityId? = null,
+
+    /** True only when captured provenance certifies the addressed printed stack rule. */
+    val abilityDefinitionIsExact: Boolean? = null,
+
     /** Copy index for storm/copy effects on the stack (1, 2, 3...) */
     val copyIndex: Int? = null,
 

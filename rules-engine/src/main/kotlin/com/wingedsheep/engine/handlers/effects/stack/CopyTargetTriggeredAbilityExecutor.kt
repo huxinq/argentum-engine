@@ -119,6 +119,7 @@ class CopyTargetTriggeredAbilityExecutor(
             copyController: EntityId
         ): TriggeredAbilityOnStackComponent {
             return source.copy(
+                definitionRuleIsExact = false,
                 controllerId = copyController,
                 stateTriggerAbilityId = null,
                 description = "Copy of ${source.description}"
