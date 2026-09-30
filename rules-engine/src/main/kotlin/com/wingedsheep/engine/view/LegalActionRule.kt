@@ -43,7 +43,7 @@ internal class LegalActionRuleResolver(registry: CardRegistry) {
             else -> return null
         }
         val card = state.getEntity(source)?.get<CardComponent>() ?: return null
-        val replacement = TextChanges.of(state, source)
+        val replacement = if (action is CastSpell) TextChanges.forSpell(state, source) else TextChanges.of(state, source)
         if (action !is ActivateAbility) return LegalActionRule(card.cardDefinitionId, hasTextChanges = replacement != null)
         val resolved = abilities.lookup(state, source, action.abilityId) ?: return null
         val origin = when (resolved) {
