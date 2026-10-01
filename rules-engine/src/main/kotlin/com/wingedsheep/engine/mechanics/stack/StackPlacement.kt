@@ -39,7 +39,7 @@ internal object StackPlacement {
         val (abilityId, stateWithId) = state.newEntity()
 
         var container = ComponentContainer.of(ability)
-        if (targets.isNotEmpty()) {
+        if (targets.isNotEmpty() || targetRequirements.isNotEmpty()) {
             container = container.with(TargetsComponent.capture(state, targets, targetRequirements))
         }
 
@@ -236,7 +236,7 @@ internal object StackPlacement {
         val (abilityId, stateWithId) = state.newEntity()
 
         var container = ComponentContainer.of(ability)
-        if (targets.isNotEmpty()) {
+        if (targets.isNotEmpty() || targetRequirements.isNotEmpty()) {
             container = container.with(TargetsComponent.capture(state, targets, targetRequirements))
         }
         // CR 707.10e — "This ability can't be copied": tag the ability instance on the stack so a

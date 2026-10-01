@@ -1,5 +1,11 @@
 package com.wingedsheep.engine.handlers
 
+import com.wingedsheep.engine.mechanics.stack.StackPlacement
+import com.wingedsheep.engine.state.GameState
+import com.wingedsheep.engine.state.components.stack.ActivatedAbilityOnStackComponent
+import com.wingedsheep.engine.state.components.stack.TriggeredAbilityOnStackComponent
+import com.wingedsheep.engine.state.components.stack.TargetsComponent
+import com.wingedsheep.sdk.scripting.Effects
 import com.wingedsheep.engine.state.components.stack.ChosenTarget
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.filters.unified.TargetFilter
@@ -13,8 +19,8 @@ import io.kotest.matchers.shouldBe
  * Regression guard for the multi-target trigger-slot alignment in
  * [com.wingedsheep.engine.handlers.continuations.EffectAndTriggerContinuationResumer].
  *
- * When a triggered ability has several "up to N" target slots, the resumer drops declined slots
- * and narrows each kept slot's requirement to the targets actually chosen. The flattened
+ * When a triggered ability has several "up to N" target slots, the resumer retains declined slots with count zero
+ * and narrows each chosen slot's requirement to the targets actually chosen. The flattened
  * target↔requirement index walk in [EffectContext.buildNamedTargets] (and the structurally
  * identical `StackResolver.getRequirementForTargetIndex`) advances by `count`, so a partially
  * filled "up to two" slot left at its declared max would absorb the NEXT slot's target into its
@@ -44,7 +50,39 @@ class TriggerTargetSlotAlignmentTest : FunSpec({
         val named = EffectContext.buildNamedTargets(requirements, targets)
 
         named["creatures"] shouldBe creature
+        named["creatures[0]"] shouldBe creature
         named["artifact"] shouldBe artifact
+    }
+
+    test("empty and illegal slots preserve the following named binding") {
+        val requirements = listOf(creatureSlot.withCount(0), artifactSlot.withCount(1))
+        EffectContext.buildNamedTargets(requirements, listOf(artifact))["artifact"] shouldBe artifact
+        val named = EffectContext.buildNamedTargets(listOf(creatureSlot, artifactSlot), listOf(null, creature, artifact))
+        named["creatures[0]"] shouldBe null
+        named["creatures[1]"] shouldBe creature
+        named["artifact"] shouldBe artifact
+    }
+
+    test("stack abilities retain declined target declarations") {
+        val source = EntityId("source")
+        val controller = EntityId("controller")
+        val requirements = listOf(creatureSlot.withCount(0), artifactSlot.withCount(0))
+        val effect = Effects.GainLife(1)
+        val triggered = StackPlacement.putTriggeredAbility(
+            GameState(),
+            TriggeredAbilityOnStackComponent(source, "Source", controller, effect, "Gain life"),
+            targetRequirements = requirements,
+        ).state
+        val activated = StackPlacement.putActivatedAbility(
+            GameState(),
+            ActivatedAbilityOnStackComponent(source, "Source", controller, effect),
+            targetRequirements = requirements,
+        ).state
+        for (state in listOf(triggered, activated)) {
+            val declaration = state.getEntity(state.stack.single())!!.get<TargetsComponent>()!!
+            declaration.targets shouldBe emptyList()
+            declaration.targetRequirements shouldBe requirements
+        }
     }
 
     test("without narrowing, the wide creature slot swallows the artifact (documents the bug)") {
