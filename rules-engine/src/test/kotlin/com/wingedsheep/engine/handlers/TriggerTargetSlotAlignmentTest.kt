@@ -5,7 +5,7 @@ import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.stack.ActivatedAbilityOnStackComponent
 import com.wingedsheep.engine.state.components.stack.TriggeredAbilityOnStackComponent
 import com.wingedsheep.engine.state.components.stack.TargetsComponent
-import com.wingedsheep.sdk.scripting.effects.Effects
+import com.wingedsheep.sdk.dsl.Effects
 import com.wingedsheep.engine.state.components.stack.ChosenTarget
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.filters.unified.TargetFilter
