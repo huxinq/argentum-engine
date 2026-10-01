@@ -183,7 +183,7 @@ class AutoPayQuoteTest : FunSpec({
         d.submit((kicked.action as CastSpell).copy(targets = listOf(ChosenTarget.Permanent(target)))).error.shouldBeNull()
     }
     test("mana-only activation quotes require Treasure to be activated explicitly") {
-        val ability = ActivatedAbility(id = AbilityId("payment"), cost = AbilityCost.Mana(ManaCost.parse("{1}{R}")),
+        val ability = ActivatedAbility(id = AbilityId("payment"), cost = Costs.Mana("{1}{R}"),
             effect = Effects.GainLife(1))
         val card = creature("{1}").copy(name = "Payment Ability", script = CardScript.permanent(ability))
         val d = driver(card); val p = d.player1
