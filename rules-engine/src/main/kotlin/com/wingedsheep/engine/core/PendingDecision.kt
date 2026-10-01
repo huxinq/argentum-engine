@@ -641,6 +641,8 @@ data class SelectManaSourcesDecision(
     val availableSources: List<ManaSourceOption>,
     val requiredCost: String,
     val autoPaySuggestion: List<EntityId>,
+    /** Engine quote, including floating mana. Null when this decision has no quote. */
+    val canAutoPay: Boolean? = null,
     val canDecline: Boolean = false,
     /**
      * For a Ward—Waterbend cost (Avatar: The Last Airbender), the untapped artifacts and

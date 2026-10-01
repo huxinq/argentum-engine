@@ -91,8 +91,9 @@ object ManaPaymentWindow {
                 )
             }
         val remaining = remainingAfterFloating(state, playerId, cost, spellContext)
-        val suggestion = if (remaining.isEmpty()) emptyList()
-            else solver.solve(state, playerId, remaining, excludeSources = excludeSources, spellContext = spellContext)?.sources?.map { it.entityId }.orEmpty()
+        val solution = if (remaining.isEmpty()) null else solver.solve(
+            state, playerId, remaining, excludeSources = excludeSources, spellContext = spellContext)
+        val suggestion = solution?.sources?.map { it.entityId }.orEmpty()
 
         return SelectManaSourcesDecision(
             id = decisionId,
@@ -102,6 +103,7 @@ object ManaPaymentWindow {
             availableSources = options,
             requiredCost = cost.toString(),
             autoPaySuggestion = suggestion.filter { id -> options.any { it.entityId == id } },
+            canAutoPay = remaining.isEmpty() || solution != null,
             canDecline = canDecline
         )
     }
@@ -222,7 +224,7 @@ object ManaPaymentWindow {
     }
 
     /** [cost] minus [playerId]'s floating mana. */
-    private fun remainingAfterFloating(
+    fun remainingAfterFloating(
         state: GameState,
         playerId: EntityId,
         cost: com.wingedsheep.sdk.core.ManaCost,
@@ -293,7 +295,8 @@ object ManaPaymentWindow {
         manaSolver: ManaSolver
     ): ExecutionResult {
         val decision = suspension.question as SelectManaSourcesDecision
-        val refreshed = refresh(state, decision, manaSolver)
+        val locked = suspension.answer as? com.wingedsheep.engine.core.ManaActionPaymentContinuation
+        val refreshed = refresh(state, decision, manaSolver, locked?.paymentContext, locked?.excludedSources.orEmpty())
         return ExecutionResult.propagatePause(
             state.restoreSuspension(suspension.copy(question = refreshed)), events
         )
@@ -311,10 +314,13 @@ object ManaPaymentWindow {
     fun refresh(
         state: GameState,
         decision: SelectManaSourcesDecision,
-        manaSolver: ManaSolver
+        manaSolver: ManaSolver,
+        spellContext: SpellPaymentContext? = null,
+        excludeSources: Set<EntityId> = emptySet(),
     ): SelectManaSourcesDecision {
         val solver = manaSolver
-        val stillAvailable = solver.findAvailableManaSources(state, decision.playerId)
+        val stillAvailable = solver.findAvailableManaSources(state, decision.playerId, spellContext)
+            .filter { it.entityId !in excludeSources }
             .map { source ->
                 ManaSourceOption(
                     entityId = source.entityId,
@@ -332,15 +338,15 @@ object ManaPaymentWindow {
         // the board no longer offers.
         val availableSources = decision.availableSources.filter { it.entityId in stillAvailable }
 
-        val remaining = remainingCost(state, decision)
-        val autoPaySuggestion = when {
-            remaining == null || remaining.isEmpty() -> emptyList()
-            else -> solver.solve(state, decision.playerId, remaining)?.sources?.map { it.entityId }
-                ?: emptyList()
+        val remaining = remainingCost(state, decision, spellContext)
+        val solution = remaining?.takeUnless { it.isEmpty() }?.let {
+            solver.solve(state, decision.playerId, it, excludeSources = excludeSources, spellContext = spellContext)
         }
+        val autoPaySuggestion = solution?.sources?.map { it.entityId }.orEmpty()
 
         return decision.copy(
             availableSources = availableSources,
+            canAutoPay = remaining?.let { it.isEmpty() || solution != null },
             autoPaySuggestion = autoPaySuggestion.filter { id -> availableSources.any { it.entityId == id } }
         )
     }
@@ -368,15 +374,11 @@ object ManaPaymentWindow {
     /** [SelectManaSourcesDecision.requiredCost] minus what the player already has floating. */
     private fun remainingCost(
         state: GameState,
-        decision: SelectManaSourcesDecision
+        decision: SelectManaSourcesDecision,
+        spellContext: SpellPaymentContext? = null,
     ): com.wingedsheep.sdk.core.ManaCost? {
         val cost = runCatching { com.wingedsheep.sdk.core.ManaCost.parse(decision.requiredCost) }
             .getOrNull() ?: return null
-        val pool = state.getEntity(decision.playerId)
-            ?.get<com.wingedsheep.engine.state.components.player.ManaPoolComponent>()
-            ?: return cost
-        return ManaPool(pool.white, pool.blue, pool.black, pool.red, pool.green, pool.colorless).withSpendingColors(state, decision.playerId)
-            .payPartial(cost)
-            .remainingCost
+        return remainingAfterFloating(state, decision.playerId, cost, spellContext)
     }
 }
