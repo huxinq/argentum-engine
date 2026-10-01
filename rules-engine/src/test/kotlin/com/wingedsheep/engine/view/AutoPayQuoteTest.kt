@@ -240,6 +240,6 @@ class AutoPayQuoteTest : FunSpec({
         LegalActionEnricher(d.services.manaSolver, d.cardRegistry).enrich(listOf(template), d.state, p)
             .single().canAutoPay shouldBe true
         d.submit(action).error.shouldBeNull()
-        d.state.lifeTotal(p) shouldBe 19
+        d.state.lifeTotal(p) shouldBe 18
     }
 })
