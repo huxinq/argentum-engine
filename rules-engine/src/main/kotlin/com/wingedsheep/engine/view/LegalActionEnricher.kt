@@ -105,6 +105,7 @@ class LegalActionEnricher(
         fun quote(targets: List<ChosenTarget>): Pair<ManaCost, Boolean>? {
             val cost = castCosts.totalCost(state, cast.copy(targets = targets), definition, card,
                 playForFree = false, castingFromCommandZone = false) ?: return null
+            if (cost.hasX) return null
             val payable = LifePayableMana.apply(state, cardRegistry, cast.playerId,
                 permissions.relaxSpellCostColorsIfAny(state, cast.playerId, cast.cardId, cost))
             return cost to affordability.getOrPut(payable) {
