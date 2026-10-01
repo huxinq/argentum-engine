@@ -323,6 +323,7 @@ internal fun processPreTargetedEffectQueue(
 
     val effectContext = EffectContext(
         sourceId = ctx.sourceId,
+        semanticTargetRequirements = head.targetRequirements,
         objectReferences = ctx.objectReferences,
         controllerId = ctx.controllerId,
         xValue = ctx.xValue,

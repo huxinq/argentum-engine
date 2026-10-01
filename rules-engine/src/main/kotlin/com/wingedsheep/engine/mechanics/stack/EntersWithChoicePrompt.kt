@@ -85,6 +85,8 @@ internal class EntersWithChoicePrompt(
                     prompt = colorChoicePrompt(choice),
                     context = DecisionContext(
                         sourceId = spellId,
+                        semanticRule = com.wingedsheep.engine.core.SemanticRule(replacementEffect = choice),
+                        controllerId = controllerId,
                         sourceName = cardComponent.name,
                         phase = DecisionPhase.RESOLUTION
                     ),

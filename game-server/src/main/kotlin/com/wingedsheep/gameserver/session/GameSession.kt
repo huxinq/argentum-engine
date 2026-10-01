@@ -1066,7 +1066,7 @@ class GameSession(
         // decision to the controller, not the affected player.
         // Enrich with imageUri from card registry since engine doesn't have access to metadata
         val enginePendingDecision = state.pendingDecision?.takeIf { state.actorFor(it.playerId) == playerId }?.let {
-            val enriched = decisionEnricher.enrich(it, state, playerId)
+            val enriched = decisionEnricher.enrich(com.wingedsheep.engine.view.RuleContextProjection.pending(state, it, playerId, visibility), state, playerId)
             // In-process AI simulates against raw engine state; browser clients echo a live ID.
             if (useEngineDecisionIds) enriched else enriched.withClientRoutingId(liveDecisionId(it.id))
         }

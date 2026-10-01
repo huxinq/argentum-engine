@@ -105,6 +105,15 @@ class CardRegistry(private val parent: CardRegistry? = null) {
             ?: throw IllegalArgumentException("Card not found in registry: $name")
     }
 
+    /** Exact registered addresses for this definition, including its printing-specific key. */
+    fun definitionAddresses(name: String): Set<String> = addressesOf(requireCard(name))
+
+    private fun addressesOf(definition: CardDefinition): Set<String> =
+        (cardsByName.filterValues { it == definition }.keys +
+            cardsByNameAndNumber.filterValues { it == definition }.keys +
+            parent?.addressesOf(definition).orEmpty())
+            .filterTo(linkedSetOf()) { getCard(it) == definition }
+
     /**
      * Check if a card is registered.
      */

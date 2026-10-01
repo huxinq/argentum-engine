@@ -29,6 +29,8 @@ data class EffectContext(
     // --- Core ---
     val sourceId: EntityId?,
     val controllerId: EntityId,
+    val semanticRule: com.wingedsheep.engine.core.SemanticRule? = null,
+    val semanticTargetRequirements: List<TargetRequirement> = emptyList(),
     /**
      * The controller of the *overall* effect/ability, stable across per-player iteration.
      * `ForEachEffect(IterationSpace.Players)` rebinds [controllerId] to each iterated player so
@@ -538,6 +540,7 @@ data class EffectContext(
             targetRequirements: List<TargetRequirement> = emptyList()
         ): EffectContext = EffectContext(
             sourceId = ability.sourceId,
+            semanticRule = com.wingedsheep.engine.core.SemanticRule(ability.effect, targetRequirements, ability.interveningIf),
             controllerId = ability.controllerId,
             granterId = ability.granterId,
             abilityIdentity = ability.abilityIdentity,
