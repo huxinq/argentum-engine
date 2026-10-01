@@ -469,6 +469,14 @@ internal class CardProjector(
             // battlefield projection entry to overwrite.
             name = castFace?.name ?: frame.projectedValues?.name ?: cardComponent.name,
             hasRuleTextChanges = TextChanges.of(state, entityId) != null,
+            // The resolved SDK identity is independent of printing coordinates and displayed name.
+            cardDefinitionId = cardDef?.name ?: cardComponent.cardDefinitionId,
+            hasLostAllAbilities = frame.projectedState.hasLostAllAbilities(entityId),
+            grantedTriggeredAbilities = com.wingedsheep.engine.view.RuleContextProjection.grantedTriggeredAbilities(
+                state, entityId, frame.viewingPlayerId, visibility, frame.isSpectator),
+            tokenBlueprint = com.wingedsheep.engine.view.RuleContextProjection.visible(
+                container.get<com.wingedsheep.engine.state.components.identity.TokenBlueprintComponent>()?.blueprint,
+                com.wingedsheep.engine.core.IntrinsicToken.serializer(), state, frame.viewingPlayerId, visibility, frame.isSpectator),
             manaCost = (castFace?.manaCost ?: cardComponent.manaCost).toString(),
             manaValue = (castFace?.manaCost ?: cardComponent.manaCost).cmc,
             typeLine = typeLine.text,

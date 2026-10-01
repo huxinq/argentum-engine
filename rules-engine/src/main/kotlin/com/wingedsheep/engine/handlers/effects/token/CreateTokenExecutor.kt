@@ -252,6 +252,10 @@ class CreateTokenExecutor(
             val components = mutableListOf<Component>(
                 tokenComponent,
                 TokenComponent,
+                com.wingedsheep.engine.state.components.identity.TokenBlueprintComponent(com.wingedsheep.engine.core.IntrinsicToken(
+                    tokenPower, tokenToughness, effectiveColors, effectiveCreatureTypes, effect.keywords,
+                    effect.legendary, effect.artifactToken, effect.enchantmentToken,
+                    effect.staticAbilities, effect.triggeredAbilities, effect.activatedAbilities)),
                 ControllerComponent(tokenControllerId),
                 SummoningSicknessComponent,
                 EnteredThisTurnComponent

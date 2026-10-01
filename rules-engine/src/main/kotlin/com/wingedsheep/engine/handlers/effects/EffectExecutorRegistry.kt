@@ -157,8 +157,12 @@ class EffectExecutorRegistry(
                     "Register one in the matching *Executors module " +
                     "(EffectExecutorCoverageTest guards this at build time)."
             )
-        val instructionContext = context.withCurrentObjectReferences(state)
-        val result = executor.execute(state, effect, instructionContext)
+        val instructionContext = context.copy(semanticRule = context.semanticRule
+            ?: com.wingedsheep.engine.core.SemanticRule(effect, context.semanticTargetRequirements)).withCurrentObjectReferences(state)
+        val rawResult = executor.execute(state, effect, instructionContext)
+        val captured = com.wingedsheep.engine.view.RuleContextProjection.capture(rawResult.state, instructionContext)
+        val result = rawResult.copy(state = captured, outcome = if (rawResult.outcome is com.wingedsheep.engine.core.Outcome.Paused)
+            com.wingedsheep.engine.core.Outcome.Paused(requireNotNull(captured.pendingDecision)) else rawResult.outcome)
         val references = instructionContext.objectReferences.authorize(result.events)
         val finished = result.copy(state = com.wingedsheep.engine.handlers.continuations.propagateObjectReferences(result.state, references))
         val recorded = finished.copy(state = com.wingedsheep.engine.core.ControlHistory.record(finished.state, finished.events))

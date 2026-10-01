@@ -215,6 +215,7 @@ internal class NonPermanentSpellResolver(
     ): EffectContext =
         EffectContext(
             sourceId = spellId,
+            semanticTargetRequirements = targetRequirements,
             objectReferences = com.wingedsheep.engine.handlers.ObjectReferenceEnvironment(
                 captured = true, origin = state.objectRef(spellId), source = state.objectRef(spellId),
                 resolutionKey = "$spellId:${state.objectRef(spellId)?.generation}",

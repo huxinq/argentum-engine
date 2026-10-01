@@ -100,6 +100,11 @@ internal class StackItemProjector(
             chosenX = activatedAbility.xValue,
             abilitySourceId = activatedAbility.sourceId.takeIf { identityVisible },
             abilityDefinitionIsExact = identityVisible && activatedAbility.definitionRuleIsExact,
+            semanticRule = com.wingedsheep.engine.view.RuleContextProjection.visibleRule(
+                com.wingedsheep.engine.core.SemanticRule(activatedAbility.effect, targetsComponent?.targetRequirements ?: emptyList()),
+                state, viewingPlayerId, visibility, isSpectator),
+            ruleFacts = com.wingedsheep.engine.view.RuleContextProjection.visibleFacts(com.wingedsheep.engine.core.RuleFacts(lastKnownSourcePower = activatedAbility.lastKnownSourceSnapshot?.power,
+                targetGroups = com.wingedsheep.engine.view.RuleContextProjection.targetGroups(targetsComponent?.targetRequirements.orEmpty(), targetsComponent?.targets.orEmpty())), state, viewingPlayerId, visibility, isSpectator),
             abilityIdentity = activatedAbility.abilityIdentity?.takeIf { identityVisible }?.let {
                 ClientAbilityIdentity(it.cardDefinitionId, it.abilityId.value)
             }
@@ -189,6 +194,11 @@ internal class StackItemProjector(
             chosenX = triggeredAbility.xValue,
             abilitySourceId = triggeredAbility.sourceId.takeIf { identityVisible },
             abilityDefinitionIsExact = identityVisible && triggeredAbility.definitionRuleIsExact,
+            semanticRule = com.wingedsheep.engine.view.RuleContextProjection.visibleRule(
+                com.wingedsheep.engine.core.SemanticRule(triggeredAbility.effect, targetsComponent?.targetRequirements ?: emptyList(), triggeredAbility.interveningIf),
+                state, viewingPlayerId, visibility, isSpectator),
+            ruleFacts = com.wingedsheep.engine.view.RuleContextProjection.visibleFacts(com.wingedsheep.engine.core.RuleFacts(triggeredAbility.triggerContext?.damageAmount, triggeredAbility.triggerContext?.counterCount,
+                targetGroups = com.wingedsheep.engine.view.RuleContextProjection.targetGroups(targetsComponent?.targetRequirements.orEmpty(), targetsComponent?.targets.orEmpty())), state, viewingPlayerId, visibility, isSpectator),
             abilityIdentity = triggeredAbility.abilityIdentity?.takeIf { identityVisible }?.let {
                 ClientAbilityIdentity(it.cardDefinitionId, it.abilityId.value)
             },

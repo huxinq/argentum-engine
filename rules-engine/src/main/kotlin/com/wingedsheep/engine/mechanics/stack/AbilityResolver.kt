@@ -193,6 +193,7 @@ internal class AbilityResolver(
     ): EffectContext =
         EffectContext(
             sourceId = abilityComponent.sourceId,
+            semanticRule = com.wingedsheep.engine.core.SemanticRule(abilityComponent.effect, activatedReqs),
             controllerId = abilityComponent.controllerId,
             granterId = abilityComponent.granterId,
             abilityIdentity = abilityComponent.abilityIdentity,

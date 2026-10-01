@@ -40,6 +40,15 @@ data class DecisionContext(
     /** Name of the source for display purposes */
     val sourceName: String? = null,
 
+    /** Effective SDK program; projected only to the authorized chooser. */
+    val semanticRule: SemanticRule? = null,
+    val ruleFacts: RuleFacts? = null,
+    val controllerId: EntityId? = null,
+    /** Exact public SDK branch for each displayed option, after legality filtering. */
+    val optionRules: List<SemanticRule> = emptyList(),
+    /** Base-game decision without a card's SDK program. */
+    val gameRule: PublicGameRule? = null,
+
     /** What phase of execution we're in */
     val phase: DecisionPhase = DecisionPhase.RESOLUTION,
 
@@ -99,6 +108,9 @@ enum class DecisionPhase {
     /** Triggered ability handling */
     TRIGGER
 }
+
+@Serializable
+enum class PublicGameRule { HAND_SIZE_DISCARD }
 
 // =============================================================================
 // Specific Decision Types
