@@ -2364,7 +2364,8 @@ class ManaSolver(
         xValue: Int = 0,
         excludeSources: Set<EntityId> = emptySet(),
         spellContext: SpellPaymentContext? = null,
-        xManaRestriction: Set<Color> = emptySet()
+        xManaRestriction: Set<Color> = emptySet(),
+        allowExplicitActivations: Boolean = true
     ): List<Color>? {
         val pipColors = cost.phyrexianSymbols.mapNotNull { it.phyrexianLifeColor }
         if (pipColors.isEmpty()) return emptyList()
@@ -2377,7 +2378,8 @@ class ManaSolver(
                 val reduced = cost.withPhyrexianPaidByLife(choice) ?: continue
                 if (canPay(
                         state, playerId, reduced, xValue, excludeSources, spellContext,
-                        xManaRestriction = xManaRestriction, allowPhyrexianLife = false
+                        xManaRestriction = xManaRestriction, allowPhyrexianLife = false,
+                        allowExplicitActivations = allowExplicitActivations
                     )) return choice
             }
         }
@@ -2400,10 +2402,22 @@ class ManaSolver(
         return out
     }
 
-    /**
-     * Checks if a player can pay a mana cost (from floating mana pool + auto-pay).
-     * Considers floating mana first, then checks if remaining can be paid by tapping sources.
-     */
+    /** Whether automatic payment can cover a cost, without extra mana activations. */
+    fun canAutoPay(
+        state: GameState,
+        playerId: EntityId,
+        cost: ManaCost,
+        xValue: Int = 0,
+        excludeSources: Set<EntityId> = emptySet(),
+        spellContext: SpellPaymentContext? = null,
+        precomputedSources: List<ManaSource>? = null,
+        xManaRestriction: Set<Color> = emptySet()
+    ): Boolean = canPay(
+        state, playerId, cost, xValue, excludeSources, spellContext, precomputedSources,
+        xManaRestriction, allowExplicitActivations = false
+    )
+
+    /** Broad affordability: floating mana, automatic taps, then explicitly activated mana. */
     fun canPay(
         state: GameState,
         playerId: EntityId,
@@ -2417,7 +2431,9 @@ class ManaSolver(
         /** Internal recursion tally for Phyrexian pips tentatively paid with life. */
         phyrexianLifePipsCommitted: Int = 0,
         /** False to ask whether mana alone pays [cost], every Phyrexian pip included. */
-        allowPhyrexianLife: Boolean = true
+        allowPhyrexianLife: Boolean = true,
+        /** Broad affordability may include mana abilities the player must activate explicitly. */
+        allowExplicitActivations: Boolean = true
     ): Boolean {
         // A Phyrexian pip may be paid with 2 life instead of its color. Try each distinct pip
         // choice before the mana-only solver below; recursive calls see a strictly smaller cost.
@@ -2432,7 +2448,8 @@ class ManaSolver(
                 val reduced = cost.withPhyrexianPaidByLife(listOf(lifeColor)) ?: continue
                 if (canPay(
                         state, playerId, reduced, xValue, excludeSources, spellContext,
-                        precomputedSources, xManaRestriction, phyrexianLifePipsCommitted + 1
+                        precomputedSources, xManaRestriction, phyrexianLifePipsCommitted + 1,
+                        allowExplicitActivations = allowExplicitActivations
                     )) return true
             }
         }
@@ -2474,6 +2491,7 @@ class ManaSolver(
 
         // Check if we can tap sources for the remaining cost (including remaining X)
         if (solve(state, playerId, remainingCost, xRemainingToPay, excludeSources, spellContext, precomputedSources, xManaRestriction) != null) return true
+        if (!allowExplicitActivations) return false
 
         // Fallback: check if "extras" — mana abilities the auto-tap solver doesn't pick — can
         // cover the remaining cost. Two flavors:
