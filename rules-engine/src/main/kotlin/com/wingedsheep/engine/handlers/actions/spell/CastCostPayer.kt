@@ -534,7 +534,7 @@ internal class CastCostPayer(
 
         return when (action.paymentStrategy) {
             is PaymentStrategy.AutoPay -> {
-                if (!manaSolver.canAutoPay(state, action.playerId, validationCost, xValue, spellContext = spellCtx, xManaRestriction = xManaRestriction)) {
+                if (!manaSolver.canPay(state, action.playerId, validationCost, xValue, spellContext = spellCtx, xManaRestriction = xManaRestriction)) {
                     "Not enough mana to cast this spell"
                 } else null
             }

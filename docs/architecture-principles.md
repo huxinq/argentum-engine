@@ -1160,7 +1160,7 @@ activated abilities, and pain lands that cost life are tapped last.
 
 `canPay` includes mana the player could produce with explicit activations, such as sacrificing a
 Treasure. `canAutoPay` uses the same pool payment and source solver but excludes those extra
-activations. AutoPay cast validation and bounded fixed-mana hand-cast and mana-only activation `canAutoPay` quotes use this
+activations. Automatic Phyrexian payment and bounded fixed-mana hand-cast and mana-only activation quotes use this
 narrower check; the cast becomes executable after the player chooses to activate the Treasure and
 floats its mana. The broader enumerator and `isAffordable` still include spells that explicit
 activations could fund, preserving priority windows for those choices. Automated consumers use the
