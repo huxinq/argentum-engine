@@ -75,7 +75,10 @@ class RuleContextProjectionTest : FunSpec({
         val d = driver()
         val recipient = d.putCreatureOnBattlefield(d.player1, subject.name)
         val hidden = d.putCardInHand(d.player2, subject.name)
-        val ability = TriggeredAbility(trigger = Triggers.self.enters(), effect = Effects.GainLife(1))
+        val ability = com.wingedsheep.sdk.dsl.card("Grant Rule") {
+            typeLine = "Creature"; power = 1; toughness = 1
+            triggeredAbility { trigger = Triggers.self.enters(); effect = Effects.GainLife(1) }
+        }.script.triggeredAbilities.single()
         val grant = GrantedTriggeredAbility(recipient, ability, Duration.EndOfTurn)
         val state = d.state.copy(grantedTriggeredAbilities = listOf(grant, grant, grant.copy(sourceId = hidden)))
         RuleContextProjection.grantedTriggeredAbilities(state, recipient, d.player1, visibility(d)).size shouldBe 2
