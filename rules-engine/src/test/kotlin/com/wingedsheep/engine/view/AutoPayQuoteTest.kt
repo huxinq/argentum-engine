@@ -202,7 +202,7 @@ class AutoPayQuoteTest : FunSpec({
         d.submit(activation().action).error.shouldBeNull()
     }
 
-    test("sacrifice-or-pay casts remain unquoted until their additional cost is declared") {
+    test("sacrifice-or-pay casts require an explicit cost choice and remain unquoted") {
         val spell = CardDefinition("Choice Payment", ManaCost.parse("{B}"), TypeLine.parse("Sorcery"),
             script = CardScript(spellEffect = Effects.GainLife(1), additionalCosts = listOf(
                 Costs.additional.SacrificeOrPay(GameObjectFilter.Creature, "{3}{B}"))))
@@ -212,11 +212,14 @@ class AutoPayQuoteTest : FunSpec({
             val permanent = d.putCreatureOnBattlefield(p, subject.name)
             val card = d.putCardInHand(p, spell.name)
             d.giveMana(p, Color.BLACK, if (sacrifice) 1 else 5)
-            val offer = cast(d, card)
-            offer.canAutoPay.shouldBeNull()
-            offer.targetManaCosts.shouldBeNull()
+            val templates = offers(d).filter { (it.action as? CastSpell)?.cardId == card }
+            templates.isNotEmpty() shouldBe true
+            templates.forEach { offer ->
+                offer.canAutoPay.shouldBeNull()
+                offer.targetManaCosts.shouldBeNull()
+            }
             val payment = AdditionalCostPayment(sacrificedPermanents = if (sacrifice) listOf(permanent) else emptyList())
-            d.submit((offer.action as CastSpell).copy(additionalCostPayment = payment)).error.shouldBeNull()
+            d.submit(CastSpell(p, card, additionalCostPayment = payment)).error.shouldBeNull()
             (permanent in d.state.getBattlefield()) shouldBe !sacrifice
             d.state.getEntity(p)!!.get<ManaPoolComponent>()!!.total shouldBe 0
         }
