@@ -17,6 +17,7 @@ import com.wingedsheep.engine.legalactions.*
 import com.wingedsheep.engine.legalactions.utils.CastPermissionUtils
 import com.wingedsheep.engine.mechanics.mana.ManaSolver
 import com.wingedsheep.engine.mechanics.mana.CostCalculator
+import com.wingedsheep.engine.mechanics.mana.LifePayableMana
 import com.wingedsheep.engine.mechanics.mana.AlternativePaymentHandler
 import com.wingedsheep.engine.mechanics.mana.SpellPaymentContext
 import com.wingedsheep.engine.mechanics.mana.buildAbilityPaymentContext
@@ -104,7 +105,8 @@ class LegalActionEnricher(
         fun quote(targets: List<ChosenTarget>): Pair<ManaCost, Boolean>? {
             val cost = castCosts.totalCost(state, cast.copy(targets = targets), definition, card,
                 playForFree = false, castingFromCommandZone = false) ?: return null
-            val payable = permissions.relaxSpellCostColorsIfAny(state, cast.playerId, cast.cardId, cost)
+            val payable = LifePayableMana.apply(state, cardRegistry, cast.playerId,
+                permissions.relaxSpellCostColorsIfAny(state, cast.playerId, cast.cardId, cost))
             return cost to affordability.getOrPut(payable) {
                 manaSolver.canAutoPay(state, cast.playerId, payable, spellContext = payment)
             }
@@ -116,7 +118,8 @@ class LegalActionEnricher(
             // Total-cost calculation reads target identities; no action is executed for a quote.
             val chosen = if (target in state.turnOrder) ChosenTarget.Player(target) else ChosenTarget.Permanent(target)
             val (cost, payable) = quote(listOf(chosen)) ?: return null
-            val payableCost = permissions.relaxSpellCostColorsIfAny(state, cast.playerId, cast.cardId, cost)
+            val payableCost = LifePayableMana.apply(state, cardRegistry, cast.playerId,
+                permissions.relaxSpellCostColorsIfAny(state, cast.playerId, cast.cardId, cost))
             val affordable = payable || broaderAffordability.getOrPut(payableCost) {
                 manaSolver.canPay(state, cast.playerId, payableCost, spellContext = payment)
             }

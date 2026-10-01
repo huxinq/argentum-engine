@@ -224,4 +224,22 @@ class AutoPayQuoteTest : FunSpec({
             d.state.getEntity(p)!!.get<ManaPoolComponent>()!!.total shouldBe 0
         }
     }
+    test("life-payable colored kicker uses the execution cost lowering") {
+        val spell = CardDefinition("Life Kicker", ManaCost.parse("{1}"), TypeLine.parse("Instant"),
+            keywordAbilities = listOf(KeywordAbility.kicker("{B}")),
+            script = CardScript(spellEffect = Effects.GainLife(1)))
+        val d = driver(spell); val p = d.player1
+        val permission = creature("{1}").copy(name = "Life Payment Permission",
+            script = CardScript(staticAbilities = listOf(PayLifeForColoredMana(Color.BLACK))))
+        d.registerCard(permission); d.putCreatureOnBattlefield(p, permission.name)
+        val card = d.putCardInHand(p, spell.name)
+        d.replaceState(d.state.updateEntity(p) { it.with(ManaPoolComponent(colorless = 1)) })
+        val normal = d.legalActions(p).first { (it.action as? CastSpell)?.cardId == card }
+        val action = CastSpell(p, card, declaredCostSlot = ChoiceSlot.KICKED)
+        val template = normal.copy(action = action, actionType = "CastWithKicker")
+        LegalActionEnricher(d.services.manaSolver, d.cardRegistry).enrich(listOf(template), d.state, p)
+            .single().canAutoPay shouldBe true
+        d.submit(action).error.shouldBeNull()
+        d.state.lifeTotal(p) shouldBe 19
+    }
 })
