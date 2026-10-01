@@ -1040,6 +1040,18 @@ class GameSession(
         events: List<GameEvent>,
         useEngineDecisionIds: Boolean = false,
     ): ServerMessage? = synchronized(stateLock) {
+        projectSeatObservation(playerId, events, useEngineDecisionIds)?.let(::presentSeatObservation)
+    }
+
+    /** Factual player information in this seat's identity namespace; contains no referee state. */
+    fun createSeatObservation(playerId: EntityId, events: List<GameEvent>): SeatObservation? =
+        projectSeatObservation(playerId, events, useEngineDecisionIds = false)
+
+    private fun projectSeatObservation(
+        playerId: EntityId,
+        events: List<GameEvent>,
+        useEngineDecisionIds: Boolean,
+    ): SeatObservation? = synchronized(stateLock) {
         val state = gameState ?: return null
         val names = if (useEngineDecisionIds) null else seatIdentities.getOrPut(playerId) { SeatIdentities() }
         names?.forgetUntrackable(state, playerId, visibility)
@@ -1115,20 +1127,31 @@ class GameSession(
             PriorityMode.FULL_CONTROL -> "fullControl"
         }
 
-        // Check if we have a previous state for delta computation
-        val previous = lastSentState[playerId]
-        lastSentState[playerId] = stateWithLog
         val version = stateVersions.merge(playerId, 1L) { old, inc -> old + inc }!!
+        SeatObservation(stateWithLog, clientEvents, legalActions, pendingDecision,
+            nextStopPoint, opponentDecisionStatus, stopOverrideInfo, isUndoAvailable(playerId),
+            priorityModeStr, version, liveInteractionEpoch,
+            when {
+                isAwaitingBottomCards(playerId) -> getChooseBottomCardsMessage(playerId)?.let {
+                    SeatMulligan(it.hand, it.cardsToPutOnBottom, 0, true)
+                }
+                state.getEntity(playerId)?.get<MulliganStateComponent>()?.hasKept == false -> getMulliganDecision(playerId).let {
+                    SeatMulligan(it.hand, it.cardsToPutOnBottom, it.mulliganCount, false)
+                }
+                else -> null
+            })
+    }
 
-        val interactionEpoch = liveInteractionEpoch
-        if (previous != null) {
-            // Compute delta and send smaller message
-            val delta = StateDiffCalculator.computeDelta(previous, stateWithLog)
-            return ServerMessage.StateDeltaUpdate(delta, clientEvents, legalActions, pendingDecision, nextStopPoint, opponentDecisionStatus, stopOverrideInfo, isUndoAvailable(playerId), priorityModeStr, version, interactionEpoch)
+    /** Browser transport derived from the exact observation delivered to an in-process seat. */
+    fun presentSeatObservation(observation: SeatObservation): ServerMessage = synchronized(stateLock) {
+        val previous = lastSentState.put(observation.state.viewingPlayerId, observation.state)
+        with(observation) {
+            if (previous == null) ServerMessage.StateUpdate(state, events, legalActions, pendingDecision,
+                nextStopPoint, opponentDecisionStatus, stopOverrides, undoAvailable, priorityMode, stateVersion, interactionEpoch)
+            else ServerMessage.StateDeltaUpdate(StateDiffCalculator.computeDelta(previous, state), events,
+                legalActions, pendingDecision, nextStopPoint, opponentDecisionStatus, stopOverrides,
+                undoAvailable, priorityMode, stateVersion, interactionEpoch)
         }
-
-        // First update — send full state
-        return ServerMessage.StateUpdate(stateWithLog, clientEvents, legalActions, pendingDecision, nextStopPoint, opponentDecisionStatus, stopOverrideInfo, isUndoAvailable(playerId), priorityModeStr, version, interactionEpoch)
     }
 
     /** [value] with every card id in [playerId]'s own names; unchanged for a seat that has none. */
