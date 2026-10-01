@@ -10,17 +10,19 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeSameInstanceAs
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.nullable
 
 class SeatReferencesTest : StringSpec({
     val old = EntityId("e1"); val fresh = EntityId("h1"); val player = EntityId("p1")
     val rename: (String) -> String? = { if (it == old.value) fresh.value else null }
 
     "unchanged typed objects are shared and collections preserve nulls and order" {
-        val facts = RuleFacts(targetGroups = listOf(listOf(old, null, player), listOf(old)))
-        SeatReferences.map(RuleFacts.serializer(), facts) { null } shouldBeSameInstanceAs facts
-        SeatReferences.map(RuleFacts.serializer(), facts, rename) shouldBe facts.copy(
-            targetGroups = listOf(listOf(fresh, null, player), listOf(fresh)))
-        facts.targetGroups.first().first() shouldBe old
+        val serializer = ListSerializer(ListSerializer(EntityId.serializer().nullable))
+        val facts = listOf(listOf(old, null, player), listOf(old))
+        SeatReferences.map(serializer, facts) { null } shouldBeSameInstanceAs facts
+        SeatReferences.map(serializer, facts, rename) shouldBe
+            listOf(listOf(fresh, null, player), listOf(fresh))
+        facts.first().first() shouldBe old
     }
     "polymorphic action references and their serialized string leaves are renamed together" {
         val action: GameAction = CastSpell(player, old, targets = listOf(ChosenTarget.Permanent(old), ChosenTarget.Player(player)))
