@@ -117,19 +117,29 @@ object DecisionValidators {
 
         fun amountOf(edge: DamageEdge): Int = submitted[edge.id]?.amount ?: edge.amount
 
+        return validateDamageBounds(decision, decision.edges.associate { edge -> edge.id to (amountOf(edge)..amountOf(edge)) })
+    }
+
+    /** Optimistic interval constraints for a public combat board. Singleton ranges are exact validation. */
+    fun validateDamageBounds(decision: CombatResolutionDecision, bounds: Map<String, IntRange>): String? {
+        require(bounds.keys == decision.edges.map { it.id }.toSet())
+        for (edge in decision.edges) {
+            val range = bounds.getValue(edge.id)
+            if (range.isEmpty() || range.first < 0 || range.last > edge.maximum) return "Invalid bounds for edge ${edge.id}"
+        }
         // Per-source budget — every edge from a source caps at that source's power (its `maximum`).
         val edgesBySource = decision.edges.groupBy { it.sourceId }
         for ((sourceId, sourceEdges) in edgesBySource) {
-            val total = sourceEdges.sumOf { amountOf(it) }
+            val total = sourceEdges.sumOf { bounds.getValue(it.id).first.toLong() }
             val power = sourceEdges.maxOf { it.maximum }
             if (total > power) return "Source $sourceId: damage total $total exceeds available power $power"
         }
 
         // Aggregate damage reaching each target this step (CR 510.1c cross-source lethal counting).
-        val aggregate = mutableMapOf<EntityId, Int>()
+        val aggregate = mutableMapOf<EntityId, Long>()
         for (edge in decision.edges) {
             if (edge.isTrampleDrain) continue
-            aggregate.merge(edge.targetId, amountOf(edge), Int::plus)
+            aggregate.merge(edge.targetId, bounds.getValue(edge.id).last.toLong(), Long::plus)
         }
 
         // CR 510.1c: the attacking player chooses the damage-assignment order, so there is no fixed
@@ -141,7 +151,7 @@ object DecisionValidators {
         for ((sourceId, sourceEdges) in edgesBySource) {
             val belowLethal = sourceEdges.count { edge ->
                 edge.orderConstrained && !edge.isTrampleDrain &&
-                    amountOf(edge) > 0 && (aggregate[edge.targetId] ?: 0) < edge.lethal
+                    bounds.getValue(edge.id).first > 0 && (aggregate[edge.targetId] ?: 0) < edge.lethal
             }
             if (belowLethal > 1) {
                 return "Source $sourceId: must assign lethal damage to all but one blocker before " +
@@ -150,14 +160,14 @@ object DecisionValidators {
         }
 
         // CR 702.19b trample lethal-first.
-        val damageToBlocker = mutableMapOf<EntityId, Int>()
+        val damageToBlocker = mutableMapOf<EntityId, Long>()
         for (edge in decision.edges) {
             if (edge.direction != DamageEdgeDirection.ATTACKER_TO_BLOCKER) continue
-            damageToBlocker.merge(edge.targetId, amountOf(edge), Int::plus)
+            damageToBlocker.merge(edge.targetId, bounds.getValue(edge.id).last.toLong(), Long::plus)
         }
         for (drain in decision.edges) {
             if (!drain.isTrampleDrain) continue
-            if (amountOf(drain) <= 0) continue
+            if (bounds.getValue(drain.id).first <= 0) continue
             for (blockerEdge in decision.edges) {
                 if (blockerEdge.sourceId != drain.sourceId) continue
                 if (blockerEdge.direction != DamageEdgeDirection.ATTACKER_TO_BLOCKER) continue

@@ -70,63 +70,8 @@ internal class BlockPhaseManager(
         blockingPlayer: EntityId,
         blockers: Map<EntityId, List<EntityId>>
     ): ExecutionResult {
-        // Validate each blocker
-        for ((blockerId, attackerIds) in blockers) {
-            val validation = validateBlocker(state, blockingPlayer, blockerId, attackerIds)
-            if (validation != null) {
-                return ExecutionResult.error(state, validation)
-            }
-        }
-
-        // Check menace requirements
-        val menaceValidation = validateMenaceRequirements(state, blockers)
-        if (menaceValidation != null) {
-            return ExecutionResult.error(state, menaceValidation)
-        }
-
-        // Check "can't be blocked except by N or more creatures" (Troll of Khazad-dûm)
-        val minBlockersValidation = validateMinBlockersRequirements(state, blockers)
-        if (minBlockersValidation != null) {
-            return ExecutionResult.error(state, minBlockersValidation)
-        }
-
-        // Check max-blocker restrictions on attackers (CantBeBlockedByMoreThan)
-        val maxBlockersValidation = validateMaxBlockersRequirements(state, blockers)
-        if (maxBlockersValidation != null) {
-            return ExecutionResult.error(state, maxBlockersValidation)
-        }
-
-        // Check global blocker-count caps (Dueling Grounds — "No more than one creature can
-        // block each combat"). Counts distinct blocking creatures across all players.
-        val blockerCountValidation = validateGlobalBlockerCount(state, blockers.keys)
-        if (blockerCountValidation != null) {
-            return ExecutionResult.error(state, blockerCountValidation)
-        }
-
-        // Check co-blocker requirements (CR 509.1b — "can't block alone" / "can't block unless an
-        // X also blocks"). Depends on the whole proposed blocker group, not the attacker, so it's
-        // validated here rather than per-blocker. Mirrors the co-attacker check in declare-attackers.
-        val coBlockerValidation = validateCoBlockerRequirements(state, state.projectedState, blockers.keys)
-        if (coBlockerValidation != null) {
-            return ExecutionResult.error(state, coBlockerValidation)
-        }
-
-        // Check "must be blocked" requirements (Alluring Scent, etc.)
-        val mustBeBlockedValidation = validateMustBeBlockedRequirements(state, blockingPlayer, blockers)
-        if (mustBeBlockedValidation != null) {
-            return ExecutionResult.error(state, mustBeBlockedValidation)
-        }
-
-        // Check provoke "must block specific attacker" requirements
-        val provokeValidation = validateProvokeRequirements(state, blockingPlayer, blockers)
-        if (provokeValidation != null) {
-            return ExecutionResult.error(state, provokeValidation)
-        }
-
-        // Check projected must-block requirements (Grand Melee)
-        val projectedMustBlockValidation = validateProjectedMustBlockRequirements(state, blockingPlayer, blockers)
-        if (projectedMustBlockValidation != null) {
-            return ExecutionResult.error(state, projectedMustBlockValidation)
+        validateBlockDeclaration(state, blockingPlayer, blockers)?.let {
+            return ExecutionResult.error(state, it)
         }
 
         // Calculate (but don't pay) the block tax. If non-zero, pause for the blocking
@@ -331,6 +276,71 @@ internal class BlockPhaseManager(
         }
         return emptyMap()
     }
+    /** Pure declaration check shared by execution and public choice constraints. */
+    fun validateBlockDeclaration(state: GameState, blockingPlayer: EntityId,
+                                 blockers: Map<EntityId, List<EntityId>>): String? {
+        // Validate each blocker
+        for ((blockerId, attackerIds) in blockers) {
+            val validation = validateBlocker(state, blockingPlayer, blockerId, attackerIds)
+            if (validation != null) {
+                return validation
+            }
+        }
+
+        // Check menace requirements
+        val menaceValidation = validateMenaceRequirements(state, blockers)
+        if (menaceValidation != null) {
+            return menaceValidation
+        }
+
+        // Check "can't be blocked except by N or more creatures" (Troll of Khazad-dûm)
+        val minBlockersValidation = validateMinBlockersRequirements(state, blockers)
+        if (minBlockersValidation != null) {
+            return minBlockersValidation
+        }
+
+        // Check max-blocker restrictions on attackers (CantBeBlockedByMoreThan)
+        val maxBlockersValidation = validateMaxBlockersRequirements(state, blockers)
+        if (maxBlockersValidation != null) {
+            return maxBlockersValidation
+        }
+
+        // Check global blocker-count caps (Dueling Grounds — "No more than one creature can
+        // block each combat"). Counts distinct blocking creatures across all players.
+        val blockerCountValidation = validateGlobalBlockerCount(state, blockers.keys)
+        if (blockerCountValidation != null) {
+            return blockerCountValidation
+        }
+
+        // Check co-blocker requirements (CR 509.1b — "can't block alone" / "can't block unless an
+        // X also blocks"). Depends on the whole proposed blocker group, not the attacker, so it's
+        // validated here rather than per-blocker. Mirrors the co-attacker check in declare-attackers.
+        val coBlockerValidation = validateCoBlockerRequirements(state, state.projectedState, blockers.keys)
+        if (coBlockerValidation != null) {
+            return coBlockerValidation
+        }
+
+        // Check "must be blocked" requirements (Alluring Scent, etc.)
+        val mustBeBlockedValidation = validateMustBeBlockedRequirements(state, blockingPlayer, blockers)
+        if (mustBeBlockedValidation != null) {
+            return mustBeBlockedValidation
+        }
+
+        // Check provoke "must block specific attacker" requirements
+        val provokeValidation = validateProvokeRequirements(state, blockingPlayer, blockers)
+        if (provokeValidation != null) {
+            return provokeValidation
+        }
+
+        // Check projected must-block requirements (Grand Melee)
+        val projectedMustBlockValidation = validateProjectedMustBlockRequirements(state, blockingPlayer, blockers)
+        if (projectedMustBlockValidation != null) {
+            return projectedMustBlockValidation
+        }
+
+        return null
+    }
+
 
     /**
      * Apply the post-tax commitment for a declared block: stamp [BlockingComponent] /
