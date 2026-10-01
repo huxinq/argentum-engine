@@ -105,13 +105,13 @@ class SuspensionTraceTest : ScenarioTestBase() {
      * which postdates this trace and is verified by ControlHistoryTest and scenario tests.
      * Source-choice target references also postdate the trace; their capture and retention
      * have separate regression fixtures.
-     * Public rule annotations also postdate the trace; RuleContextProjectionTest verifies them.
+     * Public API annotations also postdate this trace and have separate consumer fixtures.
      */
-    private fun normalizeRouting(value: JsonElement, root: Boolean = false): JsonElement = when (value) {
+    private fun normalizeRouting(value: JsonElement, root: Boolean = false, decisionContext: Boolean = false): JsonElement = when (value) {
         is JsonObject -> JsonObject(((if (root) value - "controlAtTurnStart" else value) - "targetObjectRefs" - "referencedObjects")
             .filterKeys { key ->
-                key !in setOf("semanticRule", "semanticTargetRequirements", "ruleFacts", "optionRules", "gameRule") &&
-                    !(key == "controllerId" && "phase" in value)
+                key !in setOf("semanticRule", "semanticTargetRequirements", "ruleFacts", "optionRules", "gameRule", "canAutoPay") &&
+                    !(key == "controllerId" && decisionContext)
             }.mapValues { (key, child) ->
             when {
                 root && key == "nextRoutingId" -> JsonPrimitive(0)
@@ -119,7 +119,7 @@ class SuspensionTraceTest : ScenarioTestBase() {
                     val question = normalizeRouting(child).jsonObject
                     JsonObject(question + ("id" to JsonPrimitive("<question-routing>")))
                 }
-                else -> normalizeRouting(child)
+                else -> normalizeRouting(child, decisionContext = key == "context" && "prompt" in value)
             }
         })
         is JsonArray -> JsonArray(value.map { normalizeRouting(it) })
