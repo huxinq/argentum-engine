@@ -1158,6 +1158,14 @@ Basic lands (priority 0-1) → Single-color nonbasics (2) → Dual lands (3)
 This priority system preserves strategic value — creatures that could attack, utility lands with
 activated abilities, and pain lands that cost life are tapped last.
 
+`canPay` includes mana the player could produce with explicit activations, such as sacrificing a
+Treasure. `canAutoPay` uses the same pool payment and source solver but excludes those extra
+activations. Automatic Phyrexian payment and bounded fixed-mana hand-cast and mana-only activation quotes use this
+narrower check; the cast becomes executable after the player chooses to activate the Treasure and
+floats its mana. The broader enumerator and `isAffordable` still include spells that explicit
+activations could fund, preserving priority windows for those choices. Automated consumers use the
+strategy quote to mask direct AutoPay casts and their targets. Null leaves unquoted templates alone.
+
 4. **Consider hand requirements.** The solver analyzes the player's hand to avoid tapping sources
    needed for future casts. If you have a red spell and a blue spell in hand with one Mountain and
    one Island, the solver won't tap the Island to pay for the red spell's generic cost.

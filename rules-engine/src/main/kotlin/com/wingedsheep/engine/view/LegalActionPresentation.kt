@@ -200,11 +200,18 @@ data class LegalActionInfo(
     val holdPriority: Boolean = false,
     val rule: LegalActionRule? = null,
     val targetManaCosts: List<TargetManaCost>? = null,
+    /** Strategy-specific quote for a fixed-mana hand cast or mana-only activation; null when unquoted. */
+    val canAutoPay: Boolean? = null,
 )
 
 /** A mana quote for a single-target cast with no further payment or mode choices. */
 @Serializable
-data class TargetManaCost(val targetId: EntityId, val manaCost: String, val affordable: Boolean)
+data class TargetManaCost(
+    val targetId: EntityId,
+    val manaCost: String,
+    val affordable: Boolean,
+    val canAutoPay: Boolean? = null,
+)
 
 /**
  * DTO for a choose-N modal spell's cast-time enumeration payload (rules 700.2).

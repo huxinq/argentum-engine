@@ -136,7 +136,8 @@ class CastPaymentProcessor(
         val lifePayments = when (val strategy = action.paymentStrategy) {
             is PaymentStrategy.Explicit -> strategy.phyrexianLifePayments
             is PaymentStrategy.AutoPay -> manaSolver.choosePhyrexianLifePayments(
-                state, action.playerId, effectiveCost, xValue, spellContext = spellContext, xManaRestriction = xManaRestriction
+                state, action.playerId, effectiveCost, xValue, spellContext = spellContext,
+                xManaRestriction = xManaRestriction, allowExplicitActivations = false
             ).orEmpty()
             is PaymentStrategy.FromPool -> emptyList()
         }
