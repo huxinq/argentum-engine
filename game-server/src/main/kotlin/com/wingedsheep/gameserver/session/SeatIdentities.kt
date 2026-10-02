@@ -1,6 +1,5 @@
 package com.wingedsheep.gameserver.session
 
-import com.wingedsheep.engine.core.engineSerializersModule
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.ZoneKey
 import com.wingedsheep.engine.state.components.identity.CardComponent
@@ -10,11 +9,6 @@ import com.wingedsheep.gameserver.persistence.dto.PersistentSighting
 import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.model.EntityId
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * The names one browser seat knows cards by.
@@ -75,18 +69,8 @@ internal class SeatIdentities {
     }
 
     /** Every string in [value] that could be an entity id; [noteSeen] keeps only the cards. */
-    fun <T> idsIn(value: T, serializer: KSerializer<T>): Set<EntityId> {
-        val ids = HashSet<EntityId>()
-        fun collect(element: JsonElement) {
-            when (element) {
-                is JsonObject -> element.forEach { (key, child) -> ids += EntityId(key); collect(child) }
-                is JsonArray -> element.forEach(::collect)
-                is JsonPrimitive -> if (element.isString) ids += EntityId(element.content)
-            }
-        }
-        collect(json.encodeToJsonElement(serializer, value))
-        return ids
-    }
+    fun <T> idsIn(value: T, serializer: KSerializer<T>): Set<EntityId> =
+        SeatReferences.strings(serializer, value).mapTo(HashSet(), ::EntityId)
 
     /** Whether any of [ids] (engine ids) is a card the seat knows by another name. */
     fun renamesAny(ids: Collection<EntityId>): Boolean = ids.any { it in nameOf }
@@ -137,13 +121,7 @@ internal class SeatIdentities {
         ?: visibility.isCardIdentityVisibleTo(state, zone, id, seat)
 
     private fun <T> rename(value: T, serializer: KSerializer<T>, name: (String) -> String?): T =
-        json.decodeFromJsonElement(serializer, rename(json.encodeToJsonElement(serializer, value), name))
-
-    private fun rename(element: JsonElement, name: (String) -> String?): JsonElement = when (element) {
-        is JsonObject -> JsonObject(element.entries.associate { (key, value) -> (name(key) ?: key) to rename(value, name) })
-        is JsonArray -> JsonArray(element.map { rename(it, name) })
-        is JsonPrimitive -> if (element.isString) name(element.content)?.let(::JsonPrimitive) ?: element else element
-    }
+        SeatReferences.map(serializer, value, name)
 
     companion object {
         fun fromPersistent(persistent: PersistentSeatNames): SeatIdentities = SeatIdentities().apply {
@@ -158,10 +136,5 @@ internal class SeatIdentities {
 
         private val HIDDEN_ZONES = setOf(Zone.LIBRARY, Zone.HAND, Zone.SIDEBOARD)
 
-        private val json = Json {
-            encodeDefaults = true
-            classDiscriminator = "type"
-            serializersModule = engineSerializersModule
-        }
     }
 }
