@@ -131,7 +131,7 @@ class LegalActionRuleTest : FunSpec({
             scopes.targets, scopes.targetRequirements).state)
         val view = ClientStateTransformer(d.cardRegistry, predicateEvaluator = d.services.predicateEvaluator)
             .transform(d.state, d.player2)
-        view.cards[source]!!.hasTextChanges shouldBe true
+        view.cards[source]!!.hasRuleTextChanges shouldBe true
         view.cards[original]!!.abilityDefinitionIsExact shouldBe false
         view.cards[d.getTopOfStack()!!]!!.abilityDefinitionIsExact shouldBe false
         view.cards[d.getTopOfStack()!!]!!.abilityIdentity shouldBe info.rule!!.abilityIdentity
