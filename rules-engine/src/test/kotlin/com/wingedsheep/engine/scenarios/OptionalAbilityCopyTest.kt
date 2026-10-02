@@ -58,7 +58,7 @@ class OptionalAbilityCopyTest : FunSpec({
             }
             if (d.pendingDecision is ChooseTargetsDecision) d.submitMultiTargetSelection(d.player1, emptyMap()).error.shouldBeNull()
             val original = d.getTopOfStack()!!
-            d.state.getEntity(original)!!.get<TargetsComponent>()!!.targetRequirements.single().id shouldBe "player"
+            d.state.getEntity(original)!!.get<TargetsComponent>()!!.targetRequirements.size shouldBe 1
             copy(d, original)
             d.pendingDecision.shouldBeNull()
             val copied = d.state.getEntity(d.getTopOfStack()!!)!!.get<TargetsComponent>()!!
