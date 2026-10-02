@@ -671,7 +671,8 @@ class WardCounterEffectExecutor(
                 )
             }
 
-            val solution = manaSolver.solve(state, payingPlayerId, manaCost)
+            val remaining = com.wingedsheep.engine.mechanics.mana.ManaPaymentWindow.remainingAfterFloating(state, payingPlayerId, manaCost)
+            val solution = if (remaining.isEmpty()) null else manaSolver.solve(state, payingPlayerId, remaining)
             val autoPaySuggestion = solution?.sources?.map { it.entityId } ?: emptyList()
 
             val waterbendOptions = waterbendPermanents.map {
@@ -696,6 +697,7 @@ class WardCounterEffectExecutor(
                 availableSources = sourceOptions,
                 requiredCost = manaCost.toString(),
                 autoPaySuggestion = autoPaySuggestion,
+                canAutoPay = remaining.isEmpty() || solution != null,
                 canDecline = true,
                 waterbendPermanents = waterbendOptions
             ) }

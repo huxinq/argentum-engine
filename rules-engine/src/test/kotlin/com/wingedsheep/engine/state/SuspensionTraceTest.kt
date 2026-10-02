@@ -103,18 +103,23 @@ class SuspensionTraceTest : ScenarioTestBase() {
     /**
      * Preserve the captured state and payload identities; normalize routing and omit control history,
      * which postdates this trace and is verified by ControlHistoryTest and scenario tests.
-     * Source-choice target references also postdate the trace; ChosenSourceDamageRedirectionTest
-     * independently verifies their capture, retention after departure and serialization.
+     * Source-choice target references also postdate the trace; their capture and retention
+     * have separate regression fixtures.
+     * Public API annotations also postdate this trace and have separate consumer fixtures.
      */
-    private fun normalizeRouting(value: JsonElement, root: Boolean = false): JsonElement = when (value) {
-        is JsonObject -> JsonObject(((if (root) value - "controlAtTurnStart" else value) - "targetObjectRefs" - "referencedObjects").mapValues { (key, child) ->
+    private fun normalizeRouting(value: JsonElement, root: Boolean = false, decisionContext: Boolean = false): JsonElement = when (value) {
+        is JsonObject -> JsonObject(((if (root) value - "controlAtTurnStart" else value) - "targetObjectRefs" - "referencedObjects")
+            .filterKeys { key ->
+                key !in setOf("semanticRule", "semanticTargetRequirements", "ruleFacts", "optionRules", "gameRule", "canAutoPay") &&
+                    !(key == "controllerId" && decisionContext)
+            }.mapValues { (key, child) ->
             when {
                 root && key == "nextRoutingId" -> JsonPrimitive(0)
                 key == "question" && "answer" in value -> {
-                    val question = child.jsonObject
+                    val question = normalizeRouting(child).jsonObject
                     JsonObject(question + ("id" to JsonPrimitive("<question-routing>")))
                 }
-                else -> normalizeRouting(child)
+                else -> normalizeRouting(child, decisionContext = key == "context" && "prompt" in value)
             }
         })
         is JsonArray -> JsonArray(value.map { normalizeRouting(it) })
