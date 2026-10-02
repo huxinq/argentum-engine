@@ -53,6 +53,13 @@ class PublicRuleObservationTest : FunSpec({
         browser.events shouldBe observation.events
         browser.legalActions shouldBe observation.legalActions
         browser.pendingDecision shouldBe observation.pendingDecision
+        val delta = session.presentSeatObservation(observation) as ServerMessage.StateDeltaUpdate
+        delta.delta.addedCards.shouldBeNull()
+        delta.delta.removedCardIds.shouldBeNull()
+        delta.delta.updatedCards.shouldBeNull()
+        delta.delta.updatedZones.shouldBeNull()
+        delta.legalActions shouldBe observation.legalActions
+        delta.pendingDecision shouldBe observation.pendingDecision
     }
 
     test("public SDK rules and a generated token follow seat identities through hiding and restoration") {
