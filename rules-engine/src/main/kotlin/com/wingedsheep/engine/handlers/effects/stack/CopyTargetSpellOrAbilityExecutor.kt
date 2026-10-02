@@ -16,6 +16,7 @@ import com.wingedsheep.engine.state.components.stack.TriggeredAbilityOnStackComp
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.effects.CopyTargetSpellEffect
 import com.wingedsheep.sdk.scripting.effects.CopyTargetSpellOrAbilityEffect
+import com.wingedsheep.sdk.scripting.targets.withCount
 import com.wingedsheep.sdk.scripting.targets.TargetRequirement
 import kotlin.reflect.KClass
 
@@ -134,7 +135,7 @@ class CopyTargetSpellOrAbilityExecutor(
                 // targeted ones).
                 if (container.get<TargetsComponent>()?.targets.isNullOrEmpty()) {
                     val push = cloneAndPush(currentState, abilityEntityId, controllerId,
-                        targetRequirements = targetRequirements)
+                        targetRequirements = targetRequirements.map { it.withCount(0) })
                     if (push.outcome !is Outcome.Done) return push
                     currentState = push.newState
                     allEvents.addAll(push.events)

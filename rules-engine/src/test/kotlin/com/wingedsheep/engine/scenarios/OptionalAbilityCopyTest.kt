@@ -58,7 +58,7 @@ class OptionalAbilityCopyTest : FunSpec({
             }
             if (d.pendingDecision is ChooseTargetsDecision) d.submitMultiTargetSelection(d.player1, emptyMap()).error.shouldBeNull()
             val original = d.getTopOfStack()!!
-            d.state.getEntity(original)!!.get<TargetsComponent>()!!.targetRequirements.single().count shouldBe 0
+            d.state.getEntity(original)!!.get<TargetsComponent>()!!.targetRequirements.single().id shouldBe "player"
             copy(d, original)
             d.pendingDecision.shouldBeNull()
             val copied = d.state.getEntity(d.getTopOfStack()!!)!!.get<TargetsComponent>()!!
@@ -71,16 +71,16 @@ class OptionalAbilityCopyTest : FunSpec({
         test("declined empty slot does not suppress retargeting and selected slot preserves $count chosen targets") {
             val source = card("Mixed Copy Source") {
                 manaCost = "{0}"; typeLine = "Artifact"
-                activatedAbility {
-                    cost = Costs.Mana("{0}")
+                triggeredAbility {
+                    trigger = Triggers.self.enters()
                     target(TargetObject(filter = TargetFilter.Creature, optional = true, id = "empty"))
                     target(TargetPlayer(count = 2, optional = true, id = "players"))
                     effect = Effects.GainLife(1)
                 }
             }
             val d = driver(source)
-            val card = d.putPermanentOnBattlefield(d.player1, source.name)
-            d.submit(ActivateAbility(d.player1, card, source.activatedAbilities.single().id)).error.shouldBeNull()
+            val card = d.putCardInHand(d.player1, source.name)
+            d.submitSuccess(CastSpell(d.player1, card)); d.bothPass().error.shouldBeNull()
             val originalTargets = if (count == 1) listOf(d.player2) else listOf(d.player1, d.player2)
             d.submitMultiTargetSelection(d.player1, mapOf(1 to originalTargets)).error.shouldBeNull()
             val original = d.getTopOfStack()!!
