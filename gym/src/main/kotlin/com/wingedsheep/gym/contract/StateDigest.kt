@@ -1,6 +1,7 @@
 package com.wingedsheep.gym.contract
 
 import java.security.MessageDigest
+import java.util.HexFormat
 
 /**
  * Deterministic hash of a [TrainingObservation]'s stable fields, suitable for
@@ -24,7 +25,7 @@ object StateDigest {
         val sb = StringBuilder(2048)
         encode(sb, obs)
         val bytes = MessageDigest.getInstance("SHA-256").digest(sb.toString().toByteArray())
-        return bytes.joinToString("") { "%02x".format(it) }
+        return HexFormat.of().formatHex(bytes)
     }
 
     private fun encode(sb: StringBuilder, obs: TrainingObservation) {
