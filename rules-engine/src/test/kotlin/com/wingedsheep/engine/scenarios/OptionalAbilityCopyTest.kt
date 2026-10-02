@@ -65,6 +65,38 @@ class OptionalAbilityCopyTest : FunSpec({
             resolve(d)
         }
     }
+    test("interactive retargeting skips the declined declaration before a selected player slot") {
+        val source = card("Optional Retarget Source") {
+            manaCost = "{0}"; typeLine = "Artifact"
+            triggeredAbility {
+                trigger = Triggers.self.enters()
+                target(TargetObject(filter = TargetFilter.Creature, optional = true))
+                target(TargetPlayer(optional = true))
+                effect = Effects.GainLife(1)
+            }
+        }
+        val retargeter = card("Optional Retargeter") {
+            manaCost = "{0}"; typeLine = "Instant"
+            spell { effect = Effects.ChangeTriggeringObjectTargets(spell = target(TargetFilter.SpellOrAbilityOnStack)) }
+        }
+        val d = driver(source)
+        d.registerCard(retargeter)
+        d.submitSuccess(CastSpell(d.player1, d.putCardInHand(d.player1, source.name)))
+        d.bothPass().error.shouldBeNull()
+        d.submitMultiTargetSelection(d.player1, mapOf(1 to listOf(d.player2))).error.shouldBeNull()
+        val original = d.getTopOfStack()!!
+        d.submitSuccess(CastSpell(d.player1, d.putCardInHand(d.player1, retargeter.name),
+            targets = listOf(ChosenTarget.Spell(original))))
+        d.bothPass().error.shouldBeNull()
+        (d.pendingDecision as SelectCardsDecision).options.toSet() shouldBe setOf(d.player1, d.player2)
+        d.submitCardSelection(d.player1, listOf(d.player1)).error.shouldBeNull()
+        val targets = d.state.getEntity(original)!!.get<TargetsComponent>()!!
+        targets.targetRequirements.map { it.count } shouldBe listOf(0, 1)
+        targets.targets shouldBe listOf(ChosenTarget.Player(d.player1))
+        d.bothPass().error.shouldBeNull()
+        d.state.stack shouldBe emptyList()
+        d.getLifeTotal(d.player1) shouldBe 21
+    }
     for (triggered in listOf(false, true)) {
         test("all-declined ${if (triggered) "triggered" else "activated"} copies retain declarations and resolve untargeted effects") {
             val source = card("Declined Copy Source") {
