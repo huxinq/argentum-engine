@@ -24,8 +24,12 @@ class OptionalAbilityCopyTest : FunSpec({
         it.initMirrorMatch(Deck.of("Forest" to 40))
         it.passPriorityUntil(Step.PRECOMBAT_MAIN)
     }
-    fun copy(d: GameTestDriver, original: EntityId) {
-        val spell = d.putCardInHand(d.player1, copier.name)
+    fun copy(d: GameTestDriver, original: EntityId, triggeredOnly: Boolean = false) {
+        val definition = if (triggeredOnly) copier.copy(name = "Triggered Ability Copier", script = copier.script.copy(
+            spellEffect = Effects.CopyTargetTriggeredAbility(
+                (copier.script.spellEffect as com.wingedsheep.sdk.scripting.effects.CopyTargetSpellOrAbilityEffect).target))) else copier
+        d.registerCard(definition)
+        val spell = d.putCardInHand(d.player1, definition.name)
         d.submitSuccess(CastSpell(d.player1, spell, targets = listOf(ChosenTarget.Spell(original))))
         d.bothPass().error.shouldBeNull()
     }
@@ -59,7 +63,7 @@ class OptionalAbilityCopyTest : FunSpec({
             if (d.pendingDecision is ChooseTargetsDecision) d.submitMultiTargetSelection(d.player1, emptyMap()).error.shouldBeNull()
             val original = d.getTopOfStack()!!
             d.state.getEntity(original)!!.get<TargetsComponent>()!!.targetRequirements.size shouldBe 1
-            copy(d, original)
+            copy(d, original, triggeredOnly = triggered)
             d.pendingDecision.shouldBeNull()
             val copied = d.state.getEntity(d.getTopOfStack()!!)!!.get<TargetsComponent>()!!
             copied.targets shouldBe emptyList()
