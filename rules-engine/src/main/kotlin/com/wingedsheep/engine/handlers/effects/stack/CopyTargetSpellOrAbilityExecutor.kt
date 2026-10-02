@@ -223,7 +223,7 @@ class CopyTargetSpellOrAbilityExecutor(
             // CR 707.10: the copy inherits cast-time values and is controlled by the copier. It
             // isn't "activated", so suppress the AbilityActivatedEvent (it would re-fire "whenever
             // you activate an ability" triggers off the copy).
-            val copy = activated.copy(controllerId = controllerId)
+            val copy = activated.copy(controllerId = controllerId, definitionRuleIsExact = false)
             return StackPlacement.putActivatedAbility(
                 state, copy, targets, targetRequirements, emitActivationEvent = false
             )
