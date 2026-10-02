@@ -9,6 +9,9 @@ import com.wingedsheep.sdk.scripting.targets.EffectTarget
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeSameInstanceAs
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.json.*
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.nullable
 
@@ -31,6 +34,23 @@ class SeatReferencesTest : StringSpec({
         SeatReferences.strings(GameAction.serializer(), action).containsAll(listOf(old.value, player.value)) shouldBe true
         val target = EffectTarget.SpecificEntity(old)
         SeatReferences.map(EffectTarget.serializer(), target, rename) shouldBe EffectTarget.SpecificEntity(fresh)
+    }
+    "typed mapping matches the prior JSON key and string-leaf traversal" {
+        val json = Json { encodeDefaults = true; classDiscriminator = "type"; serializersModule = engineSerializersModule }
+        fun legacy(e: JsonElement): JsonElement = when (e) {
+            is JsonObject -> JsonObject(e.entries.associate { (key, value) -> (rename(key) ?: key) to legacy(value) })
+            is JsonArray -> JsonArray(e.map(::legacy))
+            is JsonPrimitive -> if (e.isString) rename(e.content)?.let(::JsonPrimitive) ?: e else e
+        }
+        fun <T> compare(serializer: KSerializer<T>, value: T) {
+            SeatReferences.map(serializer, value, rename) shouldBe
+                json.decodeFromJsonElement(serializer, legacy(json.encodeToJsonElement(serializer, value)))
+        }
+        compare(MapSerializer(EntityId.serializer(), ListSerializer(EntityId.serializer().nullable)),
+            mapOf(old to listOf(old, null, player)))
+        compare(GameAction.serializer(), CastSpell(player, old, targets = listOf(ChosenTarget.Permanent(old))))
+        compare(EffectTarget.serializer(), EffectTarget.SpecificEntity(old))
+        compare(CharacteristicValue.serializer(), CharacteristicValue.Fixed(3))
     }
     "events retain order and SDK compact scalar values need no JSON decoder" {
         val events = listOf<ClientEvent>(ClientEvent.SpellCast(old, "Card", player),
