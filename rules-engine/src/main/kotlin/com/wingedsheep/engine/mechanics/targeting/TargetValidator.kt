@@ -44,6 +44,47 @@ class TargetValidator(
 ) {
     private val amountEvaluator: DynamicAmountEvaluator = predicateEvaluator.amounts
 
+    /** Freeze the validated flat target allocation, retaining empty declaration slots. */
+    fun snapshotChosenRequirements(
+        state: GameState,
+        requirements: List<TargetRequirement>,
+        chosenTargetCount: Int,
+        casterId: EntityId,
+        sourceId: EntityId?,
+        xValue: Int?
+    ): List<TargetRequirement> {
+        var remaining = chosenTargetCount
+        return requirements.map { requirement ->
+            val count = effectiveMaxCount(state, requirement, casterId, sourceId, xValue)
+                .coerceAtMost(remaining)
+            remaining -= count
+            requirement.withCount(count)
+        }
+    }
+
+    private fun effectiveMaxCount(
+        state: GameState,
+        req: TargetRequirement,
+        casterId: EntityId,
+        sourceId: EntityId?,
+        xValue: Int?
+    ): Int {
+        val unboundedFallback = if (req.unlimited) Int.MAX_VALUE else req.count
+        if (req is TargetObject) {
+            val dyn = req.dynamicMaxCount
+            if (dyn == DynamicAmount.XValue) return xValue ?: unboundedFallback
+            if (dyn != null) {
+                return try {
+                    val context = EffectContext(sourceId = sourceId, controllerId = casterId, xValue = xValue)
+                    amountEvaluator.evaluate(state, dyn, context).coerceAtLeast(0)
+                } catch (_: Exception) {
+                    unboundedFallback
+                }
+            }
+        }
+        return unboundedFallback
+    }
+
     /**
      * Validate all targets for a spell/ability against their requirements.
      *
@@ -87,28 +128,8 @@ class TargetValidator(
         // cast time. Grove's Bounty needs both: "any number of target creatures you control"
         // with X counters to hand out, where CR 601.2d still forbids declaring more targets
         // than there are counters. Checking `unlimited` first would drop that cap on the floor.
-        fun effectiveMaxCount(req: TargetRequirement): Int {
-            val unboundedFallback = if (req.unlimited) Int.MAX_VALUE else req.count
-            if (req is TargetObject) {
-                val dyn = req.dynamicMaxCount
-                if (dyn == DynamicAmount.XValue) {
-                    return xValue ?: unboundedFallback
-                }
-                if (dyn != null) {
-                    return try {
-                        val context = EffectContext(
-                            sourceId = sourceId,
-                            controllerId = casterId,
-                            xValue = xValue
-                        )
-                        amountEvaluator.evaluate(state, dyn, context).coerceAtLeast(0)
-                    } catch (_: Exception) {
-                        unboundedFallback
-                    }
-                }
-            }
-            return unboundedFallback
-        }
+        fun effectiveMaxCount(req: TargetRequirement): Int =
+            effectiveMaxCount(state, req, casterId, sourceId, xValue)
         for ((index, requirement) in requirements.withIndex()) {
             // Get targets for this requirement (handle multi-target requirements)
             val targetCount = effectiveMaxCount(requirement)
