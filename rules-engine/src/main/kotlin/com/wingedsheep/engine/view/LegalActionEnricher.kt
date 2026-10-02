@@ -32,6 +32,7 @@ class LegalActionEnricher(
 ) {
     private val ruleResolver = LegalActionRuleResolver(cardRegistry)
     private val predicates = PredicateEvaluator(cardRegistry)
+    private val visibility = Visibility(cardRegistry, conditionEvaluator = predicates.conditions)
     private val costs = CostCalculator(cardRegistry, predicates)
     private val permissions = CastPermissionUtils(cardRegistry, predicates, predicates.conditions)
 
@@ -46,7 +47,8 @@ class LegalActionEnricher(
                 eligibleRestrictedMana = if (restrictedMana.isEmpty() || !shouldExposeManaSources(action)) null
                 else buildEligibleRestrictedMana(state, action, restrictedMana)
             ).copy(
-                rule = ruleResolver.resolve(state, action.action),
+                rule = RuleContextProjection.visible(ruleResolver.resolve(state, action.action),
+                    LegalActionRule.serializer(), state, playerId, visibility),
                 targetManaCosts = quotes,
                 isAffordable = quotes?.any { it.affordable } ?: action.affordable,
             )
