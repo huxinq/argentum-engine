@@ -39,7 +39,13 @@ class SeatIdentityTest : ScenarioTestBase() {
     private fun GameSession.fullUpdate(seat: EntityId, state: GameState, game: TestGame): ServerMessage.StateUpdate {
         injectStateForTesting(state, players(game))
         clearLastSentState(seat)
-        return createStateUpdate(seat, emptyList()) as ServerMessage.StateUpdate
+        val observation = requireNotNull(createSeatObservation(seat, emptyList()))
+        val browser = presentSeatObservation(observation) as ServerMessage.StateUpdate
+        browser.state shouldBe observation.state
+        browser.events shouldBe observation.events
+        browser.legalActions shouldBe observation.legalActions
+        browser.pendingDecision shouldBe observation.pendingDecision
+        return browser
     }
 
     private fun ServerMessage.StateUpdate.battlefieldOf(player: EntityId): List<EntityId> =

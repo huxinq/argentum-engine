@@ -32,6 +32,22 @@ interface ActionProcessor {
 
 ---
 
+### Factual seat observations
+
+`GameSession.createSeatObservation(playerId, events)` projects a complete typed
+`SeatObservation` for an in-process player. It includes the same visible state,
+legal offers, routed pending decision and filtered events as a browser seat,
+using that seat's current card identities. It never exposes referee state.
+`presentSeatObservation` renders this exact projection as a full update or delta;
+`createStateUpdate` combines the two for existing browser callers. Project once
+per update and deliver the result to each consumer to avoid duplicating history.
+
+Opening-hand choices are typed in `SeatMulligan`. Identity retirement, action
+validation, pending-decision routing and complete-declaration legality remain
+owned by the session and rules engine. Remembered historical events retain their
+original handles. Hypothetical sampled worlds are separate from factual seat
+observations; this API introduces no search or belief framework.
+
 ## 2. The Data Model: `GameState`
 
 The `GameState` is the immutable snapshot of the entire universe at a specific tick. It is an *
