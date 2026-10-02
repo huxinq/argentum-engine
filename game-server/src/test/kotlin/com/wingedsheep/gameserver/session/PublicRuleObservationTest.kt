@@ -27,7 +27,7 @@ import kotlinx.serialization.json.*
 import org.springframework.web.socket.WebSocketSession
 
 class PublicRuleObservationTest : FunSpec({
-    val json = Json { encodeDefaults = true; classDiscriminator = "type"; serializersModule = engineSerializersModule }
+    val json = Json { encodeDefaults = true; allowStructuredMapKeys = true; classDiscriminator = "type"; serializersModule = engineSerializersModule }
     fun players(d: GameTestDriver) = listOf(d.player1, d.player2).associateWith { player ->
         val socket = mockk<WebSocketSession>(relaxed = true) { every { id } returns player.value }
         PlayerSession(socket, player, player.value)
@@ -112,7 +112,7 @@ class PublicRuleObservationTest : FunSpec({
             ruleFacts = RuleFacts(targetGroups = listOf(listOf(tracked, secret, null))),
             optionRules = listOf(rule, rule.copy(effect = Effects.DealDamage(1, EffectTarget.SpecificEntity(secret))))),
             listOf(hand), 1, 1)
-        d.replaceState(d.state.suspendForDecision({ question }, HandSizeDiscardContinuation(d.player1), emptyList()).state)
+        d.replaceState(d.state.suspendForDecision({ id -> question.copy(id = id) }, HandSizeDiscardContinuation(d.player1), emptyList()).state)
         val pendingView = observe(session, d)
         val pending = pendingView.pendingDecision as SelectCardsDecision
         (pending.context.semanticRule!!.effect as DealDamageEffect).target shouldBe EffectTarget.SpecificEntity(alias)
