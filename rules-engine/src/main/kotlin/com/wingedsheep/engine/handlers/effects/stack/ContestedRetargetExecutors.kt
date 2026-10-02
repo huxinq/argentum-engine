@@ -221,7 +221,7 @@ object ContestedRetargetLogic {
         if (requirements.isEmpty()) return emptyList()
         val out = ArrayList<TargetRequirement>(targets.size)
         for (requirement in requirements) {
-            val n = if (requirement.unlimited) targets.size else requirement.count.coerceAtLeast(1)
+            val n = if (requirement.count == 0) 0 else if (requirement.unlimited) targets.size else requirement.count
             repeat(n) { if (out.size < targets.size) out.add(requirement) }
             if (out.size >= targets.size) break
         }
