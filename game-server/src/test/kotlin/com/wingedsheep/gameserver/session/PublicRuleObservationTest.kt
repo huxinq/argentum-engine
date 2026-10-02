@@ -47,6 +47,7 @@ class PublicRuleObservationTest : FunSpec({
         observed shouldBe json.decodeFromJsonElement(serializer, legacy(json.encodeToJsonElement(serializer, raw), names))
     }
     fun expectBrowser(session: GameSession, observation: SeatObservation) {
+        session.clearLastSentState(observation.state.viewingPlayerId)
         val browser = session.presentSeatObservation(observation) as ServerMessage.StateUpdate
         browser.state shouldBe observation.state
         browser.events shouldBe observation.events
