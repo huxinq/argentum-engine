@@ -482,7 +482,7 @@ data class EffectContext(
          * Build a named targets map from target requirements and chosen targets.
          *
          * For each requirement with a non-null `id`:
-         * - If count == 1: maps `id` -> chosenTarget
+         * - If count == 1: maps both `id` and `id[0]` to the chosen target
          * - If count > 1: maps `id[0]` -> target0, `id[1]` -> target1, etc.
          *
          * Requirements with `id == null` are skipped (backward compat with ContextTarget).
@@ -507,7 +507,10 @@ data class EffectContext(
                 val id = req.id
                 if (id != null) {
                     if (req.count == 1) {
-                        targets.getOrNull(targetIndex)?.let { result[id] = it }
+                        targets.getOrNull(targetIndex)?.let {
+                            result[id] = it
+                            result["$id[0]"] = it
+                        }
                     } else {
                         for (i in 0 until req.count) {
                             targets.getOrNull(targetIndex + i)?.let { result["$id[$i]"] = it }

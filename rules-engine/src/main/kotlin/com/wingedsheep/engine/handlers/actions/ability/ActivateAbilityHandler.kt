@@ -474,8 +474,12 @@ class ActivateAbilityHandler(
             damageDistribution = action.damageDistribution
         )
 
-        // Apply text-changing effects to the target requirements for resolution-time re-validation
-        val effectiveTargetReqs = activation.targetRequirements
+        // Capture chosen counts using the same allocation and pre-payment state as validation.
+        // The declarations remain present when an optional slot was left empty.
+        val effectiveTargetReqs = targetValidator.snapshotChosenRequirements(
+            stateBeforeActivation, activation.targetRequirements, action.targets.size,
+            action.playerId, action.sourceId, activation.effectiveXValue
+        )
 
         val stackResult = stackResolver.putActivatedAbility(
             state, abilityOnStack, action.targets,

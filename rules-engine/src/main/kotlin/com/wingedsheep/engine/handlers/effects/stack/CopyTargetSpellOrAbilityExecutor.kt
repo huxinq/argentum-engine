@@ -16,6 +16,7 @@ import com.wingedsheep.engine.state.components.stack.TriggeredAbilityOnStackComp
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.effects.CopyTargetSpellEffect
 import com.wingedsheep.sdk.scripting.effects.CopyTargetSpellOrAbilityEffect
+import com.wingedsheep.sdk.scripting.targets.withCount
 import com.wingedsheep.sdk.scripting.targets.TargetRequirement
 import kotlin.reflect.KClass
 
@@ -132,8 +133,9 @@ class CopyTargetSpellOrAbilityExecutor(
 
                 // No targets — clone and push directly (CR: any ability may be copied, not just
                 // targeted ones).
-                if (targetRequirements.isEmpty()) {
-                    val push = cloneAndPush(currentState, abilityEntityId, controllerId)
+                if (container.get<TargetsComponent>()?.targets.isNullOrEmpty()) {
+                    val push = cloneAndPush(currentState, abilityEntityId, controllerId,
+                        targetRequirements = targetRequirements.map { it.withCount(0) })
                     if (push.outcome !is Outcome.Done) return push
                     currentState = push.newState
                     allEvents.addAll(push.events)
@@ -151,7 +153,7 @@ class CopyTargetSpellOrAbilityExecutor(
                 // inheriting the source's targets (which may be illegal, so it's removed on
                 // resolution per CR 608.2b). The board doesn't change between copies, so this holds
                 // for every remaining copy.
-                if (legalTargetsMap.any { (_, targets) -> targets.isEmpty() }) {
+                if (legalTargetsMap.any { (index, targets) -> targets.size < targetRequirements[index].count }) {
                     val inherited = container.get<TargetsComponent>()?.targets ?: emptyList()
                     val push = cloneAndPush(
                         currentState, abilityEntityId, controllerId,
@@ -179,8 +181,10 @@ class CopyTargetSpellOrAbilityExecutor(
                         sourceName = sourceName,
                         effectHint = "Copy of $sourceName's ability"
                     ),
-                    targetRequirements = targetRequirements.mapIndexed { index, req ->
-                        TargetRequirementInfo(index = index, description = req.description)
+                    targetRequirements = targetRequirements.mapIndexedNotNull { index, req ->
+                        if (req.count == 0) null else TargetRequirementInfo(
+                            index = index, description = req.description,
+                            minTargets = req.count, maxTargets = req.count)
                     },
                     legalTargets = legalTargetsMap
                 ) }
@@ -238,6 +242,8 @@ class CopyTargetSpellOrAbilityExecutor(
         ): Map<Int, List<EntityId>> {
             val map = mutableMapOf<Int, List<EntityId>>()
             for ((index, requirement) in targetRequirements.withIndex()) {
+                // A declined declaration retains its position but has no targets to replace.
+                if (requirement.count == 0) continue
                 map[index] = targetFinder.findLegalTargets(state, requirement, controllerId, sourceId)
             }
             return map
