@@ -81,6 +81,10 @@ class CombatManager(
     fun resolvePileRestrictions(state: GameState, continuation: com.wingedsheep.engine.core.BlockerPileRestrictionChoiceContinuation,
                                 response: com.wingedsheep.engine.core.PilesSplitResponse): ExecutionResult =
         blockPhase.resolvePileRestrictions(state, continuation, response)
+    /** Check a complete block declaration without committing it or paying its taxes. */
+    fun validateBlockDeclaration(state: GameState, player: EntityId,
+                                 blockers: Map<EntityId, List<EntityId>>): String? =
+        blockPhase.validateBlockDeclaration(state, player, blockers)
 
     fun canCreatureBlockAnyAttacker(state: GameState, blockerId: EntityId, blockingPlayer: EntityId): Boolean =
         blockPhase.canCreatureBlockAnyAttacker(state, blockerId, blockingPlayer)
