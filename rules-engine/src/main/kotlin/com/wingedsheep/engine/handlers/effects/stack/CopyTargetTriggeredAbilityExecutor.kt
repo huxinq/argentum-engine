@@ -46,65 +46,10 @@ class CopyTargetTriggeredAbilityExecutor(
         val sourceAbility = container.get<TriggeredAbilityOnStackComponent>()
             ?: return EffectResult.error(state, "Target entity is not a triggered ability on stack")
 
-        val targetsComponent = container.get<TargetsComponent>()
-        val targetRequirements = targetsComponent?.targetRequirements ?: emptyList()
-
-        // No targets — clone directly and push
-        if (targetRequirements.isEmpty()) {
-            val copy = cloneAbility(sourceAbility, context.controllerId)
-            return EffectResult.from(StackPlacement.putTriggeredAbility(state, copy))
-        }
-
-        // Targets exist — prompt the copy controller to choose new targets.
-        return promptForCopyTargets(state, context, abilityEntityId, targetRequirements)
-    }
-
-    private fun promptForCopyTargets(
-        state: GameState,
-        context: EffectContext,
-        abilityEntityId: EntityId,
-        targetRequirements: List<com.wingedsheep.sdk.scripting.targets.TargetRequirement>
-    ): EffectResult {
-        val legalTargetsMap = mutableMapOf<Int, List<EntityId>>()
-        for ((index, requirement) in targetRequirements.withIndex()) {
-            val legalTargets = targetFinder.findLegalTargets(
-                state, requirement, context.controllerId, context.sourceId
-            )
-            legalTargetsMap[index] = legalTargets
-        }
-
-        // If no legal targets for any requirement, skip copy (no-op).
-        if (legalTargetsMap.any { (_, targets) -> targets.isEmpty() }) {
-            return EffectResult.success(state)
-        }
-
-        val sourceName = state.getEntity(abilityEntityId)
-            ?.get<TriggeredAbilityOnStackComponent>()?.sourceName ?: "ability"
-
-        val continuation = CopyTriggeredAbilityTargetContinuation(
-            abilityEntityId = abilityEntityId,
-            controllerId = context.controllerId,
-            targetRequirements = targetRequirements
-        )
-
-        val targetReqInfos = targetRequirements.mapIndexed { index, req ->
-            TargetRequirementInfo(index = index, description = req.description)
-        }
-
-        val decision = { decisionId: String -> ChooseTargetsDecision(
-            id = decisionId,
-            playerId = context.controllerId,
-            prompt = "Choose new targets for copy of $sourceName's ability",
-            context = DecisionContext(
-                phase = DecisionPhase.CASTING,
-                sourceName = sourceName,
-                effectHint = "Copy of triggered ability"
-            ),
-            targetRequirements = targetReqInfos,
-            legalTargets = legalTargetsMap
-        ) }
-
-        return EffectResult.from(state.suspendForDecision(decision, continuation, emptyList()))
+        // Both ability-copy effects use the same selected-cardinality and slot-preserving path.
+        return EffectResult.from(CopyTargetSpellOrAbilityExecutor.driveAbilityCopies(
+            state, targetFinder, abilityEntityId, context.controllerId, context.sourceId,
+            remainingCopies = 1, totalCopies = 1, priorEvents = emptyList()))
     }
 
     companion object {

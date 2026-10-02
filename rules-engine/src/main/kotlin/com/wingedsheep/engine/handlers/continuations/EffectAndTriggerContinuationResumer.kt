@@ -110,26 +110,16 @@ class EffectAndTriggerContinuationResumer(
             )
         }
 
-        // Build the chosen-targets list in requirement-slot order, keeping it PARALLEL to the
-        // requirements that actually received a target. A declined "up to one" slot (empty list)
-        // drops out of BOTH lists together, so a later target never shifts forward into an earlier
-        // requirement's position. Without this, exiling only a creature with Don & Leo, Problem
-        // Solvers (declining the "up to one artifact" slot) validated the creature against the
-        // artifact requirement at resolution and fizzled with "all targets invalid" (CR 608.2b).
-        //
-        // Each kept requirement is also narrowed (`withCount`) to the number of targets actually
-        // chosen for its slot: the downstream index walks (StackResolver.getRequirementForTargetIndex,
-        // EffectContext.buildNamedTargets) advance by `count`, so a partially filled "up to two"
-        // slot left at its declared max would absorb the next slot's target into its own range and
-        // validate it against the wrong filter.
-        val orderedSlots = response.selectedTargets.entries.sortedBy { it.key }
+        // Keep every declared slot (including declined slots), with its actual chosen count.
+        // Downstream flat-target walks advance by count, while named references retain their
+        // original scope. Dropping a zero-count slot loses that scope; retaining a declared
+        // maximum instead of the chosen count would consume a later slot's target.
         val selectedTargets = mutableListOf<ChosenTarget>()
         val alignedRequirements = mutableListOf<TargetRequirement>()
-        for ((slotIndex, targetIds) in orderedSlots) {
-            if (targetIds.isEmpty()) continue
+        for ((slotIndex, requirement) in continuation.targetRequirements.withIndex()) {
+            val targetIds = response.selectedTargets[slotIndex].orEmpty()
             targetIds.forEach { entityId -> selectedTargets.add(entityIdToChosenTarget(state, entityId)) }
-            continuation.targetRequirements.getOrNull(slotIndex)
-                ?.let { alignedRequirements.add(it.withCount(targetIds.size)) }
+            alignedRequirements.add(requirement.withCount(targetIds.size))
         }
 
         // Zero-target resolution path. Two cases:
