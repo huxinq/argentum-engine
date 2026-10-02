@@ -3,10 +3,22 @@ package com.wingedsheep.engine.view
 import com.wingedsheep.engine.core.ActivateAbility
 import com.wingedsheep.engine.core.CastSpell
 import com.wingedsheep.engine.handlers.PredicateEvaluator
+import com.wingedsheep.engine.handlers.actions.ability.ActivatedAbilityResolver
+import com.wingedsheep.engine.handlers.actions.ability.ActivationCostTotaller
+import com.wingedsheep.engine.handlers.actions.ability.extractManaCost
+import com.wingedsheep.engine.state.components.identity.TextChanges
+import com.wingedsheep.sdk.scripting.AbilityCost
+import com.wingedsheep.sdk.scripting.costs.CostAtom
+import com.wingedsheep.engine.handlers.actions.spell.CastCostTotaller
+import com.wingedsheep.engine.handlers.actions.spell.CastZoneResolver
+import com.wingedsheep.engine.handlers.actions.spell.declaredOptionalCosts
+import com.wingedsheep.engine.legality.LegalityKernel
 import com.wingedsheep.engine.legalactions.*
 import com.wingedsheep.engine.legalactions.utils.CastPermissionUtils
 import com.wingedsheep.engine.mechanics.mana.ManaSolver
 import com.wingedsheep.engine.mechanics.mana.CostCalculator
+import com.wingedsheep.engine.mechanics.mana.LifePayableMana
+import com.wingedsheep.engine.mechanics.mana.AlternativePaymentHandler
 import com.wingedsheep.engine.mechanics.mana.SpellPaymentContext
 import com.wingedsheep.engine.mechanics.mana.buildAbilityPaymentContext
 import com.wingedsheep.engine.mechanics.mana.isSatisfiedBy
@@ -16,10 +28,11 @@ import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.engine.state.components.player.ManaPoolComponent
 import com.wingedsheep.engine.state.components.player.RestrictedManaEntry
+import com.wingedsheep.engine.state.components.stack.ChosenTarget
 import com.wingedsheep.sdk.core.ManaCost
-import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.ChoiceSlot
+import com.wingedsheep.sdk.scripting.effects.ModalEffect
 
 /**
  * Thin mapping layer from engine [LegalAction] to server [LegalActionInfo] DTO.
@@ -34,12 +47,17 @@ class LegalActionEnricher(
     private val predicates = PredicateEvaluator(cardRegistry)
     private val costs = CostCalculator(cardRegistry, predicates)
     private val permissions = CastPermissionUtils(cardRegistry, predicates, predicates.conditions)
+    private val castCosts = CastCostTotaller(cardRegistry, costs, AlternativePaymentHandler(),
+        CastZoneResolver(cardRegistry, predicates.conditions, LegalityKernel(cardRegistry, predicates.conditions)), predicates)
+
+    private val activatedAbilities = ActivatedAbilityResolver(cardRegistry, permissions)
+    private val activationCosts = ActivationCostTotaller(permissions, predicates.conditions)
 
     fun enrich(actions: List<LegalAction>, state: GameState, playerId: EntityId): List<LegalActionInfo> {
         val manaSourceInfos = buildManaSourceInfos(state, playerId)
         val restrictedMana = state.getEntity(playerId)?.get<ManaPoolComponent>()?.restrictedMana ?: emptyList()
         return actions.map { action ->
-            val quotes = targetManaCosts(action, state)
+            val quote = autoPayQuote(action, state)
             toLegalActionInfo(
                 action,
                 manaSourceInfos,
@@ -47,19 +65,25 @@ class LegalActionEnricher(
                 else buildEligibleRestrictedMana(state, action, restrictedMana)
             ).copy(
                 rule = ruleResolver.resolve(state, action.action),
-                targetManaCosts = quotes,
-                isAffordable = quotes?.any { it.affordable } ?: action.affordable,
+                targetManaCosts = quote?.targets,
+                isAffordable = quote?.targets?.any { it.affordable } ?: action.affordable,
+                canAutoPay = quote?.canAutoPay,
             )
         }
     }
 
-    /** Quotes only the complete single-target, ordinary hand-cast path. Null means unquoted. */
-    private fun targetManaCosts(offer: LegalAction, state: GameState): List<TargetManaCost>? {
+    private data class AutoPayQuote(val canAutoPay: Boolean, val targets: List<TargetManaCost>? = null)
+
+    /** Quotes hand casts with fixed mana, declared mana-only kicker/mode, and at most one target. */
+    private fun autoPayQuote(offer: LegalAction, state: GameState): AutoPayQuote? {
+        val activation = offer.action as? ActivateAbility
+        if (activation != null) return activationAutoPayQuote(offer, state, activation)
         val cast = offer.action as? CastSpell ?: return null
         // A quote must account for every declared payment/mode. This bounded path accepts only
         // the ordinary template; future CastSpell fields with non-default values stay unquoted.
-        if (cast != CastSpell(cast.playerId, cast.cardId)) return null
-        if (offer.actionType != "CastSpell" || offer.targetCount != 1 || offer.minTargets != 1 ||
+        if (cast.copy(targets = emptyList(), declaredCostSlot = null, chosenModes = emptyList(),
+                modeTargetsOrdered = emptyList()) != CastSpell(cast.playerId, cast.cardId)) return null
+        if (offer.actionType !in setOf("CastSpell", "CastWithKicker", "CastSpellMode") ||
             !offer.targetRequirements.isNullOrEmpty() ||
             offer.hasXCost || offer.additionalCostInfo != null || offer.modalEnumeration != null ||
             offer.hasConvoke || offer.hasDelve || offer.hasHarmonize || offer.hasTapForGeneric ||
@@ -67,19 +91,57 @@ class LegalActionEnricher(
         val card = state.getEntity(cast.cardId)?.get<CardComponent>() ?: return null
         val definition = cardRegistry.getCard(card.cardDefinitionId) ?: return null
         if (definition.script.additionalCosts.isNotEmpty() || definition.cardFaces.isNotEmpty()) return null
-        val targets = offer.validTargets ?: return null
-        val payment = spellPaymentContextFor(card, isFromHand = true)
+        val optional = declaredOptionalCosts(cast, definition)
+        if (cast.declaredCostSlot != null && (optional.isEmpty() || optional.any { it.additionalCost != null || it.multi })) return null
+        if (cast.chosenModes.isNotEmpty()) {
+            val modal = definition.script.spellEffect as? ModalEffect ?: return null
+            val mode = cast.chosenModes.singleOrNull()?.let { modal.modes.getOrNull(it) } ?: return null
+            if (!mode.additionalCosts.isNullOrEmpty()) return null
+        }
+        val payment = spellPaymentContextFor(card, isFromHand = true,
+            isKicked = cast.declaredCostSlot == ChoiceSlot.KICKED)
         // Equal-cost targets share this solve (and its mana-source discovery) within the offer.
         val affordability = HashMap<ManaCost, Boolean>()
-        return targets.map { target ->
-            val cost = costs.calculateEffectiveCost(
-                state, definition, cast.playerId, listOf(target), Zone.HAND, cast.declaredCostSlot,
-            )
-            val payable = permissions.relaxSpellCostColorsIfAny(state, cast.playerId, cast.cardId, cost)
-            TargetManaCost(target, cost.toString(), affordability.getOrPut(payable) {
-                manaSolver.canPay(state, cast.playerId, payable, spellContext = payment)
-            })
+        fun quote(targets: List<ChosenTarget>): Pair<ManaCost, Boolean>? {
+            val cost = castCosts.totalCost(state, cast.copy(targets = targets), definition, card,
+                playForFree = false, castingFromCommandZone = false) ?: return null
+            if (cost.hasX) return null
+            val payable = LifePayableMana.apply(state, cardRegistry, cast.playerId,
+                permissions.relaxSpellCostColorsIfAny(state, cast.playerId, cast.cardId, cost))
+            return cost to affordability.getOrPut(payable) {
+                manaSolver.canAutoPay(state, cast.playerId, payable, spellContext = payment)
+            }
         }
+        if (!offer.requiresTargets && offer.validTargets == null) return quote(cast.targets)?.let { AutoPayQuote(it.second) }
+        if (offer.targetCount != 1 || offer.minTargets != 1) return null
+        val broaderAffordability = HashMap<ManaCost, Boolean>()
+        val targets = offer.validTargets?.map { target ->
+            // Total-cost calculation reads target identities; no action is executed for a quote.
+            val chosen = if (target in state.turnOrder) ChosenTarget.Player(target) else ChosenTarget.Permanent(target)
+            val (cost, payable) = quote(listOf(chosen)) ?: return null
+            val payableCost = LifePayableMana.apply(state, cardRegistry, cast.playerId,
+                permissions.relaxSpellCostColorsIfAny(state, cast.playerId, cast.cardId, cost))
+            val affordable = payable || broaderAffordability.getOrPut(payableCost) {
+                manaSolver.canPay(state, cast.playerId, payableCost, spellContext = payment)
+            }
+            TargetManaCost(target, cost.toString(), affordable, canAutoPay = payable)
+        } ?: return null
+        return AutoPayQuote(targets.any { it.canAutoPay == true }, targets)
+    }
+
+    /** Fixed mana-only activations use the same total and spending context as execution. */
+    private fun activationAutoPayQuote(offer: LegalAction, state: GameState, action: ActivateAbility): AutoPayQuote? {
+        if (action != ActivateAbility(action.playerId, action.sourceId, action.abilityId) ||
+            offer.requiresTargets || offer.hasXCost || offer.hasConvoke || offer.hasTapForGeneric) return null
+        val card = state.getEntity(action.sourceId)?.get<CardComponent>() ?: return null
+        val ability = activatedAbilities.lookup(state, action.sourceId, action.abilityId)?.ability ?: return null
+        if (ability.hasConvoke || ability.hasWaterbend) return null
+        val cost = activationCosts.total(state, action, ability, TextChanges.of(state, action.sourceId))
+        if (cost !is AbilityCost.Atom || cost.atom !is CostAtom.Mana) return null
+        val mana = cost.extractManaCost() ?: return null
+        if (mana.hasX) return null
+        val payment = buildAbilityPaymentContext(card, state.projectedState, action.sourceId, ability)
+        return AutoPayQuote(manaSolver.canAutoPay(state, action.playerId, mana, spellContext = payment))
     }
 
     /**
