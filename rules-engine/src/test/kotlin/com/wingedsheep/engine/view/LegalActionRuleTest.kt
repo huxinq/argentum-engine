@@ -1,6 +1,13 @@
 package com.wingedsheep.engine.view
 
 import com.wingedsheep.engine.core.*
+import com.wingedsheep.engine.event.GrantedActivatedAbility
+import com.wingedsheep.engine.event.GrantedStaticAbility
+import com.wingedsheep.engine.handlers.effects.stack.CopyTargetSpellOrAbilityExecutor
+import com.wingedsheep.engine.handlers.effects.stack.CopyTargetTriggeredAbilityExecutor
+import com.wingedsheep.engine.mechanics.stack.StackPlacement
+import com.wingedsheep.engine.state.components.identity.*
+import com.wingedsheep.engine.state.components.stack.*
 import com.wingedsheep.engine.mechanics.mana.CostCalculator
 import com.wingedsheep.engine.mechanics.mana.ManaSolver
 import com.wingedsheep.engine.state.components.player.ManaPoolComponent
@@ -11,6 +18,7 @@ import com.wingedsheep.sdk.core.*
 import com.wingedsheep.sdk.dsl.Effects
 import com.wingedsheep.sdk.model.*
 import com.wingedsheep.sdk.scripting.*
+import com.wingedsheep.sdk.scripting.filters.unified.GroupFilter
 import com.wingedsheep.sdk.scripting.filters.unified.TargetFilter
 import com.wingedsheep.sdk.scripting.targets.TargetObject
 import io.kotest.core.spec.style.FunSpec
@@ -95,4 +103,86 @@ class LegalActionRuleTest : FunSpec({
             }
         }
     }
+    test("text replacement exposes the effective filter and a copied stack rule stays inexact") {
+        val ability = ActivatedAbility(id = AbilityId("color"), cost = AbilityCost.Free,
+            effect = Effects.GainLife(1), targetRequirements = listOf(
+                TargetObject(filter = TargetFilter.Creature.withColor(Color.RED))))
+        val card = subject.copy(name = "Changed Rule", script = CardScript.permanent(ability))
+        val red = CardDefinition.creature("Red Witness", ManaCost.parse("{R}"), emptySet(), 1, 1)
+        val blue = CardDefinition.creature("Blue Witness", ManaCost.parse("{U}"), emptySet(), 1, 1)
+        val d = driver(card, red, blue)
+        val source = d.putCreatureOnBattlefield(d.player1, card.name)
+        val redId = d.putCreatureOnBattlefield(d.player2, red.name)
+        val blueId = d.putCreatureOnBattlefield(d.player2, blue.name)
+        d.replaceState(d.state.updateEntity(source) { it.with(TextReplacementComponent(listOf(
+            TextReplacement("Red", "Blue", TextReplacementCategory.COLOR_WORD)))) })
+        val info = enrich(d).enrich(d.legalActions(d.player1), d.state, d.player1)
+            .single { (it.action as? ActivateAbility)?.sourceId == source }
+        info.rule!!.origin shouldBe AbilityOrigin.DEFINITION
+        info.rule!!.hasTextChanges shouldBe true
+        (info.rule!!.effectiveAbility!!.targetRequirements.single() as TargetObject).filter shouldBe
+            TargetFilter.Creature.withColor(Color.BLUE)
+        info.validTargets!!.contains(blueId) shouldBe true
+        info.validTargets!!.contains(redId) shouldBe false
+        d.submitSuccess((info.action as ActivateAbility).copy(targets = listOf(ChosenTarget.Permanent(blueId))))
+        val original = d.getTopOfStack()!!
+        val scopes = d.state.getEntity(original)!!.get<TargetsComponent>()!!
+        d.replaceState(CopyTargetSpellOrAbilityExecutor.cloneAndPush(d.state, original, d.player1,
+            scopes.targets, scopes.targetRequirements).state)
+        val view = ClientStateTransformer(d.cardRegistry, predicateEvaluator = d.services.predicateEvaluator)
+            .transform(d.state, d.player2)
+        view.cards[source]!!.hasTextChanges shouldBe true
+        view.cards[original]!!.abilityDefinitionIsExact shouldBe false
+        view.cards[d.getTopOfStack()!!]!!.abilityDefinitionIsExact shouldBe false
+        view.cards[d.getTopOfStack()!!]!!.abilityIdentity shouldBe info.rule!!.abilityIdentity
+    }
+
+    for (static in listOf(false, true)) {
+        test("${if (static) "static" else "runtime"} grants expose executable rules with honest provenance") {
+            val d = driver()
+            val recipient = d.putCreatureOnBattlefield(d.player1, subject.name)
+            val granter = d.putCreatureOnBattlefield(d.player1, subject.name)
+            val ability = ActivatedAbility(id = AbilityId("granted"), cost = AbilityCost.Free, effect = Effects.GainLife(2))
+            d.replaceState(if (static) d.state.copy(grantedStaticAbilities = listOf(GrantedStaticAbility(
+                granter, GrantActivatedAbility(ability, GroupFilter(GameObjectFilter.Creature.youControl())), Duration.Permanent)))
+                else d.state.copy(grantedActivatedAbilities = listOf(GrantedActivatedAbility(recipient, ability, Duration.Permanent))))
+            val info = enrich(d).enrich(d.legalActions(d.player1), d.state, d.player1).single {
+                (it.action as? ActivateAbility)?.let { action -> action.sourceId == recipient && action.abilityId == ability.id } == true }
+            info.rule!!.origin shouldBe if (static) AbilityOrigin.STATIC_GRANTED else AbilityOrigin.RUNTIME_GRANTED
+            info.rule!!.abilityIdentity.shouldBeNull()
+            info.rule!!.effectiveAbility shouldBe ability
+            info.rule!!.granterId shouldBe if (static) granter else null
+            d.submitSuccess(info.action)
+            for (viewer in listOf(d.player1, d.player2)) {
+                val stack = ClientStateTransformer(d.cardRegistry, predicateEvaluator = d.services.predicateEvaluator)
+                    .transform(d.state, viewer).cards[d.getTopOfStack()!!]!!
+                stack.abilityDefinitionIsExact shouldBe false
+                stack.abilityIdentity.shouldBeNull()
+                stack.abilitySourceId shouldBe recipient
+            }
+            d.bothPass().error.shouldBeNull()
+            d.getLifeTotal(d.player1) shouldBe 22
+        }
+    }
+
+    test("copied printed triggers retain identity but do not claim an exact definition rule") {
+        val d = driver()
+        val source = d.putCreatureOnBattlefield(d.player1, subject.name)
+        val identity = AbilityIdentity(subject.name, AbilityId("trigger"))
+        val component = TriggeredAbilityOnStackComponent(source, subject.name, d.player1, Effects.GainLife(1),
+            "Printed trigger", abilityIdentity = identity, definitionRuleIsExact = true)
+        d.replaceState(StackPlacement.putTriggeredAbility(d.state, component).state)
+        val original = d.getTopOfStack()!!
+        val copied = CopyTargetTriggeredAbilityExecutor.cloneAbility(component, d.player1)
+        d.replaceState(StackPlacement.putTriggeredAbility(d.state, copied).state)
+        for (viewer in listOf(d.player1, d.player2)) {
+            val view = ClientStateTransformer(d.cardRegistry, predicateEvaluator = d.services.predicateEvaluator).transform(d.state, viewer)
+            view.cards[original]!!.abilityDefinitionIsExact shouldBe true
+            view.cards[d.getTopOfStack()!!]!!.abilityDefinitionIsExact shouldBe false
+            view.cards[d.getTopOfStack()!!]!!.abilityIdentity shouldBe view.cards[original]!!.abilityIdentity
+        }
+        d.bothPass(); d.bothPass()
+        d.getLifeTotal(d.player1) shouldBe 22
+    }
+
 })
