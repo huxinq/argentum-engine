@@ -68,6 +68,9 @@ internal class PlayerProjector(
             graveyardSize = state.getGraveyard(playerId).size,
             exileSize = state.getExile(playerId).size,
             landsPlayedThisTurn = landsPlayed,
+            attackedThisTurn = container?.has<com.wingedsheep.engine.state.components.combat.PlayerAttackedThisTurnComponent>() == true,
+            cardsDrawnThisTurn = container?.get<com.wingedsheep.engine.state.components.player.CardsDrawnThisTurnComponent>()?.count ?: 0,
+            creaturesDiedThisTurn = container?.get<com.wingedsheep.engine.state.components.player.CreaturesDiedThisTurnComponent>()?.count ?: 0,
             hasLost = hasLost,
             // Mana pool is public information in MTG - show for all players
             manaPool = container?.get<ManaPoolComponent>()?.let(::manaPool),

@@ -481,6 +481,12 @@ data class ClientCard(
 
     /** Visible rules have effective text replacements; a printed definition alone is insufficient. */
     val hasRuleTextChanges: Boolean = false,
+    val cardDefinitionId: String? = null,
+    val hasLostAllAbilities: Boolean = false,
+    val tokenBlueprint: com.wingedsheep.engine.core.IntrinsicToken? = null,
+    val grantedTriggeredAbilities: List<com.wingedsheep.engine.core.PublicGrantedTriggeredAbility> = emptyList(),
+    val semanticRule: com.wingedsheep.engine.core.SemanticRule? = null,
+    val ruleFacts: com.wingedsheep.engine.core.RuleFacts? = null,
 
     /** Copy index for storm/copy effects on the stack (1, 2, 3...) */
     val copyIndex: Int? = null,
@@ -914,7 +920,10 @@ data class ClientPlayer(
      * (CR 808.4), so it leaves this false — which is exactly why it can't be folded into
      * [teamSharedLife] or into "has a team".
      */
-    val teamSharedTurns: Boolean = false
+    val teamSharedTurns: Boolean = false,
+    val attackedThisTurn: Boolean = false,
+    val cardsDrawnThisTurn: Int = 0,
+    val creaturesDiedThisTurn: Int = 0,
 )
 
 /**

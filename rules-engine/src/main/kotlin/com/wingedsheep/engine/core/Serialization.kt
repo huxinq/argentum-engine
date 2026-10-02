@@ -452,6 +452,7 @@ val engineSerializersModule = SerializersModule {
         subclass(LifeTotalComponent::class)
         subclass(TeamComponent::class)
         subclass(TokenComponent::class)
+        subclass(com.wingedsheep.engine.state.components.identity.TokenBlueprintComponent::class)
         subclass(CreatedByComponent::class)
         subclass(FaceDownComponent::class)
         subclass(RevealedToComponent::class)
