@@ -38,6 +38,33 @@ class OptionalAbilityCopyTest : FunSpec({
         d.state.stack shouldBe emptyList()
         d.getLifeTotal(d.player1) shouldBe 22
     }
+    for (count in listOf(1, 2)) {
+        test("an activated up-to-two slot keeps its $count selected targets when copied") {
+            val source = card("Partially Selected Copy Source") {
+                manaCost = "{0}"; typeLine = "Artifact"
+                activatedAbility {
+                    cost = Costs.Mana("{0}")
+                    target(TargetPlayer(count = 2, optional = true))
+                    effect = Effects.GainLife(1)
+                }
+            }
+            val d = driver(source)
+            val permanent = d.putPermanentOnBattlefield(d.player1, source.name)
+            val originalTargets = if (count == 1) listOf(d.player2) else listOf(d.player1, d.player2)
+            d.submitSuccess(ActivateAbility(d.player1, permanent, source.activatedAbilities.single().id,
+                targets = originalTargets.map { ChosenTarget.Player(it) }))
+            val original = d.getTopOfStack()!!
+            copy(d, original)
+            val question = d.pendingDecision as ChooseTargetsDecision
+            question.targetRequirements.single().index shouldBe 0
+            question.targetRequirements.single().minTargets shouldBe count
+            question.targetRequirements.single().maxTargets shouldBe count
+            val replacements = if (count == 1) listOf(d.player1) else listOf(d.player2, d.player1)
+            d.submitMultiTargetSelection(d.player1, mapOf(0 to replacements)).error.shouldBeNull()
+            d.state.getEntity(d.getTopOfStack()!!)!!.get<TargetsComponent>()!!.targetRequirements.single().count shouldBe count
+            resolve(d)
+        }
+    }
     for (triggered in listOf(false, true)) {
         test("all-declined ${if (triggered) "triggered" else "activated"} copies retain declarations and resolve untargeted effects") {
             val source = card("Declined Copy Source") {
